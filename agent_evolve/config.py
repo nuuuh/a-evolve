@@ -24,13 +24,14 @@ class EvolveConfig:
 
     batch_size: int = 10
     max_cycles: int = 20
-    holdout_ratio: float = 0.2
+    holdout_ratio: float = 0.0  # V2 benchmarks pre-split; upstream default was 0.2
 
     # Gating: which layers the evolver is allowed to mutate
     evolve_prompts: bool = True
     evolve_skills: bool = True
     evolve_memory: bool = True
     evolve_tools: bool = False
+    evolve_infra: bool = True  # V2: infra/ layer (framework-run pipelines with network access)
 
     # When True, the evolver only sees agent trajectories (tool calls and
     # outputs) — no pass/fail, score, or test output.  This forces the
@@ -40,10 +41,22 @@ class EvolveConfig:
     # Evolver LLM
     evolver_model: str = "us.anthropic.claude-opus-4-6-v1"
     evolver_max_tokens: int = 16384
+    evolver_temperature: float = 0.0  # V2: evolver LLM temperature
+    evolver_include_patches: bool = False  # V2: include failed-task patches in evolver prompt
+
+    # Parallelism (V2)
+    solve_workers: int = 1
 
     # Convergence
     egl_threshold: float = 0.05
     egl_window: int = 3
+
+    # Navigation (V2 --navigation flag; disabled by default = current A-EVOLVE)
+    navigation_enabled: bool = False
+    branch_confidence_threshold: float = 0.7  # evolver confidence to create branch
+                                              # -1 = never branch (linear fallback)
+    promotion_threshold: float = 0.15  # cross-region improvement to merge branch
+    staleness_window: int = 5  # prune branches unused for N cycles
 
     extra: dict[str, Any] = field(default_factory=dict)
 

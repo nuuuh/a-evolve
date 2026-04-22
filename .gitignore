@@ -70,7 +70,10 @@ swe_results*/
 .claude/
 
 # Local legacy compatibility package
-agent_evolve/algorithms/aevolve/
+# NOTE: V2 fork restores agent_evolve/algorithms/aevolve/ with the canonical
+# V2 engine. Un-ignore it explicitly.
+!agent_evolve/algorithms/aevolve/
+!agent_evolve/algorithms/aevolve/**
 
 # Local research/program artifacts
 program.md
@@ -124,6 +127,22 @@ wandb/
 # Entire
 .entire/
 
+# ── V2 fork additions ──────────────────────────────────────────────────
+# Baselines captured on V2 root, stored here for verification diffs
+baselines/
+# Dataset symlink (target lives outside the fork)
+data
+# V2 solver outputs
+results/
+# V2 hypothesis runner logs
+logs/
+# Per-benchmark trajectory artifacts (written by solver processes)
+**/trajectory_*.json
+**/patch_*.diff
+**/flag_*.txt
+**/prediction_*.json
+
+# ── Original upstream ignores continue below ──────────────────────────
 # Experiment outputs
 swe_verified/
 swe_evolve/

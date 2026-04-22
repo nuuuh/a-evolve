@@ -1,0 +1,4 @@
+tools:
+  - name: wiki_search
+    description: Search Wikipedia with strict temporal cutoff. Returns article content from the last revision BEFORE the cutoff date, guaranteeing zero label leakage.
+    usage: python tools/wiki_search.py "search query" "2026-01-15"

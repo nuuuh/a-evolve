@@ -10,7 +10,7 @@ from .base import LLMMessage, LLMProvider, LLMResponse
 class AnthropicProvider(LLMProvider):
     """LLM provider using the Anthropic API (Claude models)."""
 
-    def __init__(self, model: str = "claude-sonnet-4-20250514", api_key: str | None = None):
+    def __init__(self, model: str = "claude-sonnet-4-6", api_key: str | None = None):
         try:
             import anthropic
         except ImportError:

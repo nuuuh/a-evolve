@@ -1,0 +1,627 @@
+#!/usr/bin/env python3
+"""Solve all benchmark tasks with periodic evolution between batches.
+
+Generic orchestrator that works with any benchmark backend. Every task gets
+a trajectory + results.jsonl entry, matching the baseline output format.
+
+Flow:
+  1. Load all N tasks (deterministic order)
+  2. For each batch of batch_size tasks:
+     a. Solve all tasks in parallel (using current workspace state)
+     b. Save outputs + results.jsonl per task
+     c. Trigger one evolution cycle using batch observations
+     d. Snapshot workspace, reload agent
+  3. Write final results.json + evolved_workspace/
+
+Usage:
+    python solve_all_with_evolution.py --benchmark swe --batch-size 10
+    python solve_all_with_evolution.py --benchmark mcp --batch-size 20
+"""
+from __future__ import annotations
+
+import argparse
+import importlib
+import json
+import logging
+import math
+import os
+import shutil
+import subprocess
+import sys
+import time
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed, TimeoutError
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+os.environ.setdefault("BYPASS_TOOL_CONSENT", "true")
+
+
+# ── Benchmark backend interface ───────────────────────────────────────
+#
+# Each backend module (backends/<name>.py) must expose:
+#
+#   setup(args) -> dict with keys:
+#       "agent":      BaseAgent instance (for workspace + evolution)
+#       "benchmark":  BenchmarkAdapter instance
+#       "executor":   "process" | "thread"  (parallelism strategy)
+#       "cleanup":    callable() or None
+#
+#   solve_one(task_dict: dict, args_dict: dict) -> dict
+#       Result dict with at least: instance_id, success, score, detail, elapsed
+#
+#   build_prompts(agent, tasks) -> dict
+#       Extra args to pass to solve_one (e.g. system_prompt, user_prompts)
+#
+
+def _load_backend(name: str):
+    """Import a benchmark solver module by name.
+
+    Canonical layout: ``agent_evolve/agents/<name>/solver.py`` exposes
+    ``setup()``, ``build_prompts()``, ``solve_one()``.
+    """
+    return importlib.import_module(f"agent_evolve.agents.{name}.solver")
+
+
+# ── Generic helpers ───────────────────────────────────────────────────
+
+def _load_done_ids(out_dir: Path) -> tuple[set[str], list[dict]]:
+    """Load already-completed results from results.jsonl for resume."""
+    done_ids = set()
+    existing = []
+    jsonl = out_dir / "results.jsonl"
+    if jsonl.exists():
+        for line in jsonl.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                r = json.loads(line)
+                done_ids.add(r["instance_id"])
+                existing.append(r)
+            except (json.JSONDecodeError, KeyError):
+                pass
+    return done_ids, existing
+
+
+def _append_result(out_dir: Path, result: dict):
+    with open(out_dir / "results.jsonl", "a") as f:
+        f.write(json.dumps(result, default=str) + "\n")
+
+
+# ── Main orchestrator ─────────────────────────────────────────────────
+
+def main():
+    p = argparse.ArgumentParser(
+        description="Solve all benchmark tasks with periodic evolution")
+    p.add_argument("--benchmark", type=str, required=True,
+                   help="Benchmark name (matches agent_evolve/agents/<name>/solver.py)")
+    p.add_argument("--model-id", type=str, default="us.anthropic.claude-sonnet-4-6")
+    p.add_argument("--region", type=str, default="us-west-2")
+    p.add_argument("--max-tokens", type=int, default=16384)
+    p.add_argument("--max-turns", type=int, default=150)
+    p.add_argument("--task-timeout", type=int, default=1800)
+    p.add_argument("--workers", type=int, default=16)
+    p.add_argument("--batch-size", type=int, default=None)
+    p.add_argument("--eval", "--no-eval", dest="run_eval",
+                   action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--output-dir", type=str, default=None)
+    p.add_argument("--limit", type=int, default=0,
+                   help="Max tasks (0 = all)")
+    p.add_argument("--seed-workspace", type=str, default=None)
+    p.add_argument("--split", type=str, default="test",
+                   help="Dataset split (default: test; use 'online' for FutureX-Online)")
+    p.add_argument("--config", type=str, default=None,
+                   help="Evolution config YAML")
+    p.add_argument("--trajectory-only", action="store_true", default=False,
+                   help="Hide ground-truth labels from evolver (trajectory-only evolution)")
+    p.add_argument("--solver-temp", type=float, default=None,
+                   help="Solver LLM temperature")
+    p.add_argument("--evolver-temp", type=float, default=None,
+                   help="Evolver LLM temperature (overrides config)")
+    p.add_argument("--verbose", action="store_true", default=False,
+                   help="Print evolver conversation in real-time during evolution")
+    p.add_argument("--navigation", action="store_true", default=False,
+                   help="Enable decoupled evolution with strategy tree navigation")
+    p.add_argument("--branch-confidence", type=float, default=None,
+                   help="Branch confidence threshold (overrides config; -1=never branch)")
+    p.add_argument("--no-infra-evo", action="store_true", default=False,
+                   help="Disable infra/ evolution (changes will be reverted)")
+    p.add_argument("--evolver-prompt", type=str, default=None,
+                   help="Path to custom evolver system prompt (.md file)")
+    # Pass-through for benchmark-specific args
+    p.add_argument("--dataset", type=str, default=None)
+    p.add_argument("--docker-image", type=str, default=None)
+    p.add_argument("--env-file", type=str, default=None)
+    args = p.parse_args()
+
+    # Defaults
+    if args.output_dir is None:
+        args.output_dir = f"results/{args.benchmark}_evolve_full"
+    if args.seed_workspace is None:
+        args.seed_workspace = f"experiments/{args.benchmark}/seed"
+    if args.config is None:
+        cfg_path = f"experiments/{args.benchmark}/configs/full_evo.yaml"
+        args.config = cfg_path if Path(cfg_path).exists() else None
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    for n in ("botocore", "urllib3", "httpcore", "httpx",
+              "strands.models", "strands.tools", "strands.telemetry"):
+        logging.getLogger(n).setLevel(logging.WARNING)
+    log = logging.getLogger("main")
+
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── Load backend ──────────────────────────────────────────────
+    backend = _load_backend(args.benchmark)
+    env = backend.setup(args)
+    agent = env["agent"]
+    benchmark = env["benchmark"]
+    executor_type = env.get("executor", "process")
+    cleanup_fn = env.get("cleanup")
+
+    all_tasks = benchmark.get_tasks(split=args.split, limit=args.limit)
+    log.info("Loaded %d tasks", len(all_tasks))
+
+    # Resume
+    done_ids, existing_results = _load_done_ids(out_dir)
+    if done_ids:
+        log.info("Resuming: %d already done", len(done_ids))
+    remaining = [t for t in all_tasks if t.id not in done_ids]
+    log.info("Remaining: %d tasks", len(remaining))
+
+    if not remaining:
+        results = existing_results
+    else:
+        from agent_evolve.config import EvolveConfig
+        from agent_evolve.engine.observer import Observer
+        from agent_evolve.engine.versioning import VersionControl
+        from agent_evolve.algorithms.aevolve import AEvolveEngine
+        from agent_evolve.types import Feedback, Observation, Trajectory
+
+        # Evolution infrastructure
+        ws_dir = agent.workspace.root
+        evo_dir = ws_dir / "evolution"
+        evo_dir.mkdir(parents=True, exist_ok=True)
+        versioning = VersionControl(ws_dir)
+        versioning.init()
+
+        config = EvolveConfig.from_yaml(args.config) if args.config else EvolveConfig()
+        if args.trajectory_only:
+            config.trajectory_only = True
+        if args.evolver_temp is not None:
+            config.evolver_temperature = args.evolver_temp
+        if args.branch_confidence is not None:
+            config.branch_confidence_threshold = args.branch_confidence
+        if args.no_infra_evo:
+            config.evolve_infra = False
+        if args.evolver_prompt:
+            config.extra["evolver_system_prompt"] = Path(args.evolver_prompt).read_text()
+        config.extra.setdefault("region", args.region)
+        if args.verbose:
+            config.extra["verbose"] = True
+        observer = Observer(evo_dir, trajectory_only=config.trajectory_only)
+        evo_trigger_threshold = config.extra.get("evo_trigger_threshold", 0.0)
+
+        # Navigation (--navigation flag)
+        navigation_enabled = args.navigation or config.navigation_enabled
+        if navigation_enabled:
+            from agent_evolve.algorithms.aevolve.navigation import NavigationEngine
+            evolver = NavigationEngine(config)
+        else:
+            evolver = AEvolveEngine(config)
+        strategy_tree = None
+        routing_log_path = None
+        if navigation_enabled:
+            from agent_evolve.types import StrategyTree
+            routing_log_path = out_dir / "routing_log.jsonl"
+            tree_state_path = out_dir / "tree_state.json"
+            if tree_state_path.exists():
+                strategy_tree = StrategyTree.from_dict(
+                    json.loads(tree_state_path.read_text()))
+                log.info("Loaded strategy tree: %d branches",
+                         len(strategy_tree.branches))
+            else:
+                strategy_tree = StrategyTree()
+            log.info("Navigation ENABLED (routing_log: %s)", routing_log_path)
+
+        # Batching
+        batch_size = args.batch_size or config.batch_size
+
+        # Dynamic freeze/start from percentage of total tasks
+        total_tasks = len(all_tasks)
+        freeze_pct = config.extra.get("evo_freeze_after_pct", 0)
+        start_pct = config.extra.get("evo_start_after_pct", 0)
+        if freeze_pct > 0:
+            config.max_cycles = math.ceil(total_tasks * freeze_pct / 100 / batch_size)
+            log.info("evo_freeze_after_pct=%.0f%% -> max_cycles=%d (from %d tasks, batch_size=%d)",
+                     freeze_pct, config.max_cycles, total_tasks, batch_size)
+        evo_start_cycle = 0
+        if start_pct > 0:
+            evo_start_cycle = math.ceil(total_tasks * start_pct / 100 / batch_size)
+            log.info("evo_start_after_pct=%.0f%% -> evo_start_cycle=%d", start_pct, evo_start_cycle)
+
+        completed_batches = len(done_ids) // batch_size
+        evo_cycle = completed_batches
+        batches = [remaining[i:i + batch_size]
+                   for i in range(0, len(remaining), batch_size)]
+        log.info("%d batches (batch_size=%d, max_cycles=%d)",
+                 len(batches), batch_size, config.max_cycles)
+
+        # Count completed evolution runs (for resume + max_cycles enforcement)
+        evo_runs_done = 0
+        hist_path = out_dir / "history.jsonl"
+        if hist_path.exists():
+            for line in hist_path.read_text().splitlines():
+                try:
+                    if not json.loads(line).get("skipped", True):
+                        evo_runs_done += 1
+                except (json.JSONDecodeError, KeyError):
+                    pass
+        if evo_runs_done:
+            log.info("Resuming with %d evolution cycles already done", evo_runs_done)
+
+        PoolClass = ProcessPoolExecutor if executor_type == "process" else ThreadPoolExecutor
+        results = list(existing_results)
+        t_start = time.time()
+
+        for batch_idx, batch_tasks in enumerate(batches):
+            batch_num = completed_batches + batch_idx + 1
+            evo_cycle += 1
+            log.info("=== Batch %d (%d tasks) | Evo cycle %d ===",
+                     batch_num, len(batch_tasks), evo_cycle)
+
+            # ── Route tasks to branches (navigation) ──────────────
+            # task_branches maps task_id → branch name for stats tracking
+            task_branches: dict[str, str] = {}
+            # branch_groups maps branch name → list of tasks
+            branch_groups: dict[str, list] = {}
+
+            if navigation_enabled and strategy_tree is not None and strategy_tree.branches:
+                from collections import defaultdict
+                branch_groups = defaultdict(list)
+                for t in batch_tasks:
+                    # Build rich task context: ID + metadata + full input
+                    nav_lines = [f"Task ID: {t.id}"]
+                    for key in ("category", "event", "challenge", "year"):
+                        if key in t.metadata:
+                            nav_lines.append(f"{key}: {t.metadata[key]}")
+                    nav_lines.append(f"\n{t.input}")
+                    task_context = "\n".join(nav_lines)
+                    branch = evolver.navigate(task_context, strategy_tree, workspace_root=ws_dir)
+                    branch_groups[branch].append(t)
+                    task_branches[t.id] = branch
+                    log.info("  → %s routed to [%s]", t.id, branch)
+                # Update branch routing metadata
+                for b in strategy_tree.branches:
+                    if b.name in branch_groups:
+                        b.last_routed_cycle = evo_cycle
+            elif navigation_enabled:
+                log.info("  All %d tasks → [main] (no branches yet)", len(batch_tasks))
+                branch_groups["main"] = list(batch_tasks)
+                for t in batch_tasks:
+                    task_branches[t.id] = "main"
+            else:
+                branch_groups["main"] = list(batch_tasks)
+
+            # ── Build prompts per branch and submit to pool ───────
+            batch_results = []
+            t_batch = time.time()
+
+            pool = PoolClass(max_workers=args.workers)
+            futures = {}
+            for branch_name, branch_tasks in branch_groups.items():
+                # Checkout the branch workspace
+                if branch_name != "main" and navigation_enabled:
+                    try:
+                        versioning.checkout_branch(branch_name)
+                        agent.reload_from_fs()
+                    except Exception as e:
+                        log.warning("Branch %s checkout failed, using main: %s",
+                                    branch_name, e)
+                        versioning.checkout_branch("main")
+                        agent.reload_from_fs()
+                elif navigation_enabled:
+                    try:
+                        versioning.checkout_branch("main")
+                        agent.reload_from_fs()
+                    except Exception:
+                        pass
+
+                # Build prompts from this branch's workspace state
+                prompt_args = backend.build_prompts(agent, branch_tasks)
+                task_dicts = [{"id": t.id, "input": t.input, "metadata": t.metadata}
+                              for t in branch_tasks]
+                args_dict = {
+                    "model_id": args.model_id, "region": args.region,
+                    "max_tokens": args.max_tokens, "max_turns": args.max_turns,
+                    "task_timeout": args.task_timeout, "run_eval": args.run_eval,
+                    "output_dir": str(out_dir), "batch_num": batch_num,
+                    "evo_cycle": evo_cycle, "exp_tag": env.get("exp_tag", ""),
+                    "solver_temperature": args.solver_temp or 0.0,
+                    **prompt_args,
+                }
+
+                for td in task_dicts:
+                    futures[pool.submit(backend.solve_one, td, args_dict)] = td["id"]
+
+            # Return to main after submitting all branch groups
+            if navigation_enabled:
+                try:
+                    versioning.checkout_branch("main")
+                    agent.reload_from_fs()
+                except Exception:
+                    pass
+
+            # ── Collect results ───────────────────────────────────
+            try:
+                completed_ids = set()
+                try:
+                    import math as _math
+                    _total_tasks = len(batch_tasks)
+                    _rounds = _math.ceil(_total_tasks / max(args.workers, 1))
+                    _batch_deadline = int(_rounds * args.task_timeout * 1.5)
+                    for fut in as_completed(futures, timeout=_batch_deadline):
+                        iid = futures[fut]
+                        completed_ids.add(iid)
+                        try:
+                            r = fut.result(timeout=args.task_timeout)
+                        except TimeoutError:
+                            log.error("TIMEOUT %s (>%ds)", iid, args.task_timeout)
+                            r = {"instance_id": iid, "success": False, "score": 0.0,
+                                 "detail": f"Timed out (>{args.task_timeout}s)",
+                                 "elapsed": args.task_timeout, "error": "timeout",
+                                 "batch_num": batch_num, "evo_cycle": evo_cycle}
+                        except Exception as e:
+                            log.error("CRASH %s: %s", iid, e)
+                            r = {"instance_id": iid, "success": False, "score": 0.0,
+                                 "detail": f"Crashed: {e}", "elapsed": 0, "error": str(e),
+                                 "batch_num": batch_num, "evo_cycle": evo_cycle}
+
+                        batch_results.append(r)
+                        r_persist = {k: v for k, v in r.items()
+                                     if k not in ("output", "conversation")}
+                        results.append(r_persist)
+                        _append_result(out_dir, r_persist)
+
+                        passed = sum(1 for x in results if x.get("success"))
+                        st = "PASS" if r.get("success") else "FAIL"
+                        log.info("[%d/%d] %s %s (%.1fs) | total: %d/%d",
+                                 len(results) - len(existing_results),
+                                 len(remaining), st, iid,
+                                 r.get("elapsed", 0), passed, len(results))
+                except TimeoutError:
+                    for fut, iid in futures.items():
+                        if iid not in completed_ids:
+                            fut.cancel()
+                            log.error("HUNG %s — batch deadline exceeded", iid)
+                            r = {"instance_id": iid, "success": False, "score": 0.0,
+                                 "detail": "Hung past batch deadline",
+                                 "elapsed": args.task_timeout, "error": "hung",
+                                 "batch_num": batch_num, "evo_cycle": evo_cycle}
+                            batch_results.append(r)
+                            results.append(r)
+                            _append_result(out_dir, r)
+            finally:
+                # Force-kill the pool.  pool.shutdown(wait=True) would hang
+                # forever if any worker is stuck, so kill workers first.
+                _hung_ids = set(futures.values()) - completed_ids if futures else set()
+                if _hung_ids and executor_type == "process":
+                    log.warning("Killing %d hung worker(s)", len(_hung_ids))
+                    import os as _os, signal as _sig
+                    for _child in getattr(pool, '_processes', {}).values():
+                        try:
+                            _os.kill(_child.pid, _sig.SIGKILL)
+                        except (OSError, AttributeError):
+                            pass
+                pool.shutdown(wait=not _hung_ids, cancel_futures=True)
+
+            # Clean up leaked Docker containers so the next batch starts clean.
+            try:
+                import subprocess as _sp
+                for prefix in ["ctf-", "fx-"]:
+                    _leaked = _sp.run(
+                        ["docker", "ps", "-aq", "--filter", f"name={prefix}"],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    for cid in _leaked.stdout.strip().splitlines():
+                        if cid.strip():
+                            _sp.run(["docker", "rm", "-f", cid.strip()],
+                                    capture_output=True, timeout=10)
+            except Exception:
+                pass
+
+            batch_elapsed = time.time() - t_batch
+            batch_passed = sum(1 for r in batch_results if r.get("success"))
+            batch_total = len(batch_results) or 1
+            batch_scores = [r.get("score", 0.0) for r in batch_results]
+            avg_score = sum(batch_scores) / len(batch_scores) if batch_scores else 0.0
+            log.info("Batch %d: %d/%d passed (%.0f%%) avg_score=%.3f in %.0fs",
+                     batch_num, batch_passed, batch_total,
+                     100 * batch_passed / batch_total, avg_score, batch_elapsed)
+
+            # ── Update branch stats from solve results ────────────
+            if navigation_enabled and strategy_tree is not None and task_branches:
+                for r in batch_results:
+                    iid = r["instance_id"]
+                    branch_name = task_branches.get(iid, "main")
+                    b = strategy_tree.get_branch(branch_name)
+                    if b:
+                        b.total_tasks += 1
+                        if r.get("success"):
+                            b.total_passed += 1
+                    # Log routing entry
+                    from agent_evolve.types import RoutingEntry
+                    strategy_tree.routing_log.append(RoutingEntry(
+                        task_id=iid,
+                        properties={},
+                        branch=branch_name,
+                        score=r.get("score", 0.0),
+                        cycle=evo_cycle,
+                    ))
+                # Persist routing log to disk (no ground-truth score)
+                with open(routing_log_path, "a") as f:
+                    for r in batch_results:
+                        iid = r["instance_id"]
+                        entry = {
+                            "task_id": iid,
+                            "properties": {},
+                            "branch": task_branches.get(iid, "main"),
+                            "cycle": evo_cycle,
+                        }
+                        f.write(json.dumps(entry) + "\n")
+
+            # ── Build observations ────────────────────────────────
+            observations = []
+            for r in batch_results:
+                iid = r["instance_id"]
+                task = next(t for t in batch_tasks if t.id == iid)
+                output = r.get("output", "")
+                if not output:
+                    sid = iid.replace("/", "_")
+                    p = out_dir / f"patch_{sid}.diff"
+                    output = p.read_text() if p.exists() else ""
+                steps = [{
+                    "conversation": r.get("conversation", []),
+                    "usage": {
+                        "input_tokens": r.get("input_tokens", 0),
+                        "output_tokens": r.get("output_tokens", 0),
+                    },
+                    "tool_call_count": r.get("turns", 0),
+                }]
+                observations.append(Observation(
+                    task=task,
+                    trajectory=Trajectory(task_id=iid, output=output, steps=steps),
+                    feedback=Feedback(
+                        success=r.get("success", False),
+                        score=r.get("score", 0.0),
+                        detail=r.get("detail", ""),
+                        raw=r,
+                    ),
+                ))
+            # ── Evolution cycle ───────────────────────────────────
+            agent.export_to_fs()
+            observer.collect(observations)
+            batch_score = batch_passed / batch_total
+            pre_evo_msg = (f"pre-evo-{evo_cycle}: checkpoint"
+                          if config.trajectory_only
+                          else f"pre-evo-{evo_cycle}: score={batch_score:.3f}")
+            versioning.commit(message=pre_evo_msg, tag=f"pre-evo-{evo_cycle}")
+            t_evo = time.time()
+            mutated, new_skills, evo_conversation, nav_trajectory = False, 0, [], []
+            # negative threshold = never evolve (baseline mode)
+            # max_cycles caps how many evolution cycles actually run
+            # evo_start_cycle defers evolution until cycle N (late_start)
+            skip_evo = (evo_trigger_threshold < 0
+                        or (evo_trigger_threshold > 0 and batch_score >= evo_trigger_threshold)
+                        or (config.max_cycles > 0 and evo_runs_done >= config.max_cycles)
+                        or (evo_start_cycle > 0 and evo_cycle < evo_start_cycle))
+            if skip_evo:
+                reason = ("baseline" if evo_trigger_threshold < 0
+                          else f"max_cycles ({evo_runs_done}/{config.max_cycles})"
+                          if config.max_cycles > 0 and evo_runs_done >= config.max_cycles
+                          else f"late_start (cycle {evo_cycle} < {evo_start_cycle})"
+                          if evo_start_cycle > 0 and evo_cycle < evo_start_cycle
+                          else f"score {batch_score:.2f} >= {evo_trigger_threshold:.2f}")
+                log.info("Skipping evolution cycle %d (%s)", evo_cycle, reason)
+            elif navigation_enabled and strategy_tree is not None:
+                # Decoupled evolution: classify failures → deepen main / branch
+                log.info("Navigation evolution cycle %d...", evo_cycle)
+                try:
+                    evo_result = evolver.evolve_with_navigation(
+                        solver_workspace=agent.workspace,
+                        batch_results=batch_results,
+                        tree=strategy_tree,
+                        evo_number=evo_cycle,
+                        routing_log_path=routing_log_path,
+                    )
+                    mutated = evo_result.get("mutated", False)
+                    plan = evo_result.get("plan", {})
+                    nav_trajectory = evo_result.get("trajectory", [])
+                    log.info("Nav evo: plan=%s, branches=%s",
+                             plan.get("summary", ""),
+                             evo_result.get("branches", []))
+                except Exception as e:
+                    log.error("Navigation evolution failed: %s", e)
+                # Persist strategy tree for resume
+                (out_dir / "tree_state.json").write_text(
+                    json.dumps(strategy_tree.to_dict(), indent=2))
+                evo_runs_done += 1
+            else:
+                progress = (f"{evo_runs_done + 1}/{config.max_cycles}"
+                            if config.max_cycles > 0 else str(evo_runs_done + 1))
+                log.info("Evolution cycle %s...", progress)
+                try:
+                    evo_result = evolver.evolve(
+                        workspace=agent.workspace,
+                        observation_logs=observer.get_recent_logs(n_batches=1),
+                        evo_number=evo_cycle,
+                    )
+                    mutated = evo_result.get("mutated", False)
+                    new_skills = evo_result.get("new_skills", 0)
+                    evo_conversation = evo_result.get("conversation", [])
+                except Exception as e:
+                    log.error("Evolution failed: %s", e)
+                evo_runs_done += 1
+            evo_elapsed = time.time() - t_evo
+
+            if skip_evo:
+                tag = (f"evo-{evo_cycle}: skipped"
+                       if config.trajectory_only
+                       else f"evo-{evo_cycle}: skipped (score={batch_score:.2f})")
+            elif mutated:
+                tag = f"evo-{evo_cycle}: {new_skills} new skills"
+            else:
+                tag = f"evo-{evo_cycle}: no mutation"
+            versioning.commit(message=tag, tag=f"evo-{evo_cycle}")
+            agent.reload_from_fs()
+            log.info("Evo cycle %d: mutated=%s, %.0fs", evo_cycle, mutated, evo_elapsed)
+            # History
+            with open(out_dir / "history.jsonl", "a") as f:
+                f.write(json.dumps({
+                    "cycle": evo_cycle, "batch_num": batch_num,
+                    "batch_score": batch_score, "avg_score": avg_score,
+                    "batch_passed": batch_passed,
+                    "batch_total": len(batch_results), "mutated": mutated,
+                    "new_skills": new_skills, "skipped": skip_evo,
+                    "evo_elapsed": evo_elapsed,
+                    "cumulative_passed": sum(1 for x in results if x.get("success")),
+                    "cumulative_total": len(results),
+                }, default=str) + "\n")
+            # Evolver trajectory
+            if evo_conversation:
+                traj_path = evo_dir / f"evo_{evo_cycle}_trajectory.json"
+                with open(traj_path, "w") as f:
+                    json.dump(evo_conversation, f, indent=2, default=str)
+            if nav_trajectory:
+                traj_path = evo_dir / f"nav_evo_{evo_cycle}_trajectory.json"
+                with open(traj_path, "w") as f:
+                    json.dump(nav_trajectory, f, indent=2, default=str)
+
+        log.info("Done in %.0fs", time.time() - t_start)
+
+    # ── Final output ──────────────────────────────────────────────
+    (out_dir / "results.json").write_text(
+        json.dumps(results, indent=2, ensure_ascii=False, default=str))
+
+    ws_dir = out_dir / args.benchmark
+    if ws_dir.exists():
+        snap = out_dir / "evolved_workspace"
+        if snap.exists():
+            shutil.rmtree(snap)
+        shutil.copytree(ws_dir, snap, ignore=shutil.ignore_patterns("evolution", ".git"))
+
+    if cleanup_fn:
+        cleanup_fn()
+
+    passed = sum(1 for r in results if r.get("success"))
+    total = len(results)
+    scores = [r.get("score", 0.0) for r in results]
+    avg_score = sum(scores) / len(scores) if scores else 0.0
+    print(f"\n{'='*70}")
+    pct = 100 * passed / total if total else 0.0
+    print(f"SUMMARY: {passed}/{total} passed ({pct:.1f}%) avg_score={avg_score:.3f}")
+    print(f"{'='*70}")
+
+
+if __name__ == "__main__":
+    main()

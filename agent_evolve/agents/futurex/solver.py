@@ -1,0 +1,909 @@
+"""FutureX solver entry points for solve_all_with_evolution.py.
+
+Integrates FutureX temporal prediction benchmark with the evolution
+framework.  Each task gets a lightweight Docker sandbox (shared with
+polybench) so the solver can execute evolved tools via ``bash``, plus a
+time-bounded ``web_search`` tool for gathering pre-cutoff information.
+
+Module-level side effects (the ``.env`` auto-loader and the shared
+search throttle lock) live in ``sandbox.py`` so every ProcessPool/ThreadPool
+worker that imports either entry point picks them up exactly once.
+"""
+
+import json
+import logging
+import os
+import re
+import shutil
+import subprocess
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, Any, Optional
+
+from agent_evolve.config import EvolveConfig
+
+# Import from sandbox.py so we share the single _search_lock + .env state
+# across every worker process / thread that reaches this file.
+from .sandbox import (
+    _DDGS_THROTTLE,
+    _WIKI_THROTTLE,
+    _last_search_time,
+    _search_lock,
+    start_sandbox,
+    stop_sandbox,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# ─── Framework hooks ────────────────────────────────────────────────────
+
+def setup(args) -> dict:
+    """Setup FutureX backend for evolution framework."""
+    from agent_evolve.benchmarks.futurex.futurex import FutureXBenchmark
+    from agent_evolve.agents.futurex.agent import FutureXAgent
+
+    out_dir = Path(args.output_dir)
+
+    ws_dir = out_dir / "futurex"
+    if not ws_dir.exists():
+        seed = Path(args.seed_workspace)
+        ws_dir.parent.mkdir(parents=True, exist_ok=True)
+        if seed.exists():
+            shutil.copytree(seed, ws_dir)
+        else:
+            ws_dir.mkdir(parents=True, exist_ok=True)
+            (ws_dir / "SYSTEM.md").write_text(
+                "# FutureX Temporal Prediction Agent\n\n"
+                "Specialized agent for temporal prediction tasks "
+                "with time-bounded web search.\n")
+            (ws_dir / "skills").mkdir(exist_ok=True)
+            (ws_dir / "memory").mkdir(exist_ok=True)
+            (ws_dir / "infra").mkdir(exist_ok=True)
+
+    config = EvolveConfig.from_yaml(args.config) if args.config else EvolveConfig()
+    skip = frozenset(
+        name for name, enabled in [
+            ("skills", config.evolve_skills),
+            ("memory", config.evolve_memory),
+            ("tools", config.evolve_tools),
+        ] if not enabled
+    )
+    agent = FutureXAgent(
+        workspace_dir=str(ws_dir), config=config, skip_layers=skip,
+    )
+    benchmark = FutureXBenchmark(config)
+
+    return {
+        "agent": agent,
+        "benchmark": benchmark,
+        "executor": "thread",
+        "cleanup": None,
+    }
+
+
+def build_prompts(agent, tasks: list) -> dict:
+    """Build prompts and configuration for FutureX tasks."""
+    tool_files = {}
+    if hasattr(agent, 'tool_registry'):
+        for t in agent.tool_registry:
+            name = t.get("name", "")
+            if name and hasattr(agent, 'workspace'):
+                impl = agent.workspace.read_tool(name)
+                if impl:
+                    tool_files[f"{name}.py"] = impl
+
+    system_prompt = ""
+    if hasattr(agent, '_build_system_prompt'):
+        system_prompt = agent._build_system_prompt()
+    elif hasattr(agent, 'workspace'):
+        try:
+            system_prompt = agent.workspace.read_system_prompt() or ""
+        except Exception:
+            system_prompt = "You are a FutureX temporal prediction agent."
+
+    return {
+        "system_prompt": system_prompt,
+        "user_prompts": {t.id: t.input for t in tasks},
+        "tool_files": tool_files,
+        "config": agent.config if hasattr(agent, 'config') else None,
+    }
+
+
+# ─── Solver ─────────────────────────────────────────────────────────────
+
+def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Solve a single FutureX task in a subprocess.
+
+    Mirrors the polybench solve_one pattern: Docker sandbox for evolved
+    tools, plus a time-bounded web_search tool for information gathering.
+    """
+    import logging, os, time, sys
+
+    sys.setrecursionlimit(3000)
+
+    for key in ['AWS_PROFILE', 'AWS_SHARED_CREDENTIALS_FILE', 'AWS_CONFIG_FILE']:
+        os.environ.pop(key, None)
+
+    import strands.telemetry.tracer as _tracer
+    _orig_add = _tracer.Tracer._add_event_messages
+    def _safe_add(self, span, messages):
+        if not span or not getattr(span, "is_recording", lambda: False)():
+            return
+        try:
+            _orig_add(self, span, messages)
+        except RecursionError:
+            pass
+    _tracer.Tracer._add_event_messages = _safe_add
+
+    from strands.models import BedrockModel
+    from strands import Agent, tool
+    from strands.agent.conversation_manager import SlidingWindowConversationManager
+    from strands.hooks.events import BeforeToolCallEvent
+    from botocore.config import Config as BotocoreConfig
+    from botocore.exceptions import ClientError
+    import boto3
+
+    # Reset boto3 session for fresh credentials in this worker.
+    # NOTE: only reset DEFAULT_SESSION, NOT _get_default_session.
+    # Overriding _get_default_session breaks boto3.client() globally
+    # (including the evolver running in the main thread).
+    boto3.DEFAULT_SESSION = None
+
+    _orig_stream = BedrockModel._stream
+    def _safe_stream(self, callback, messages, *a, **kw):
+        try:
+            return _orig_stream(self, callback, messages, *a, **kw)
+        except ClientError as exc:
+            if "must end with a user message" not in str(exc):
+                raise
+            messages.append({"role": "user", "content": [{"text": "continue"}]})
+            return _orig_stream(self, callback, messages, *a, **kw)
+    BedrockModel._stream = _safe_stream
+
+    logging.basicConfig(level=logging.INFO,
+                        format=f"%(asctime)s [{task_data.get('id','?')}] %(message)s")
+    for n in ("botocore", "urllib3", "httpcore", "httpx",
+              "strands.models", "strands.tools", "strands.telemetry"):
+        logging.getLogger(n).setLevel(logging.WARNING)
+    log = logging.getLogger("futurex_worker")
+
+    task_id = task_data.get("id", "unknown")
+    prompt = task_data.get("input", "")
+    metadata = task_data.get("metadata", {})
+    expected_output = metadata.get("expected_output", [])
+    max_turns = args_dict.get("max_turns", 80)
+    task_timeout = args_dict.get("task_timeout", 600)
+    out_dir = Path(args_dict.get("output_dir", "results"))
+    tool_files = args_dict.get("tool_files", {})
+
+    result = {
+        "instance_id": task_id, "success": False, "score": 0.0, "detail": "",
+        "elapsed": 0.0, "turns": 0,
+        "input_tokens": 0, "output_tokens": 0,
+        "max_turns_hit": False, "timed_out": False, "error": None,
+        "batch_num": args_dict.get("batch_num", 0),
+        "evo_cycle": args_dict.get("evo_cycle", 0),
+    }
+
+    # ── Cutoff date from task metadata ───────────────────────────
+    task_creation_date = metadata.get("creation_date")
+    if isinstance(task_creation_date, str):
+        try:
+            task_creation_date = datetime.fromisoformat(
+                task_creation_date.replace('Z', '+00:00'))
+        except Exception:
+            task_creation_date = datetime(2026, 1, 8)
+    elif not task_creation_date:
+        task_creation_date = datetime(2026, 1, 8)
+
+    cutoff_str = task_creation_date.strftime('%Y-%m-%d')
+    cutoff_year = task_creation_date.year
+    cutoff_month = task_creation_date.month
+    _date_start = (task_creation_date - timedelta(days=730)).strftime('%Y-%m-%d')
+    _date_end = (task_creation_date - timedelta(days=1)).strftime('%Y-%m-%d')
+    _timelimit = f"{_date_start}..{_date_end}"
+
+    # _is_after_cutoff removed — relying solely on htmldate publication date
+    # extraction for label leakage prevention. This makes the only difference
+    # between strict and live modes the htmldate date filtering.
+
+    container_name = None
+
+    try:
+        # ── Model ────────────────────────────────────────────────
+        system_prompt = args_dict.get("system_prompt",
+            "You are a temporal prediction agent that forecasts future events "
+            "using pre-event information.\n\n"
+            "Strategy:\n"
+            "1. Search for relevant information (predictions, odds, expert "
+            "analysis, historical data, standings, polls).\n"
+            "2. After a few searches, reason from the evidence gathered.\n"
+            "3. Make your best prediction with \\boxed{ANSWER} or call submit.\n\n"
+            "Important: You are predicting events BEFORE they happen. "
+            "Search results contain only pre-event information. "
+            "A definitive answer may not exist — make your best judgment. "
+            "Do not repeat the same search query.")
+        model_id = args_dict.get("model_id", "us.anthropic.claude-sonnet-4-6")
+        config_obj = args_dict.get("config")
+        if config_obj and hasattr(config_obj, 'extra'):
+            model_id = config_obj.extra.get("model_name", model_id)
+
+        model = BedrockModel(
+            model_id=model_id,
+            region_name=args_dict.get("region", "us-east-1"),
+            max_tokens=args_dict.get("max_tokens", 2048),
+            temperature=args_dict.get("solver_temperature", 0.0),
+            boto_client_config=BotocoreConfig(
+                read_timeout=600,
+                retries={"max_attempts": 8, "mode": "adaptive"},
+            ),
+        )
+
+        # ── Docker sandbox for evolved tools ─────────────────────
+        if tool_files:
+            try:
+                sandbox_net = config_obj.extra.get("sandbox_network", "none") if config_obj else "none"
+                container_name = start_sandbox(task_id, tool_files, sandbox_network=sandbox_net)
+                log.info("Sandbox started: %s (%d tools)", container_name, len(tool_files))
+            except Exception as e:
+                log.warning("Sandbox start failed (tools unavailable): %s", e)
+
+        # ── Tools ────────────────────────────────────────────────
+        _submitted = [False]
+        _submit_output = [None]
+        tool_call_count = [0]
+        _search_call_count = [0]
+        _MAX_SEARCHES = 15  # Generous cap — prevents 20+ search spirals
+
+        # Check config for search mode
+        no_web_search = False
+        search_mode = "strict"  # "strict" (Wikipedia+CC) or "live" (DDGS)
+        if config_obj and hasattr(config_obj, 'extra'):
+            no_web_search = config_obj.extra.get("no_web_search", False)
+            search_mode = config_obj.extra.get("search_mode", "strict")
+
+        _cutoff_iso = task_creation_date.strftime('%Y-%m-%dT23:59:59Z')
+
+        # ── Wikipedia revision API (strict mode) ─────────────────
+        import requests as _requests
+        _wiki_session = _requests.Session()
+        _wiki_session.headers.update({
+            "User-Agent": "A-EVOLVE-V2/1.0 (https://github.com/A-EVOLVE; temporal-prediction-benchmark) python-requests"
+        })
+
+        def _throttled_wiki_get(params):
+            """Rate-limited Wikipedia API call shared across all workers."""
+            with _search_lock:
+                wait = max(0, _WIKI_THROTTLE - (time.time() - _last_search_time[0]))
+                if wait > 0:
+                    time.sleep(wait)
+                _last_search_time[0] = time.time()
+            return _wiki_session.get(
+                "https://en.wikipedia.org/w/api.php",
+                params=params, timeout=8)
+
+        def _wiki_search(query, limit=5):
+            """Search Wikipedia for articles matching query."""
+            try:
+                r = _throttled_wiki_get({
+                    "action": "query", "list": "search",
+                    "srsearch": query, "srlimit": limit,
+                    "format": "json"})
+                return [hit["title"] for hit in r.json()["query"]["search"]]
+            except Exception:
+                return []
+
+        def _wiki_revision(title):
+            """Fetch article content from the last revision before cutoff.
+            Returns (timestamp, plain_text) or None."""
+            try:
+                r = _throttled_wiki_get({
+                    "action": "query", "titles": title,
+                    "prop": "revisions", "rvprop": "content|timestamp",
+                    "rvlimit": "1", "rvstart": _cutoff_iso,
+                    "rvdir": "older", "format": "json"})
+                pages = r.json().get("query", {}).get("pages", {})
+                for pid, page in pages.items():
+                    revs = page.get("revisions", [])
+                    if not revs:
+                        return None
+                    wikitext = revs[0].get("*", "")
+                    # Convert wikitext to plain text
+                    text = re.sub(r'\{\{[^}]*\}\}', '', wikitext)
+                    text = re.sub(r'\[\[(?:[^|\]]*\|)?([^\]]*)\]\]', r'\1', text)
+                    text = re.sub(r"'{2,}", '', text)
+                    text = re.sub(r'<[^>]+>', '', text)
+                    text = re.sub(r'==+', '', text)
+                    text = re.sub(r'\n+', ' ', text)
+                    text = re.sub(r'\s+', ' ', text).strip()
+                    return (revs[0]["timestamp"][:10], text[:800])
+            except Exception:
+                return None
+
+        # ── Multi-source helpers (strict mode layers 2-3) ─────────
+        # API keys: config.extra > environment variable > None (skip layer)
+        _extra = (config_obj.extra if config_obj and hasattr(config_obj, 'extra') else {})
+        # # Tavily — disabled, using free DDGS+htmldate instead. Uncomment to re-enable.
+        # _tavily_key = _extra.get("tavily_api_key") or os.environ.get("TAVILY_API_KEY")
+        _tavily_key = None
+        _fred_key = _extra.get("fred_api_key") or os.environ.get("FRED_API_KEY")
+
+        # # Exa.ai — disabled, credits exhausted. Uncomment if topped up.
+        # _exa_key = _extra.get("exa_api_key") or os.environ.get("EXA_API_KEY")
+
+        # htmldate-based DDGS search (free alternative to Tavily)
+        try:
+            from agent_evolve.tools.htmldate_search import (
+                htmldate_filtered_search, format_for_agent,
+            )
+            _htmldate_available = True
+        except ImportError:
+            _htmldate_available = False
+
+        def _is_economic_query(q):
+            ql = q.lower()
+            return any(k in ql for k in [
+                'inflation', 'pce ', 'cpi ', 'gdp', 'interest rate',
+                'cash rate', 'federal reserve', 'reserve bank',
+                'consumer price', 'monetary policy', 'unemployment rate',
+            ])
+
+        def _tavily_search(query, limit=5):
+            """Tavily date-filtered search — returns pre-cutoff web content."""
+            if not _tavily_key:
+                return []
+            try:
+                resp = _requests.post(
+                    "https://api.tavily.com/search",
+                    headers={"Content-Type": "application/json"},
+                    json={
+                        "api_key": _tavily_key,
+                        "query": query,
+                        "max_results": limit,
+                        "search_depth": "advanced",
+                        "end_date": _date_end,
+                        "include_raw_content": True,
+                    },
+                    timeout=20,
+                )
+                if resp.status_code != 200:
+                    log.debug("Tavily returned %d: %s", resp.status_code, resp.text[:200])
+                    return []
+                results = []
+                for r in resp.json().get("results", []):
+                    title = r.get("title", "").strip()
+                    # Prefer raw_content (full article), fall back to snippet
+                    text = (r.get("raw_content") or r.get("content") or "").strip()
+                    pub = (r.get("published_date") or "")[:10]
+                    if text:
+                        source = f"[Tavily {pub}]" if pub else "[Tavily]"
+                        results.append(f"{title}\n   {source} {text[:800]}")
+                return results
+            except Exception as e:
+                log.debug("Tavily search failed: %s", e)
+                return []
+
+        def _htmldate_web_search(query, limit=3):
+            """DuckDuckGo + htmldate date-filtered search — free Tavily alternative.
+
+            Searches DDGS, fetches HTML for each result, extracts publication
+            date with htmldate, and drops anything published on/after cutoff.
+
+            Uses the module-level _search_lock to throttle DDGS across the
+            Wikipedia + DDGS calls within this worker process.
+            """
+            if not _htmldate_available:
+                return []
+            try:
+                # DDGS throttling is handled by htmldate_search's file-based lock
+                raw = htmldate_filtered_search(
+                    query=query,
+                    cutoff_date=_date_end,
+                    max_results=limit,
+                    fetch_timeout=8.0,
+                    fetch_workers=3,
+                )
+                results = []
+                for r in raw:
+                    title = r.get("title", "").strip()
+                    snippet = r.get("snippet", "").strip()
+                    pub = r.get("published_date") or ""
+                    if snippet:
+                        source = f"[Web {pub}]" if pub else "[Web]"
+                        results.append(f"{title}\n   {source} {snippet}")
+                log.info("htmldate: %r -> %d results", query[:50], len(results))
+                return results
+            except Exception as e:
+                log.warning("htmldate search failed for %r: %s", query[:50], e)
+                return []
+
+        def _fred_search(query):
+            """FRED API — fetch economic time series value before cutoff."""
+            if not _fred_key:
+                return []
+            series_map = {
+                'pce': 'PCEPI', 'pce price': 'PCEPI',
+                'core pce': 'PCEPILFE', 'pce annual': 'PCEPI',
+                'cpi': 'CPIAUCSL', 'consumer price': 'CPIAUCSL',
+                'core cpi': 'CPILFESL',
+                'gdp': 'GDP', 'real gdp': 'GDPC1',
+                'unemployment': 'UNRATE',
+                'federal funds': 'FEDFUNDS', 'fed rate': 'FEDFUNDS',
+                'inflation': 'CPIAUCSL',
+            }
+            ql = query.lower()
+            series_id = None
+            for key, sid in series_map.items():
+                if key in ql:
+                    series_id = sid
+                    break
+            if not series_id:
+                return []
+            try:
+                resp = _requests.get(
+                    "https://api.stlouisfed.org/fred/series/observations",
+                    params={
+                        "series_id": series_id,
+                        "api_key": _fred_key,
+                        "file_type": "json",
+                        "sort_order": "desc",
+                        "limit": 6,
+                        "realtime_end": _date_end,
+                        "observation_end": _date_end,
+                    },
+                    timeout=10,
+                )
+                if resp.status_code != 200:
+                    return []
+                obs = resp.json().get("observations", [])
+                if not obs:
+                    return []
+                lines = []
+                for o in obs[:6]:
+                    date = o.get("date", "?")
+                    val = o.get("value", "?")
+                    lines.append(f"  {date}: {val}")
+                header = f"FRED {series_id} (before {cutoff_str})"
+                return [f"{header}\n" + "\n".join(lines)]
+            except Exception as e:
+                log.debug("FRED search failed: %s", e)
+                return []
+
+        # ── DDGS live search (live mode) ─────────────────────────
+        def _ddgs_subprocess(query, timelimit=None, max_results=10):
+            """Search DDGS in a subprocess (isolates thread pool)."""
+            with _search_lock:
+                wait = max(0, _DDGS_THROTTLE - (time.time() - _last_search_time[0]))
+                if wait > 0:
+                    time.sleep(wait)
+                _last_search_time[0] = time.time()
+            tl_arg = f"timelimit={timelimit!r}," if timelimit else ""
+            code = (
+                "import json; from ddgs import DDGS; "
+                f"r=list(DDGS(timeout=15).text({query!r},"
+                f"{tl_arg}"
+                f"max_results={max_results},"
+                f"backend='auto')); "
+                "print(json.dumps(r))"
+            )
+            try:
+                proc = subprocess.run(
+                    [sys.executable, "-c", code],
+                    capture_output=True, text=True, timeout=25)
+                if proc.returncode == 0 and proc.stdout.strip():
+                    return json.loads(proc.stdout.strip())
+            except Exception:
+                pass
+            return []
+
+        if no_web_search:
+            log.info("Web search DISABLED (no_web_search=true)")
+        elif search_mode == "live":
+            log.info("LIVE search (DDGS, unrestricted)")
+        else:
+            _sources = ["Wikipedia"]
+            if _tavily_key:
+                _sources.append("Tavily")
+            elif _htmldate_available:
+                _sources.append("DDGS+htmldate")
+            if _fred_key:
+                _sources.append("FRED")
+            log.info("STRICT search (%s, cutoff=%s)", "+".join(_sources), cutoff_str)
+
+        @tool
+        def web_search(query: str) -> str:
+            """Search for pre-event information. Use 2-4 searches then reason.
+
+            Returns information published before the task creation date.
+            Do not search more than necessary — commit to a prediction
+            once you have enough context.
+
+            Args:
+                query: Search query relevant to the prediction task.
+            """
+            if search_mode == "live":
+                return _live_search(query)
+            _search_call_count[0] += 1
+            if _search_call_count[0] > _MAX_SEARCHES:
+                return (
+                    f"Search limit reached ({_MAX_SEARCHES}). "
+                    "You have enough information — reason from what you found "
+                    "and give your prediction with \\boxed{ANSWER}."
+                )
+            return _strict_search(query)
+
+        _seen_titles = set()  # Dedup across searches within a task
+
+        # Check for evolved search pipeline (infra/ layer)
+        _infra_search = None
+        _ws_root = args_dict.get("workspace_root")
+        if _ws_root:
+            _infra_path = Path(_ws_root) / "infra" / "search_pipeline.py"
+            if _infra_path.exists():
+                log.info("Loading evolved search pipeline: %s", _infra_path)
+                _infra_search = _infra_path
+
+        def _strict_search(query):
+            """Multi-source pre-cutoff search — guaranteed zero label leakage.
+
+            If an evolved infra/search_pipeline.py exists, it generates search
+            queries/config. The actual HTTP+htmldate filtering is always enforced
+            by the framework regardless of what the evolved code returns.
+
+            Layers:
+              1. Wikipedia Revision API  — encyclopedic content
+              2. Evolved search pipeline OR DuckDuckGo+htmldate (free)
+              3. FRED                    — economic indicators (if query matches)
+            """
+            results = []
+
+            # Layer 1: Wikipedia
+            try:
+                for title in _wiki_search(query, limit=5):
+                    if title.lower() in _seen_titles:
+                        continue
+                    rev = _wiki_revision(title)
+                    if rev:
+                        ts, text = rev
+                        _seen_titles.add(title.lower())
+                        results.append(f"{title}\n   [Wikipedia rev {ts}] {text}")
+                    if len(results) >= 3:
+                        break
+            except Exception as e:
+                log.debug("Wikipedia layer failed: %s", e)
+
+            # Layer 2: Web search
+            # If evolved infra/search_pipeline.py exists, use it for query
+            # generation. The htmldate filtering is ALWAYS enforced by framework.
+            search_queries = [query]
+            if _infra_search:
+                try:
+                    proc = subprocess.run(
+                        [sys.executable, str(_infra_search)],
+                        input=query, capture_output=True, text=True, timeout=10,
+                    )
+                    if proc.returncode == 0 and proc.stdout.strip():
+                        config_out = json.loads(proc.stdout.strip())
+                        search_queries = config_out.get("queries", [query])
+                except Exception as e:
+                    log.debug("Evolved search pipeline failed: %s", e)
+
+            for sq in search_queries[:3]:
+                web_results = _htmldate_web_search(sq, limit=3)
+                for wr in web_results:
+                    first_line = wr.split("\n")[0].strip().lower()
+                    if first_line not in _seen_titles:
+                        _seen_titles.add(first_line)
+                        results.append(wr)
+
+            # Layer 3: FRED economic data
+            if _is_economic_query(query):
+                results.extend(_fred_search(query))
+
+            if not results:
+                return f"No pre-cutoff content for '{query}'"
+            lines = [f"Results for '{query}' (pre-cutoff, before {cutoff_str}):"]
+            for i, r in enumerate(results[:5], 1):
+                lines.append(f"{i}. {r}")
+            return "\n".join(lines)
+
+        def _live_search(query):
+            """DDGS live search — unrestricted, no date filtering."""
+            try:
+                raw = _ddgs_subprocess(query, None)
+                if not raw:
+                    return f"No results for '{query}'"
+                lines = [f"Results for '{query}':"]
+                for i, r in enumerate(raw[:5], 1):
+                    lines.append(f"{i}. {r.get('title','')}\n   {r.get('body','')}")
+                return "\n".join(lines)
+            except Exception as e:
+                return f"Search failed: {e}"
+
+        # -- sequentialthinking --
+        _thought_history = []
+        _branches = {}
+
+        @tool
+        def sequentialthinking(
+            thought: str,
+            next_thought_needed: bool,
+            thought_number: int,
+            total_thoughts: int,
+            is_revision: bool = False,
+            revises_thought: int = 0,
+            branch_from_thought: int = 0,
+            branch_id: str = "",
+            needs_more_thoughts: bool = False,
+        ) -> str:
+            """Break down complex problems through step-by-step reasoning.
+
+            Args:
+                thought: Your current thinking step.
+                next_thought_needed: True if more thinking is needed.
+                thought_number: Current step number (starts at 1).
+                total_thoughts: Estimated total steps.
+                is_revision: True if revising a previous thought.
+                revises_thought: Which thought number is being revised.
+                branch_from_thought: Branching point thought number.
+                branch_id: Branch identifier.
+                needs_more_thoughts: True if more steps needed beyond total.
+            """
+            entry = {
+                "thought": thought,
+                "thought_number": thought_number,
+                "total_thoughts": max(total_thoughts, thought_number),
+                "next_thought_needed": next_thought_needed,
+            }
+            _thought_history.append(entry)
+            if branch_from_thought and branch_id:
+                _branches.setdefault(branch_id, []).append(entry)
+            return json.dumps({
+                "thought_number": entry["thought_number"],
+                "total_thoughts": entry["total_thoughts"],
+                "next_thought_needed": next_thought_needed,
+                "history_length": len(_thought_history),
+            }, indent=2)
+
+        # -- submit --
+        @tool
+        def submit(
+            decision: str,
+            side: str = "",
+            confidence: float = 0.5,
+            reasoning: str = "",
+        ) -> str:
+            """Submit your final prediction and end the task.
+
+            After calling submit, do NOT call any more tools.
+
+            Args:
+                decision: Your prediction (e.g. BUY, SELL, YES, NO, or the answer).
+                side: Which outcome (e.g. A, B, or a specific option).
+                confidence: Your confidence between 0 and 1.
+                reasoning: Brief summary of your analysis.
+            """
+            _submitted[0] = True
+            output = {
+                "decision": decision.upper(),
+                "side": side.upper() if side else "",
+                "confidence": max(0.0, min(1.0, confidence)),
+                "reasoning": reasoning,
+            }
+            _submit_output[0] = json.dumps(output)
+            return (
+                f"Prediction submitted: {decision} {side} (conf={confidence:.2f})\n"
+                "You are done. Do NOT call any more tools."
+            )
+
+        # -- bash (only when Docker sandbox is available) --
+        @tool
+        def bash(command: str) -> str:
+            """Execute a bash command in the analysis sandbox.
+
+            Python3 is available. Evolved tools are in /tools/.
+            Example: python3 /tools/ev_calculator.py 0.85 0.796
+
+            Args:
+                command: The bash command to execute.
+            """
+            if not container_name:
+                return "ERROR: No sandbox available (no evolved tools loaded)."
+            try:
+                r = subprocess.run(
+                    ["docker", "exec", "-w", "/tools", container_name,
+                     "bash", "-c", command],
+                    capture_output=True, text=True, timeout=30,
+                )
+                out = (r.stdout or "") + (r.stderr or "")
+                if not out.strip():
+                    return "(no output)"
+                if len(out) > 8000:
+                    out = out[:4000] + "\n...[truncated]...\n" + out[-4000:]
+                return out
+            except subprocess.TimeoutExpired:
+                return "ERROR: Command timed out after 30s."
+            except Exception as e:
+                return f"ERROR: {e}"
+
+        # -- turn limiter --
+        def turn_limiter(event: BeforeToolCallEvent):
+            if _submitted[0]:
+                event.cancel_tool = "Already submitted. No more tool calls."
+                return
+            if event.tool_use.get("name") == "submit":
+                return
+            tool_call_count[0] += 1
+            if tool_call_count[0] > max_turns:
+                event.cancel_tool = (
+                    f"Turn limit reached ({max_turns}). "
+                    "Call submit or give your final answer with \\boxed{ANSWER}."
+                )
+
+        # ── Agent ────────────────────────────────────────────────
+        tools = [sequentialthinking, submit]
+        if not no_web_search:
+            tools.insert(0, web_search)
+        if container_name:
+            tools.insert(-1, bash)  # add bash before submit
+
+        agent = Agent(
+            model=model, system_prompt=system_prompt, tools=tools,
+            callback_handler=None,
+            conversation_manager=SlidingWindowConversationManager(
+                window_size=max_turns * 2 + 10),
+        )
+        agent.hooks.add_callback(BeforeToolCallEvent, turn_limiter)
+
+        t0 = time.time()
+        response = None
+        timed_out = False
+        try:
+            response = agent(prompt)
+        except Exception as e:
+            log.warning("Agent error: %s", e)
+        elapsed = time.time() - t0
+
+        # ── Extract tokens ───────────────────────────────────────
+        try:
+            u = response.metrics.accumulated_usage
+            result["input_tokens"] = u.get("inputTokens", 0)
+            result["output_tokens"] = u.get("outputTokens", 0)
+        except Exception:
+            pass
+
+        # ── Extract conversation ─────────────────────────────────
+        conversation = []
+        try:
+            conversation = _extract_conv(agent.messages)
+        except Exception:
+            pass
+        result["conversation"] = conversation
+
+        # ── Extract final text answer ────────────────────────────
+        raw_response = ""
+        # First check if submit was called
+        if _submit_output[0]:
+            raw_response = _submit_output[0]
+        else:
+            try:
+                if response and hasattr(response, 'message') and response.message:
+                    msg = response.message
+                    if isinstance(msg, dict):
+                        for b in msg.get("content", []):
+                            if isinstance(b, dict) and "text" in b:
+                                raw_response = b["text"]
+                                break
+            except Exception:
+                pass
+        if not raw_response and conversation:
+            for m in reversed(conversation):
+                if m.get("role") == "assistant":
+                    raw_response = m.get("content", "")
+                    break
+
+        solution = raw_response.strip()
+
+        # If no boxed answer in the final response, scan the full conversation
+        # (handles max_tokens truncation where answer may be in an earlier turn)
+        if solution and not re.search(r'\\?boxed\{', solution):
+            for m in reversed(conversation):
+                if m.get("role") == "assistant" and re.search(r'\\?boxed\{', m.get("content", "")):
+                    solution = m["content"].strip()
+                    break
+
+        result["output"] = solution
+        result["elapsed"] = elapsed
+        result["turns"] = tool_call_count[0]
+        result["max_turns_hit"] = tool_call_count[0] >= max_turns
+        result["timed_out"] = timed_out
+        result["submitted"] = _submitted[0]
+
+        # ── Save per-task trajectory ─────────────────────────────
+        sid = task_id.replace("/", "_")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        if conversation:
+            try:
+                (out_dir / f"trajectory_{sid}.json").write_text(
+                    json.dumps(conversation, indent=2, ensure_ascii=False))
+            except Exception:
+                pass
+
+        # ── Evaluate ─────────────────────────────────────────────
+        score = 0.0
+        success = False
+        evaluable = bool(expected_output)
+
+        if evaluable and solution:
+            extracted = _extract_boxed_answer(solution)
+            if extracted:
+                norm = extracted.strip().upper()
+                expected_norm = [str(e).strip().upper() for e in expected_output]
+                if norm in expected_norm:
+                    score = 1.0
+                    success = True
+
+        result["success"] = success
+        result["score"] = score
+        result["detail"] = f"score={score:.1f}" + ("" if evaluable else " (no gt)")
+
+        log.info("Done: score=%.1f turns=%d elapsed=%.1fs", score, tool_call_count[0], elapsed)
+
+    except Exception as e:
+        result["error"] = str(e)
+        result["detail"] = f"Worker error: {e}"
+    finally:
+        stop_sandbox(container_name)
+
+    return result
+
+
+# ─── Helpers ────────────────────────────────────────────────────────────
+
+def _extract_conv(messages):
+    """Extract readable conversation from strands agent messages."""
+    conv = []
+    for msg in messages:
+        role = msg.get("role", "unknown")
+        parts = []
+        for b in msg.get("content", []):
+            if isinstance(b, str):
+                parts.append(b)
+            elif isinstance(b, dict):
+                if "text" in b:
+                    parts.append(b["text"])
+                elif "toolUse" in b:
+                    tu = b["toolUse"]
+                    inp = json.dumps(tu.get("input", {}))
+                    parts.append(f"[tool_use: {tu['name']}]\n{inp}")
+                elif "toolResult" in b:
+                    tr = b["toolResult"]
+                    txt = "".join(
+                        c.get("text", "") for c in tr.get("content", [])
+                        if isinstance(c, dict)
+                    )
+                    parts.append(f"[tool_result]\n{txt}")
+        conv.append({"role": role, "content": "".join(parts)})
+    return conv
+
+
+def _extract_boxed_answer(solution: str) -> Optional[str]:
+    """Extract answer from \\boxed{...} format."""
+    if not solution:
+        return None
+    for pat in [r'\\boxed\{([^}]+)\}', r'boxed\{([^}]+)\}']:
+        matches = re.findall(pat, solution)
+        if matches:
+            return matches[-1].strip()
+    return None
+
+
+def get_benchmark_info() -> Dict[str, Any]:
+    return {
+        "name": "futurex",
+        "description": "FutureX temporal prediction with time-bounded web search",
+        "domains": ["Technology", "Finance", "Sports", "Politics"],
+        "temporal_constraints": True,
+        "requires_search": True,
+    }

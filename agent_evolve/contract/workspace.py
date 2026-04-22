@@ -3,13 +3,35 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+import shutil
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from ..types import SkillMeta
+
+_log = logging.getLogger(__name__)
+
+
+def _parse_jsonl(path: Path) -> list[dict[str, Any]]:
+    """Parse a JSONL file, skipping corrupt lines with a warning."""
+    if not path.exists():
+        return []
+    entries: list[dict[str, Any]] = []
+    with open(path) as f:
+        for lineno, line in enumerate(f, 1):
+            if not line.strip():
+                continue
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                _log.warning("Skipping corrupt line %d in %s: %s",
+                             lineno, path, line.rstrip()[:120])
+    return entries
 
 
 class AgentWorkspace:
@@ -26,6 +48,7 @@ class AgentWorkspace:
         self.drafts_dir = self.skills_dir / "_drafts"
         self.tools_dir = self.root / "tools"
         self.memory_dir = self.root / "memory"
+        self.infra_dir = self.root / "infra"  # V2: framework-run pipelines with network access
         self.evolution_dir = self.root / "evolution"
 
     # ── Prompts ──────────────────────────────────────────────────────
@@ -79,8 +102,6 @@ class AgentWorkspace:
         (skill_dir / "SKILL.md").write_text(content)
 
     def delete_skill(self, name: str) -> None:
-        import shutil
-
         skill_dir = self.skills_dir / name
         if skill_dir.exists():
             shutil.rmtree(skill_dir)
@@ -136,27 +157,16 @@ class AgentWorkspace:
             f.write(json.dumps(entry, default=str) + "\n")
 
     def read_memories(self, category: str = "episodic", limit: int = 100) -> list[dict[str, Any]]:
-        path = self.memory_dir / f"{category}.jsonl"
-        if not path.exists():
-            return []
-        entries: list[dict[str, Any]] = []
-        with open(path) as f:
-            for line in f:
-                if line.strip():
-                    entries.append(json.loads(line))
-        return entries[-limit:]
+        return _parse_jsonl(self.memory_dir / f"{category}.jsonl")[-limit:]
 
     def read_all_memories(self, limit: int = 100) -> list[dict[str, Any]]:
-        all_memories: list[dict[str, Any]] = []
         if not self.memory_dir.exists():
             return []
+        all_memories: list[dict[str, Any]] = []
         for jsonl in sorted(self.memory_dir.glob("*.jsonl")):
-            with open(jsonl) as f:
-                for line in f:
-                    if line.strip():
-                        entry = json.loads(line)
-                        entry.setdefault("_category", jsonl.stem)
-                        all_memories.append(entry)
+            for entry in _parse_jsonl(jsonl):
+                entry.setdefault("_category", jsonl.stem)
+                all_memories.append(entry)
         return all_memories[-limit:]
 
     # ── Harness (optional scaffolding code, mutated by MetaHarness) ──
@@ -173,15 +183,40 @@ class AgentWorkspace:
     # ── Evolution metadata (read-only for agents, managed by engine) ─
 
     def read_evolution_history(self) -> list[dict[str, Any]]:
-        path = self.evolution_dir / "history.jsonl"
-        if not path.exists():
-            return []
-        entries: list[dict[str, Any]] = []
-        with open(path) as f:
-            for line in f:
-                if line.strip():
-                    entries.append(json.loads(line))
-        return entries
+        return _parse_jsonl(self.evolution_dir / "history.jsonl")
+
+    # ── Layer protection ────────────────────────────────────────
+    # V2: enforce gating by snapshotting layer dirs before handing the
+    # workspace to the evolver; restore them on exit to discard any
+    # changes made to disabled layers.
+
+    @contextmanager
+    def protect(self, layers: list[str]):
+        """Snapshot layer dirs on enter; restore on exit, discarding changes."""
+        dir_map = {
+            "prompts": self.prompts_dir,
+            "skills": self.skills_dir,
+            "memory": self.memory_dir,
+            "tools": self.tools_dir,
+            "infra": self.infra_dir,
+        }
+        backups: dict[str, tuple[Path, Path | None]] = {}
+        for layer in layers:
+            src = dir_map[layer]
+            if src.exists():
+                bak = src.with_suffix(".protect_bak")
+                shutil.copytree(src, bak)
+                backups[layer] = (src, bak)
+            else:
+                backups[layer] = (src, None)
+        try:
+            yield
+        finally:
+            for src, bak in backups.values():
+                if src.exists():
+                    shutil.rmtree(src)
+                if bak is not None:
+                    bak.rename(src)
 
     def read_evolution_metrics(self) -> dict[str, Any]:
         path = self.evolution_dir / "metrics.json"

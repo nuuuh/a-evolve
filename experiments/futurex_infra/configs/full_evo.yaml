@@ -1,0 +1,30 @@
+# Experiment: Infrastructure evolution with Opus evolver
+# Starts from ZERO search capability (like H0a) — evolver must build everything
+batch_size: 5
+max_cycles: 20
+holdout_ratio: 0.0
+
+# Prompt + tools only — force evolver to focus on building tools
+evolve_prompts: true
+evolve_skills: false
+evolve_memory: false
+evolve_tools: true
+
+# Strong Opus evolver with 1M token budget
+evolver_model: us.anthropic.claude-opus-4-6-v1
+evolver_max_tokens: 128000
+evolver_temperature: 0.0
+trajectory_only: true
+
+egl_threshold: 0.05
+egl_window: 3
+
+# NO built-in web search — agent starts with only LLM reasoning + bash
+# The evolver must evolve tools/infra that the agent calls via bash
+no_web_search: true
+
+# Standard FutureX settings
+model_name: us.anthropic.claude-sonnet-4-6
+sort_by_timestamp: true
+sandbox_network: host           # solver sandbox: allow tools to access the internet
+evolver_sandbox_network: host   # evolver sandbox: allow API testing during evolution

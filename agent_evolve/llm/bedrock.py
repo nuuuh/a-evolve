@@ -19,17 +19,35 @@ class BedrockProvider(LLMProvider):
 
     def __init__(
         self,
-        model_id: str = "us.anthropic.claude-sonnet-4-20250514-v1:0",
+        model_id: str = "us.anthropic.claude-sonnet-4-6",
         region: str = "us-west-2",
     ):
         try:
             import boto3
+            import os
+            from botocore.config import Config as BotocoreConfig
         except ImportError:
             raise ImportError("pip install boto3  (or: pip install agent-evolve[bedrock])")
 
+        # Clean AWS environment to force IAM instance role usage
+        for key in ['AWS_PROFILE', 'AWS_SHARED_CREDENTIALS_FILE', 'AWS_CONFIG_FILE']:
+            if key in os.environ:
+                del os.environ[key]
+
+        # Clear boto3 session cache to ensure fresh credentials
+        if hasattr(boto3, 'DEFAULT_SESSION') and boto3.DEFAULT_SESSION:
+            boto3.DEFAULT_SESSION = None
+
         self.model_id = model_id
         self.region = region
-        self.client = boto3.client("bedrock-runtime", region_name=region)
+        self.client = boto3.client(
+            "bedrock-runtime",
+            region_name=region,
+            config=BotocoreConfig(
+                read_timeout=600,
+                retries={"max_attempts": 8, "mode": "adaptive"},
+            ),
+        )
 
     def complete(
         self,
@@ -59,6 +77,7 @@ class BedrockProvider(LLMProvider):
         messages: list[LLMMessage],
         tools: list[dict[str, Any]],
         max_tokens: int = 4096,
+        temperature: float = 0.0,
         **kwargs,
     ) -> LLMResponse:
         system_blocks, converse_messages = self._split_messages(messages)
@@ -68,7 +87,7 @@ class BedrockProvider(LLMProvider):
         params: dict[str, Any] = {
             "modelId": self.model_id,
             "messages": converse_messages,
-            "inferenceConfig": {"maxTokens": max_tokens},
+            "inferenceConfig": {"maxTokens": max_tokens, "temperature": temperature},
             "toolConfig": tool_config,
         }
         if system_blocks:
@@ -85,6 +104,8 @@ class BedrockProvider(LLMProvider):
         tool_executor: dict[str, Any],
         max_tokens: int = 16384,
         max_turns: int = 50,
+        temperature: float = 0.0,
+        verbose: bool = False,
     ) -> LLMResponse:
         """Run a multi-turn conversation with tool use until the model stops.
 
@@ -114,7 +135,7 @@ class BedrockProvider(LLMProvider):
             params: dict[str, Any] = {
                 "modelId": self.model_id,
                 "messages": converse_messages,
-                "inferenceConfig": {"maxTokens": max_tokens},
+                "inferenceConfig": {"maxTokens": max_tokens, "temperature": temperature},
             }
             if system_blocks:
                 params["system"] = system_blocks
@@ -138,11 +159,21 @@ class BedrockProvider(LLMProvider):
             for block in output_content:
                 if "text" in block:
                     accumulated_text.append(block["text"])
+                    if verbose:
+                        print(f"\n{'─'*70}")
+                        print(f"🤖 EVOLVER [turn {turn+1}]:")
+                        print(block["text"])
                 elif "toolUse" in block:
                     tool_use = block["toolUse"]
                     tool_name = tool_use["name"]
                     tool_input = tool_use.get("input", {})
                     tool_use_id = tool_use["toolUseId"]
+
+                    if verbose:
+                        print(f"\n{'─'*70}")
+                        print(f"🔧 TOOL CALL: {tool_name}")
+                        for k, v in (tool_input if isinstance(tool_input, dict) else {"input": tool_input}).items():
+                            print(f"   {k}: {v}")
 
                     executor = tool_executor.get(tool_name)
                     if executor:
@@ -152,6 +183,10 @@ class BedrockProvider(LLMProvider):
                             result_text = f"ERROR: {e}"
                     else:
                         result_text = f"ERROR: Unknown tool '{tool_name}'"
+
+                    if verbose:
+                        print(f"📋 RESULT:")
+                        print(str(result_text))
 
                     tool_results.append({
                         "toolResult": {
@@ -173,7 +208,7 @@ class BedrockProvider(LLMProvider):
                 "input_tokens": total_input_tokens,
                 "output_tokens": total_output_tokens,
             },
-            raw=response,
+            raw={"last_response": response, "conversation": converse_messages},
         )
 
     # ── Internal helpers ─────────────────────────────────────────────

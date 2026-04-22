@@ -18,20 +18,40 @@ logger = logging.getLogger(__name__)
 
 
 class Observer:
-    """Collects observations and persists them as JSONL in the evolution/ directory."""
+    """Collects observations and persists them as JSONL in the evolution/ directory.
 
-    def __init__(self, evolution_dir: str | Path):
+    V2 adds:
+    - ``trajectory_only``: when True, suppress ground-truth signals
+      (``success``/``score``/``feedback_detail``/``feedback``) so the
+      evolver must infer improvement opportunities from behaviour alone.
+    - Per-task artifacts on disk (``patch_<tid>.diff`` + ``trajectory_<tid>.json``)
+      so downstream analysis scripts can open individual task outputs
+      without streaming the whole batch JSONL.
+    """
+
+    def __init__(self, evolution_dir: str | Path, *, trajectory_only: bool = False):
         self.evolution_dir = Path(evolution_dir)
+        self.trajectory_only = trajectory_only
         self.observations_dir = self.evolution_dir / "observations"
         self.observations_dir.mkdir(parents=True, exist_ok=True)
         self._batch_id = self._next_batch_id()
 
     def collect(self, observations: list[Observation]) -> Path:
-        """Write a batch of observations to a JSONL file. Returns the file path."""
+        """Write a batch of observations to a JSONL file and per-task artifacts."""
         batch_file = self.observations_dir / f"batch_{self._batch_id:04d}.jsonl"
+        tasks_dir = self.observations_dir / f"batch_{self._batch_id:04d}"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
         with open(batch_file, "w") as f:
             for obs in observations:
-                # Extract claim-level feedback from raw data
+                tid = obs.task.id.replace("/", "_")
+                # Per-task artifacts (V2)
+                (tasks_dir / f"patch_{tid}.diff").write_text(obs.trajectory.output or "")
+                if obs.trajectory.conversation:
+                    (tasks_dir / f"trajectory_{tid}.json").write_text(
+                        json.dumps(obs.trajectory.conversation, indent=2, ensure_ascii=False))
+
+                # Claim-level feedback from raw data
                 claims = []
                 if obs.feedback.raw and "per_claim" in obs.feedback.raw:
                     for claim_data in obs.feedback.raw["per_claim"]:
@@ -44,19 +64,16 @@ class Observer:
                         })
 
                 # Save in nested format for stratified engine
-                record = {
-                    # Keep flat fields for backward compatibility
+                record: dict[str, Any] = {
+                    # Flat fields for backward compatibility
                     "task_id": obs.task.id,
                     "task_input": obs.task.input,
                     "agent_output": obs.trajectory.output,
                     "steps": obs.trajectory.steps,
                     "conversation": obs.trajectory.conversation,
-                    "success": obs.feedback.success,
-                    "score": obs.feedback.score,
-                    "feedback_detail": obs.feedback.detail,
                     "timestamp": datetime.now().isoformat(),
 
-                    # Add nested structure for new engines
+                    # Nested structure for new engines
                     "task": {
                         "id": obs.task.id,
                         "input": obs.task.input,
@@ -66,18 +83,22 @@ class Observer:
                         "output": obs.trajectory.output,
                         "steps": obs.trajectory.steps,
                     },
-                    "feedback": {
+                }
+                if not self.trajectory_only:
+                    record["success"] = obs.feedback.success
+                    record["score"] = obs.feedback.score
+                    record["feedback_detail"] = obs.feedback.detail
+                    record["feedback"] = {
                         "success": obs.feedback.success,
                         "score": obs.feedback.score,
                         "detail": obs.feedback.detail,
                         "claims": claims,
                         "raw": obs.feedback.raw,
-                    },
-                    "steps": obs.trajectory.steps,  # Keep for backward compat
-                }
+                    }
                 f.write(json.dumps(record, default=str) + "\n")
 
-        logger.info("Wrote %d observations to %s", len(observations), batch_file.name)
+        logger.info("Wrote %d observations to %s (artifacts in %s/)",
+                    len(observations), batch_file.name, tasks_dir.name)
         self._batch_id += 1
         return batch_file
 

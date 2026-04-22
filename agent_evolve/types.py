@@ -85,3 +85,87 @@ class EvolutionResult:
     score_history: list[float] = field(default_factory=list)
     converged: bool = False
     details: dict[str, Any] = field(default_factory=dict)
+
+
+# ── Navigation types (--navigation flag) ────────────────────────────────
+
+
+@dataclass
+class FailureClassification:
+    """Evolver's diagnosis of a single task failure.
+
+    Used by F_Evaluate to classify failures as stationary (fix on main)
+    or non-stationary (fix on a branch).
+    """
+
+    task_id: str
+    type: str  # "stationary" or "non_stationary"
+    confidence: float  # 0.0–1.0, evolver's confidence in classification
+    branch: str = ""  # suggested branch name (non-stationary only)
+    reason: str = ""  # human-readable explanation
+
+
+@dataclass
+class RoutingEntry:
+    """Record of one task's routing decision + outcome.
+
+    Accumulated in evolver_workspace/routing_log.jsonl to help the
+    navigator learn which branches work for which task properties.
+    """
+
+    task_id: str
+    properties: dict[str, Any]  # s(x): extracted task properties
+    branch: str  # which branch was selected
+    score: float  # task outcome (0.0 or 1.0)
+    cycle: int = 0  # which evolution cycle
+
+
+@dataclass
+class BranchInfo:
+    """Metadata for one branch in the strategy tree."""
+
+    name: str  # git branch name (e.g., "branch/algebraic-reasoning")
+    created_at_cycle: int = 0
+    last_routed_cycle: int = 0  # last time a task was routed here
+    total_tasks: int = 0
+    total_passed: int = 0
+    description: str = ""  # what this branch specializes in
+
+
+@dataclass
+class StrategyTree:
+    """The full strategy tree state.
+
+    Tracks branches and routing history. Serialized to
+    evolver_workspace/tree_state.json between cycles.
+    """
+
+    branches: list[BranchInfo] = field(default_factory=list)
+    routing_log: list[RoutingEntry] = field(default_factory=list)
+
+    def branch_names(self) -> list[str]:
+        return [b.name for b in self.branches]
+
+    def get_branch(self, name: str) -> BranchInfo | None:
+        for b in self.branches:
+            if b.name == name:
+                return b
+        return None
+
+    def to_dict(self) -> dict:
+        return {
+            "branches": [
+                {"name": b.name, "created_at_cycle": b.created_at_cycle,
+                 "last_routed_cycle": b.last_routed_cycle,
+                 "total_tasks": b.total_tasks, "total_passed": b.total_passed,
+                 "description": b.description}
+                for b in self.branches
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "StrategyTree":
+        tree = cls()
+        for b in d.get("branches", []):
+            tree.branches.append(BranchInfo(**b))
+        return tree

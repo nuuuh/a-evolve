@@ -20,20 +20,35 @@ class VersionControl:
         self.root = Path(workspace_root).resolve()
 
     def init(self) -> None:
-        """Initialize a git repo in the workspace (idempotent)."""
+        """Initialize a git repo in the workspace (idempotent).
+
+        V2 forces the default branch to ``main`` so the navigation
+        branch API (``create_branch``/``checkout_branch(\"main\")``) works
+        on systems where git still defaults to ``master``.
+        """
         if not (self.root / ".git").exists():
             logger.info("Initializing git repo at %s", self.root)
-            self._git("init")
+            self._git("init", "-b", "main")
             self._git("config", "user.email", "evolver@agent-evolve")
             self._git("config", "user.name", "Agent Evolve")
 
         self._git("add", "-A")
         try:
-            self._git("commit", "-m", "Initial workspace state")
-            self._git("tag", "evo-0")
+            # --allow-empty handles workspaces with no files yet
+            self._git("commit", "--allow-empty", "-m", "Initial workspace state")
+            self._git("tag", "-f", "evo-0")
             logger.info("Created initial commit with tag evo-0")
         except RuntimeError:
             pass  # already committed
+
+        # Ensure we're on 'main' (older git defaults to 'master' even when
+        # ``-b main`` is unsupported — rename if so).
+        try:
+            current = self._git("rev-parse", "--abbrev-ref", "HEAD")
+            if current == "master":
+                self._git("branch", "-m", "master", "main")
+        except RuntimeError:
+            pass  # HEAD doesn't exist yet
 
     def commit(self, message: str, tag: str | None = None) -> None:
         self._git("add", "-A")
@@ -91,6 +106,72 @@ class VersionControl:
     def remove_copy(self, dest: Path) -> None:
         """Remove a working copy created by :meth:`checkout_copy`."""
         self._git("worktree", "remove", str(dest), "--force")
+
+    # ── Branch operations (for --navigation strategy tree) ──────────
+
+    def create_branch(self, name: str, from_ref: str = "HEAD") -> None:
+        """Create a new branch from *from_ref* and switch to it."""
+        self._git("checkout", "-b", name, from_ref)
+
+    def checkout_branch(self, name: str) -> None:
+        """Switch to an existing branch (or 'main')."""
+        self._git("checkout", name)
+
+    def merge_branch(self, source: str, target: str = "main") -> None:
+        """Merge *source* branch into *target*.
+
+        On conflict, accepts the source branch's version (the promoted
+        specialization takes priority over root's version of the same file).
+        """
+        current = self.get_current_branch()
+        if current != target:
+            self._git("checkout", target)
+        try:
+            self._git("merge", source, "-X", "theirs",
+                       "-m", f"promote {source} into {target}")
+        except RuntimeError:
+            # If merge still fails, abort
+            try:
+                self._git("merge", "--abort")
+            except RuntimeError:
+                pass
+        finally:
+            if current != target:
+                self._git("checkout", current)
+
+    def rebase_branch(self, branch: str, onto: str = "main") -> None:
+        """Rebase *branch* onto *onto* so it inherits latest root changes."""
+        current = self.get_current_branch()
+        self._git("checkout", branch)
+        try:
+            self._git("rebase", onto)
+        except RuntimeError:
+            # Conflict — abort and leave branch as-is
+            self._git("rebase", "--abort")
+        finally:
+            self._git("checkout", current)
+
+    def list_branches(self) -> list[str]:
+        """Return all branch names except 'main' (or 'master')."""
+        output = self._git("branch", "--format=%(refname:short)")
+        return [b.strip() for b in output.splitlines()
+                if b.strip() and b.strip() not in ("main", "master")]
+
+    def delete_branch(self, name: str) -> None:
+        """Delete a branch (must not be checked out)."""
+        self._git("branch", "-D", name)
+
+    def get_current_branch(self) -> str:
+        """Return the name of the currently checked-out branch."""
+        return self._git("rev-parse", "--abbrev-ref", "HEAD")
+
+    def branch_exists(self, name: str) -> bool:
+        """Check if a branch exists."""
+        try:
+            self._git("rev-parse", "--verify", name)
+            return True
+        except RuntimeError:
+            return False
 
     def _git(self, *args: str) -> str:
         result = subprocess.run(
