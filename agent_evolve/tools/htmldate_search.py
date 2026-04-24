@@ -247,13 +247,27 @@ def htmldate_filtered_search(
         return result
 
     results = []
-    with ThreadPoolExecutor(max_workers=fetch_workers) as pool:
-        futures = {pool.submit(_process_one, r): r for r in raw_results}
-        for future in as_completed(futures):
+    # Guard every executor.submit/as_completed path against interpreter
+    # shutdown. The outer caller may have been abandoned by a batch
+    # deadline; if so, atexit is already running and submit() raises
+    # RuntimeError("cannot schedule new futures after interpreter
+    # shutdown"). Bail gracefully instead of surfacing the warning.
+    try:
+        with ThreadPoolExecutor(max_workers=fetch_workers) as pool:
             try:
-                results.append(future.result())
-            except Exception:
-                pass
+                futures = {pool.submit(_process_one, r): r for r in raw_results}
+            except RuntimeError:
+                return []
+            try:
+                for future in as_completed(futures):
+                    try:
+                        results.append(future.result())
+                    except Exception:
+                        pass
+            except RuntimeError:
+                return results
+    except RuntimeError:
+        return results
 
     # Preserve original search ranking
     url_order = {r.get("href", ""): i for i, r in enumerate(raw_results)}

@@ -103,7 +103,7 @@ class BedrockProvider(LLMProvider):
         tools: list[dict[str, Any]],
         tool_executor: dict[str, Any],
         max_tokens: int = 16384,
-        max_turns: int = 50,
+        max_turns: int | None = None,
         temperature: float = 0.0,
         verbose: bool = False,
     ) -> LLMResponse:
@@ -117,7 +117,12 @@ class BedrockProvider(LLMProvider):
             tools: Tool definitions in Bedrock format.
             tool_executor: Dict mapping tool names to callable functions.
             max_tokens: Max tokens per turn.
-            max_turns: Safety limit on conversation turns.
+            max_turns: Optional safety cap on conversation turns.  ``None``
+                (default) means "loop until the model emits a non-``tool_use``
+                stop reason" — appropriate for evolution-time calls where
+                we want the LLM to complete its full workplan rather than
+                be truncated.  Pass an int to bound for debugging or cost
+                control.
 
         Returns:
             Final LLMResponse with the accumulated text output.
@@ -131,7 +136,8 @@ class BedrockProvider(LLMProvider):
         total_output_tokens = 0
         accumulated_text: list[str] = []
 
-        for turn in range(max_turns):
+        turn = 0
+        while max_turns is None or turn < max_turns:
             params: dict[str, Any] = {
                 "modelId": self.model_id,
                 "messages": converse_messages,
@@ -197,6 +203,7 @@ class BedrockProvider(LLMProvider):
 
             if stop_reason == "tool_use" and tool_results:
                 converse_messages.append({"role": "user", "content": tool_results})
+                turn += 1
                 continue
 
             # Model finished (end_turn or max_tokens)

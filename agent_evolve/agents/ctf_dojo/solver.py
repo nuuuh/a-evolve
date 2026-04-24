@@ -396,6 +396,18 @@ def solve_one(task_dict: dict, args_dict: dict) -> dict:
         )
         agent.hooks.add_callback(BeforeToolCallEvent, turn_limiter)
 
+        # Persist a partial trajectory after every tool call so the harness
+        # can recover real state for Futures cancelled by the batch deadline.
+        from agent_evolve.agents._partial_trajectory import install_partial_writer
+        install_partial_writer(
+            agent,
+            task_id=task_id,
+            out_dir=out_dir,
+            turn_counter=tool_call_count,
+            start_time=t0,
+            extract_conversation=lambda a: _extract_conv(a.messages),
+        )
+
         # signal.alarm already set before Docker setup (line ~402)
 
         response = None
@@ -446,6 +458,13 @@ def solve_one(task_dict: dict, args_dict: dict) -> dict:
                     json.dumps(conversation, indent=2, ensure_ascii=False))
             except Exception:
                 pass
+        try:
+            from agent_evolve.agents._partial_trajectory import clear_partial_trajectory
+            final_partial = clear_partial_trajectory(out_dir, task_id)
+            if final_partial and final_partial.get("tool_timings"):
+                result["tool_timings"] = final_partial["tool_timings"]
+        except Exception:
+            pass
 
         # Evaluate
         if args_dict.get("run_eval", True):

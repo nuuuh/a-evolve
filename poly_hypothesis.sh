@@ -31,6 +31,7 @@ SOLVER_TEMP=0
 BRANCH_CONFIDENCE=0.7
 SUFFIX=""
 NO_INFRA_EVO=true
+MAX_TASKS=0
 TARGETS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -40,6 +41,7 @@ while [ $# -gt 0 ]; do
     --branch-confidence)   BRANCH_CONFIDENCE="$2"; shift 2 ;;
     --suffix)              SUFFIX="$2"; shift 2 ;;
     --no-infra-evo)        NO_INFRA_EVO=true; shift ;;
+    --limit)               MAX_TASKS="$2"; shift 2 ;;
     *)                     TARGETS+=("$1"); shift ;;
   esac
 done
@@ -59,6 +61,9 @@ echo "Database: $DB_PATH ($TASK_COUNT resolved markets)"
 
 # Build extra args from options
 EXTRA_ARGS="--batch-size $BATCH_SIZE --evolver-temp $EVOLVER_TEMP --solver-temp $SOLVER_TEMP --branch-confidence $BRANCH_CONFIDENCE"
+if [ "$MAX_TASKS" -gt 0 ]; then
+  EXTRA_ARGS="$EXTRA_ARGS --limit $MAX_TASKS"
+fi
 
 # PolyBench is pure reasoning (no Docker), so lower timeouts and more workers.
 COMMON="python solve_all_with_evolution.py
@@ -118,11 +123,24 @@ run H3 late_start \
   --output-dir "results/polybench_late_start${SUFFIX}" \
   --config experiments/polybench/configs/late_start.yaml
 
-# H4: Navigation - decoupled evolution with strategy tree
+# H4: Navigation - inline branching + task routing (no multi-agent)
 run H4 navigation \
   --navigation \
   --output-dir "results/polybench_navigation${SUFFIX}" \
   --config experiments/polybench/configs/navigation.yaml
+
+# H4_smoke: Navigation smoke test (~51 tasks spanning full timeline, small batches)
+run H4_smoke navigation_smoke \
+  --navigation \
+  --stride 237 --batch-size 10 \
+  --output-dir results/polybench_nav_smoke \
+  --config experiments/polybench/configs/navigation.yaml
+
+# H4_multi: Navigation + multi-agent orchestrated evolution
+run H4_multi navigation_multi \
+  --navigation \
+  --output-dir "results/polybench_navigation_multi${SUFFIX}" \
+  --config experiments/polybench/configs/navigation_multi.yaml
 
 # ─── Summary ──────────────────────────────────────────────────────────
 echo ""

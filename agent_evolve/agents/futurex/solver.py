@@ -390,33 +390,54 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
             Searches DDGS, fetches HTML for each result, extracts publication
             date with htmldate, and drops anything published on/after cutoff.
 
-            Uses the module-level _search_lock to throttle DDGS across the
-            Wikipedia + DDGS calls within this worker process.
+            The whole call is wrapped in a wall-clock via
+            ``concurrent.futures`` so a stuck htmldate thread cannot leak
+            past the outer batch deadline. Without this bound, interpreter
+            shutdown races the inner ``ThreadPoolExecutor`` and produces
+            post-summary ``cannot schedule new futures after interpreter
+            shutdown`` warnings.
             """
             if not _htmldate_available:
                 return []
+            import concurrent.futures as _cf
+
+            executor = _cf.ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="htmldate-wall",
+            )
             try:
-                # DDGS throttling is handled by htmldate_search's file-based lock
-                raw = htmldate_filtered_search(
+                future = executor.submit(
+                    htmldate_filtered_search,
                     query=query,
                     cutoff_date=_date_end,
                     max_results=limit,
                     fetch_timeout=8.0,
                     fetch_workers=3,
                 )
-                results = []
-                for r in raw:
-                    title = r.get("title", "").strip()
-                    snippet = r.get("snippet", "").strip()
-                    pub = r.get("published_date") or ""
-                    if snippet:
-                        source = f"[Web {pub}]" if pub else "[Web]"
-                        results.append(f"{title}\n   {source} {snippet}")
-                log.info("htmldate: %r -> %d results", query[:50], len(results))
-                return results
-            except Exception as e:
-                log.warning("htmldate search failed for %r: %s", query[:50], e)
-                return []
+                try:
+                    raw = future.result(timeout=30)
+                except _cf.TimeoutError:
+                    future.cancel()
+                    log.warning(
+                        "htmldate search timed out for %r (>30s)", query[:50],
+                    )
+                    return []
+                except Exception as e:
+                    log.warning("htmldate search failed for %r: %s", query[:50], e)
+                    return []
+            finally:
+                # Don't block interpreter shutdown if the worker is stuck.
+                executor.shutdown(wait=False, cancel_futures=True)
+
+            results = []
+            for r in raw:
+                title = r.get("title", "").strip()
+                snippet = r.get("snippet", "").strip()
+                pub = r.get("published_date") or ""
+                if snippet:
+                    source = f"[Web {pub}]" if pub else "[Web]"
+                    results.append(f"{title}\n   {source} {snippet}")
+            log.info("htmldate: %r -> %d results", query[:50], len(results))
+            return results
 
         def _fred_search(query):
             """FRED API — fetch economic time series value before cutoff."""
@@ -757,6 +778,20 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
         agent.hooks.add_callback(BeforeToolCallEvent, turn_limiter)
 
         t0 = time.time()
+        # After every tool call, persist a partial trajectory snapshot so
+        # the harness can recover real state for tasks whose Future is
+        # cancelled by the batch deadline (see solve_all_with_evolution.py
+        # and agents/_partial_trajectory.py).
+        from agent_evolve.agents._partial_trajectory import install_partial_writer
+        install_partial_writer(
+            agent,
+            task_id=task_id,
+            out_dir=out_dir,
+            turn_counter=tool_call_count,
+            start_time=t0,
+            extract_conversation=lambda a: _extract_conv(a.messages),
+        )
+
         response = None
         timed_out = False
         try:
@@ -829,6 +864,17 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                     json.dumps(conversation, indent=2, ensure_ascii=False))
             except Exception:
                 pass
+        # Task finished cleanly — drop the partial snapshot so downstream
+        # enrichment won't mistakenly treat this as cut-off next cycle.
+        # Also carry forward tool_timings so the evolver can see per-tool
+        # latency (the real bottleneck on this benchmark).
+        try:
+            from agent_evolve.agents._partial_trajectory import clear_partial_trajectory
+            final_partial = clear_partial_trajectory(out_dir, task_id)
+            if final_partial and final_partial.get("tool_timings"):
+                result["tool_timings"] = final_partial["tool_timings"]
+        except Exception:
+            pass
 
         # ── Evaluate ─────────────────────────────────────────────
         score = 0.0

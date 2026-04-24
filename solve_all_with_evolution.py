@@ -87,6 +87,46 @@ def _append_result(out_dir: Path, result: dict):
         f.write(json.dumps(result, default=str) + "\n")
 
 
+def _enrich_from_partial(
+    result: dict,
+    out_dir: Path,
+    task_id: str,
+    *,
+    cut_off_reason: str,
+) -> None:
+    """Merge a worker's partial trajectory snapshot into a cancelled record.
+
+    Solvers persist ``out_dir/partial_{sid}.json`` after every tool call
+    (see agent_evolve/agents/_partial_trajectory.py).  When a Future is
+    cancelled by the batch deadline or per-task timeout, the on-disk
+    snapshot has the real turn count + conversation at the moment of
+    cancellation.  This helper reads it and merges those fields into
+    the synthetic record so the evolver sees authentic liveness signal
+    rather than a fabricated ``turns: 0``.
+
+    Note: does NOT overwrite success/score/feedback fields.  The
+    trajectory-only privacy gate in ``Observer.collect`` continues to
+    strip those from the JSONL the evolver reads.
+    """
+    try:
+        from agent_evolve.agents._partial_trajectory import read_partial_trajectory
+        partial = read_partial_trajectory(out_dir, task_id)
+    except Exception:
+        partial = None
+    result["status"] = "cut_off"
+    result["cut_off_reason"] = cut_off_reason
+    if partial:
+        result["turns"] = int(partial.get("turns", 0))
+        result["conversation"] = partial.get("conversation", []) or []
+        result["partial_elapsed"] = float(partial.get("elapsed", 0.0))
+        result["tool_timings"] = partial.get("tool_timings", []) or []
+        result["detail"] = (
+            f"Cut off mid-run ({cut_off_reason}): "
+            f"{result['turns']} turn(s) completed in "
+            f"{result['partial_elapsed']:.0f}s"
+        )
+
+
 # ── Main orchestrator ─────────────────────────────────────────────────
 
 def main():
@@ -113,6 +153,10 @@ def main():
                    help="Evolution config YAML")
     p.add_argument("--trajectory-only", action="store_true", default=False,
                    help="Hide ground-truth labels from evolver (trajectory-only evolution)")
+    p.add_argument("--temporal-reveal", action="store_true", default=False,
+                   help="Reveal labels per-task iff task.resolution_date <= "
+                        "batch creation-date watermark.  Orthogonal to "
+                        "--trajectory-only; when set, per-task gate wins.")
     p.add_argument("--solver-temp", type=float, default=None,
                    help="Solver LLM temperature")
     p.add_argument("--evolver-temp", type=float, default=None,
@@ -127,6 +171,8 @@ def main():
                    help="Disable infra/ evolution (changes will be reverted)")
     p.add_argument("--evolver-prompt", type=str, default=None,
                    help="Path to custom evolver system prompt (.md file)")
+    p.add_argument("--stride", type=int, default=1,
+                   help="Take every Nth task for temporal spread (smoke tests)")
     # Pass-through for benchmark-specific args
     p.add_argument("--dataset", type=str, default=None)
     p.add_argument("--docker-image", type=str, default=None)
@@ -160,6 +206,8 @@ def main():
     cleanup_fn = env.get("cleanup")
 
     all_tasks = benchmark.get_tasks(split=args.split, limit=args.limit)
+    if args.stride > 1:
+        all_tasks = all_tasks[::args.stride]
     log.info("Loaded %d tasks", len(all_tasks))
 
     # Resume
@@ -188,6 +236,8 @@ def main():
         config = EvolveConfig.from_yaml(args.config) if args.config else EvolveConfig()
         if args.trajectory_only:
             config.trajectory_only = True
+        if args.temporal_reveal:
+            config.temporal_reveal = True
         if args.evolver_temp is not None:
             config.evolver_temperature = args.evolver_temp
         if args.branch_confidence is not None:
@@ -199,21 +249,38 @@ def main():
         config.extra.setdefault("region", args.region)
         if args.verbose:
             config.extra["verbose"] = True
-        observer = Observer(evo_dir, trajectory_only=config.trajectory_only)
+        observer = Observer(
+            evo_dir,
+            trajectory_only=config.trajectory_only,
+            temporal_reveal=config.temporal_reveal,
+        )
         evo_trigger_threshold = config.extra.get("evo_trigger_threshold", 0.0)
 
-        # Navigation (--navigation flag)
+        # Navigation (--navigation flag) + plan-driven (config: orchestrator)
+        # The plan-driven evolution template can run with or without
+        # navigation-based task routing:
+        #   --navigation only            -> inline template, branching + routing
+        #   orchestrator=plan_driven     -> orchestrated template (no routing
+        #                                   unless --navigation is also set)
+        #   --navigation + plan_driven   -> orchestrated template + routing
         navigation_enabled = args.navigation or config.navigation_enabled
-        if navigation_enabled:
-            from agent_evolve.algorithms.aevolve.navigation import NavigationEngine
-            evolver = NavigationEngine(config)
+        # Keep config in sync with CLI flag so downstream templates (which
+        # only see config, not args) can check navigation_enabled.
+        config.navigation_enabled = navigation_enabled
+        orchestrator_type = config.extra.get("orchestrator", "")
+        multi_agent = orchestrator_type == "plan_driven"
+        if navigation_enabled or multi_agent:
+            from agent_evolve.algorithms.navigation import NavigationEngine
+            mode = "orchestrated" if multi_agent else "inline"
+            if mode == "orchestrated":
+                log.info("Evolution template: orchestrated (plan-driven)")
+            evolver = NavigationEngine(config, mode=mode)
         else:
             evolver = AEvolveEngine(config)
         strategy_tree = None
         routing_log_path = None
-        if navigation_enabled:
+        if navigation_enabled or multi_agent:
             from agent_evolve.types import StrategyTree
-            routing_log_path = out_dir / "routing_log.jsonl"
             tree_state_path = out_dir / "tree_state.json"
             if tree_state_path.exists():
                 strategy_tree = StrategyTree.from_dict(
@@ -222,7 +289,11 @@ def main():
                          len(strategy_tree.branches))
             else:
                 strategy_tree = StrategyTree()
-            log.info("Navigation ENABLED (routing_log: %s)", routing_log_path)
+            if navigation_enabled:
+                routing_log_path = out_dir / "routing_log.jsonl"
+                log.info("Navigation ENABLED (routing_log: %s)", routing_log_path)
+            else:
+                log.info("Multi-agent evolution (no task routing)")
 
         # Batching
         batch_size = args.batch_size or config.batch_size
@@ -318,6 +389,12 @@ def main():
                     except Exception as e:
                         log.warning("Branch %s checkout failed, using main: %s",
                                     branch_name, e)
+                        if strategy_tree is not None:
+                            b = strategy_tree.get_branch(branch_name)
+                            if b is not None:
+                                b.failed_checkouts = (
+                                    getattr(b, "failed_checkouts", 0) + 1
+                                )
                         versioning.checkout_branch("main")
                         agent.reload_from_fs()
                 elif navigation_enabled:
@@ -371,6 +448,8 @@ def main():
                                  "detail": f"Timed out (>{args.task_timeout}s)",
                                  "elapsed": args.task_timeout, "error": "timeout",
                                  "batch_num": batch_num, "evo_cycle": evo_cycle}
+                            _enrich_from_partial(r, out_dir, iid,
+                                                 cut_off_reason="per_task_timeout")
                         except Exception as e:
                             log.error("CRASH %s: %s", iid, e)
                             r = {"instance_id": iid, "success": False, "score": 0.0,
@@ -398,12 +477,20 @@ def main():
                                  "detail": "Hung past batch deadline",
                                  "elapsed": args.task_timeout, "error": "hung",
                                  "batch_num": batch_num, "evo_cycle": evo_cycle}
+                            _enrich_from_partial(r, out_dir, iid,
+                                                 cut_off_reason="batch_deadline")
                             batch_results.append(r)
                             results.append(r)
                             _append_result(out_dir, r)
             finally:
-                # Force-kill the pool.  pool.shutdown(wait=True) would hang
-                # forever if any worker is stuck, so kill workers first.
+                # Force-kill the pool. pool.shutdown(wait=True) would hang
+                # forever if any PROCESS worker is stuck, so kill process
+                # workers first. Thread workers can't be killed, but each
+                # htmldate call is wall-clocked (30s cap) so we can
+                # safely wait for them to drain — avoiding a
+                # shutdown-race that would otherwise surface as
+                # "cannot schedule new futures after interpreter shutdown"
+                # post-SUMMARY warnings.
                 _hung_ids = set(futures.values()) - completed_ids if futures else set()
                 if _hung_ids and executor_type == "process":
                     log.warning("Killing %d hung worker(s)", len(_hung_ids))
@@ -413,7 +500,11 @@ def main():
                             _os.kill(_child.pid, _sig.SIGKILL)
                         except (OSError, AttributeError):
                             pass
-                pool.shutdown(wait=not _hung_ids, cancel_futures=True)
+                    pool.shutdown(wait=False, cancel_futures=True)
+                elif executor_type == "thread":
+                    pool.shutdown(wait=True, cancel_futures=True)
+                else:
+                    pool.shutdown(wait=not _hung_ids, cancel_futures=True)
 
             # Clean up leaked Docker containers so the next batch starts clean.
             try:
@@ -480,17 +571,30 @@ def main():
                     sid = iid.replace("/", "_")
                     p = out_dir / f"patch_{sid}.diff"
                     output = p.read_text() if p.exists() else ""
+                conv = r.get("conversation", []) or []
                 steps = [{
-                    "conversation": r.get("conversation", []),
+                    "conversation": conv,
                     "usage": {
                         "input_tokens": r.get("input_tokens", 0),
                         "output_tokens": r.get("output_tokens", 0),
                     },
                     "tool_call_count": r.get("turns", 0),
+                    # Per-tool latency so the evolver can see which tools
+                    # are actually slow (the real bottleneck) rather than
+                    # inferring "too many turns" from trajectory lengths.
+                    "tool_timings": r.get("tool_timings", []),
+                    # Liveness metadata — surfaces to the evolver via
+                    # build_evolution_prompt; not evaluation signal.
+                    "status": r.get("status"),
+                    "cut_off_reason": r.get("cut_off_reason"),
+                    "partial_elapsed": r.get("partial_elapsed"),
                 }]
                 observations.append(Observation(
                     task=task,
-                    trajectory=Trajectory(task_id=iid, output=output, steps=steps),
+                    trajectory=Trajectory(
+                        task_id=iid, output=output,
+                        steps=steps, conversation=conv,
+                    ),
                     feedback=Feedback(
                         success=r.get("success", False),
                         score=r.get("score", 0.0),
@@ -500,7 +604,37 @@ def main():
                 ))
             # ── Evolution cycle ───────────────────────────────────
             agent.export_to_fs()
+            # Temporal-reveal mode: the in-simulation "now" between this
+            # batch and the next is the *earliest* creation_date of the
+            # upcoming batch.  Using the earliest (min) is what prevents
+            # evaluation leakage — any past task whose resolution comes
+            # strictly before the next batch's first task was posed is
+            # fair game; anything resolving later would leak into the
+            # agent's reasoning for that first next-batch task.
+            # If this is the last batch there's no evolution cycle
+            # afterwards, so watermark doesn't matter.
+            watermark = None
+            if config.temporal_reveal:
+                from agent_evolve.engine.observer import _parse_iso_tolerant
+                next_idx = batch_idx + 1
+                if next_idx < len(batches):
+                    next_dates = []
+                    for t in batches[next_idx]:
+                        meta = t.metadata or {}
+                        raw = meta.get("creation_date") or meta.get("timestamp")
+                        dt = _parse_iso_tolerant(raw)
+                        if dt is not None:
+                            next_dates.append(dt)
+                    if next_dates:
+                        watermark = min(next_dates)
+                observer.set_batch_timestamp(watermark)
             observer.collect(observations)
+            # Cumulative reveal: any past task whose resolution_date has
+            # now slipped under the watermark gets surfaced to the
+            # evolver via the supplement file.  Logs a reveal-update
+            # block showing newly-revealed tasks + the running total.
+            if config.temporal_reveal:
+                observer.update_reveal_state(cycle=evo_cycle, watermark=watermark)
             batch_score = batch_passed / batch_total
             pre_evo_msg = (f"pre-evo-{evo_cycle}: checkpoint"
                           if config.trajectory_only
@@ -523,9 +657,13 @@ def main():
                           if evo_start_cycle > 0 and evo_cycle < evo_start_cycle
                           else f"score {batch_score:.2f} >= {evo_trigger_threshold:.2f}")
                 log.info("Skipping evolution cycle %d (%s)", evo_cycle, reason)
-            elif navigation_enabled and strategy_tree is not None:
-                # Decoupled evolution: classify failures → deepen main / branch
-                log.info("Navigation evolution cycle %d...", evo_cycle)
+            elif strategy_tree is not None:
+                # Decoupled evolution: classify failures → deepen main / branch.
+                # Entered when navigation is enabled or when plan-driven
+                # multi-agent evolution was requested without routing.
+                label = ("Navigation evolution"
+                         if navigation_enabled else "Multi-agent evolution")
+                log.info("%s cycle %d...", label, evo_cycle)
                 try:
                     evo_result = evolver.evolve_with_navigation(
                         solver_workspace=agent.workspace,
@@ -537,11 +675,11 @@ def main():
                     mutated = evo_result.get("mutated", False)
                     plan = evo_result.get("plan", {})
                     nav_trajectory = evo_result.get("trajectory", [])
-                    log.info("Nav evo: plan=%s, branches=%s",
+                    log.info("Evo: plan=%s, branches=%s",
                              plan.get("summary", ""),
                              evo_result.get("branches", []))
                 except Exception as e:
-                    log.error("Navigation evolution failed: %s", e)
+                    log.error("%s failed: %s", label, e)
                 # Persist strategy tree for resume
                 (out_dir / "tree_state.json").write_text(
                     json.dumps(strategy_tree.to_dict(), indent=2))

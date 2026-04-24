@@ -239,7 +239,17 @@ class AEvolveEngine(EvolutionEngine):
         can read/write both.
         """
         network = self.config.extra.get("evolver_sandbox_network", "none")
-        sandbox = make_workspace_bash(workspace_root, evolver_workspace, network=network)
+        # Mount the safe trajectories subtree (conversation + patch only).
+        # Ground-truth-bearing observations/*.jsonl is deliberately not
+        # mounted: the evolver must infer from behaviour alone.
+        trajectories_dir = Path(workspace_root) / "evolution" / "trajectories"
+        trajectories_dir.mkdir(parents=True, exist_ok=True)
+        sandbox = make_workspace_bash(
+            workspace_root,
+            evolver_workspace,
+            network=network,
+            trajectories_dir=trajectories_dir,
+        )
         sys_prompt = system_prompt or self.config.extra.get("evolver_system_prompt") or DEFAULT_EVOLVER_SYSTEM_PROMPT
 
         # Build tool list: always include bash, optionally add human interaction

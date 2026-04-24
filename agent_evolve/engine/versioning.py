@@ -109,9 +109,42 @@ class VersionControl:
 
     # ── Branch operations (for --navigation strategy tree) ──────────
 
+    @staticmethod
+    def is_valid_ref_name(name: str) -> bool:
+        """Return True if *name* is a legal git branch name.
+
+        Delegates to ``git check-ref-format --branch`` which is the
+        authoritative check (handles disallowed characters, ``..``,
+        leading ``-``, leading/trailing dots, etc.).
+        """
+        if not name or not isinstance(name, str):
+            return False
+        # check-ref-format --branch enforces the "branch name"
+        # restriction (e.g. no '@{', no '\\', …). It exits 0 for legal
+        # names and non-zero otherwise.
+        try:
+            result = subprocess.run(
+                ["git", "check-ref-format", "--branch", name],
+                capture_output=True, text=True, timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return result.returncode == 0
+
     def create_branch(self, name: str, from_ref: str = "HEAD") -> None:
-        """Create a new branch from *from_ref* and switch to it."""
+        """Create a new branch from *from_ref* and switch to it.
+
+        Raises ``ValueError`` for names that are not legal git refs and
+        ``RuntimeError`` if the branch is somehow not present after
+        ``git checkout -b`` (i.e. git silently didn't create it).
+        """
+        if not self.is_valid_ref_name(name):
+            raise ValueError(f"Invalid git branch name: {name!r}")
         self._git("checkout", "-b", name, from_ref)
+        if not self.branch_exists(name):
+            raise RuntimeError(
+                f"Branch {name!r} not present after create"
+            )
 
     def checkout_branch(self, name: str) -> None:
         """Switch to an existing branch (or 'main')."""

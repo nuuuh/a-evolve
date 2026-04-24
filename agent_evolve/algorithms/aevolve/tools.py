@@ -102,10 +102,14 @@ class EvolverSandbox:
         workspace_root: str | Path,
         evolver_workspace: str | Path | None = None,
         network: str = "none",
+        trajectories_dir: str | Path | None = None,
     ):
         self.workspace_root = Path(workspace_root).resolve()
         self.evolver_workspace = (
             Path(evolver_workspace).resolve() if evolver_workspace else None
+        )
+        self.trajectories_dir = (
+            Path(trajectories_dir).resolve() if trajectories_dir else None
         )
         self.container_name = f"evolver-sandbox-{id(self)}"
         self.network = network
@@ -129,6 +133,28 @@ class EvolverSandbox:
         if self.evolver_workspace:
             mounts += ["-v", f"{self.evolver_workspace}:/evolver_workspace"]
             work_dir = "/evolver_workspace"
+
+        # Mask the ground-truth observations tree with a tmpfs so the
+        # evolver cannot read success/score/feedback even though the
+        # solver workspace itself is mounted RW. This is a defence-in-
+        # depth complement to the /trajectories:ro mount below: the
+        # only way for the evolver to reach observer data is via the
+        # privacy-safe trajectories/ + patches tree.
+        mounts += ["--tmpfs", "/solver_workspace/evolution/observations"]
+        if self.evolver_workspace:
+            mounts += [
+                "--tmpfs", "/evolver_workspace/evolution/observations",
+            ]
+
+        # Read-only trajectories mount. Evolution ground truth
+        # (success/score/feedback in batch_*.jsonl) is masked above and
+        # is deliberately NOT exposed here — the evolver must infer
+        # from behaviour alone.
+        if self.trajectories_dir:
+            mounts += [
+                "-v",
+                f"{self.trajectories_dir}:/trajectories:ro",
+            ]
 
         result = subprocess.run(
             [
@@ -202,14 +228,18 @@ def make_workspace_bash(
     workspace_root: str | Path,
     evolver_workspace: str | Path | None = None,
     network: str = "none",
+    trajectories_dir: str | Path | None = None,
 ) -> EvolverSandbox:
     """Create a Docker sandbox for the evolver's workspace_bash tool.
 
     Returns a sandbox with:
     - /solver_workspace → workspace_root (always mounted)
     - /evolver_workspace → evolver_workspace (only when --navigation)
+    - /trajectories → trajectories_dir (read-only, ground-truth-free)
 
-    The evolver cannot access any files outside these mounts.
+    The evolver cannot access any files outside these mounts. In
+    particular, evolution/observations/ (ground-truth-bearing) is never
+    mounted.
 
     Raises RuntimeError if Docker is not available — there is no insecure
     fallback.
@@ -231,7 +261,8 @@ def make_workspace_bash(
 
     logger.info("Evolver using Docker sandbox (network=%s)", network)
     ew = Path(evolver_workspace).resolve() if evolver_workspace else None
-    return EvolverSandbox(root, ew, network=network)
+    td = Path(trajectories_dir).resolve() if trajectories_dir else None
+    return EvolverSandbox(root, ew, network=network, trajectories_dir=td)
 
 
 def create_default_llm(config: EvolveConfig) -> LLMProvider:

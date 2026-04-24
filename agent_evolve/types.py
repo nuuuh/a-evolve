@@ -130,6 +130,10 @@ class BranchInfo:
     total_tasks: int = 0
     total_passed: int = 0
     description: str = ""  # what this branch specializes in
+    # Count of failed git checkouts for this branch during solve. When
+    # this crosses the navigator's threshold, the branch is filtered out
+    # of future routing (see NavigationEngine._viable_branches).
+    failed_checkouts: int = 0
 
 
 @dataclass

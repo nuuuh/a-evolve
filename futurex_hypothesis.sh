@@ -38,6 +38,7 @@ SEARCH_MODE=strict
 BRANCH_CONFIDENCE=0.7
 SUFFIX=""
 NO_INFRA_EVO=true
+MAX_TASKS=0
 TARGETS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -48,6 +49,7 @@ while [ $# -gt 0 ]; do
     --branch-confidence)   BRANCH_CONFIDENCE="$2"; shift 2 ;;
     --suffix)              SUFFIX="$2"; shift 2 ;;
     --no-infra-evo)        NO_INFRA_EVO=true; shift ;;
+    --limit)               MAX_TASKS="$2"; shift 2 ;;
     *)                     TARGETS+=("$1"); shift ;;
   esac
 done
@@ -83,6 +85,9 @@ echo "Search mode: $SEARCH_MODE"
 
 # Build extra args from options
 EXTRA_ARGS="--batch-size $BATCH_SIZE --evolver-temp $EVOLVER_TEMP --solver-temp $SOLVER_TEMP --branch-confidence $BRANCH_CONFIDENCE"
+if [ "$MAX_TASKS" -gt 0 ]; then
+  EXTRA_ARGS="$EXTRA_ARGS --limit $MAX_TASKS"
+fi
 
 # Workers: 3 for strict mode (DDGS needs serialized access via file lock).
 # More workers just queue up behind the lock, wasting threads.
@@ -131,56 +136,56 @@ run() {
 
 # H0a: Baseline - no evolution, NO web search (pure LLM reasoning)
 run H0a baseline_no_search \
-  --max-turns 20 \
+  --max-turns 50 \
   --output-dir results/futurex_baseline_no_search \
   --config experiments/futurex/configs/baseline_no_search.yaml
 
 # H0b: Baseline - no evolution, strict search (Wikipedia revision API, zero leakage)
 run H0b baseline_strict_search \
-  --max-turns 20 \
+  --max-turns 50 \
   --output-dir results/futurex_baseline \
   --config experiments/futurex/configs/baseline.yaml
 
 # H0c: Baseline - no evolution, live search (DDGS, may have some leakage)
 run H0c baseline_live_search \
-  --max-turns 20 \
+  --max-turns 50 \
   --output-dir results/futurex_baseline_live_search \
   --config experiments/futurex/configs/baseline_live_search.yaml
 
 # H1: Full evolution, strict search (Wikipedia)
 run H1 full_evo_strict \
-  --max-turns 20 \
+  --max-turns 50 \
   --output-dir results/futurex_full_evo \
   --config experiments/futurex/configs/full_evo.yaml
 
 # H1b: Full evolution, live search (DuckDuckGo)
 # Reduced workers to 5: Docker sandbox + DDGS subprocess per task overloads at 10
 run H1b full_evo_live \
-  --max-turns 20 --workers 5 \
+  --max-turns 50 --workers 5 \
   --output-dir results/futurex_full_evo_live \
   --config experiments/futurex/configs/live.yaml
 
 # H2: Early freeze (40%), strict search
 run H2 early_freeze_strict \
-  --max-turns 20 \
+  --max-turns 50 \
   --output-dir results/futurex_early_freeze \
   --config experiments/futurex/configs/early_freeze.yaml
 
 # H2b: Early freeze (40%), live search
 run H2b early_freeze_live \
-  --max-turns 20 --workers 5 \
+  --max-turns 50 --workers 5 \
   --output-dir results/futurex_early_freeze_live \
   --config experiments/futurex/configs/early_freeze_live.yaml
 
 # H3: Late start (last ~56 tasks), strict search
 run H3 late_start_strict \
-  --max-turns 20 \
+  --max-turns 50 \
   --output-dir results/futurex_late_start \
   --config experiments/futurex/configs/late_start.yaml
 
 # H3b: Late start (last ~56 tasks), live search
 run H3b late_start_live \
-  --max-turns 20 --workers 5 \
+  --max-turns 50 --workers 5 \
   --output-dir results/futurex_late_start_live \
   --config experiments/futurex/configs/late_start_live.yaml
 
@@ -188,18 +193,33 @@ run H3b late_start_live \
 # Downloads fresh weekly data from HuggingFace on each run.
 # Uses evolved workspace from H1b for best-available skills/memory/tools.
 run H4 online_eval \
-  --max-turns 20 \
+  --max-turns 50 \
   --split online \
   --seed-workspace results/futurex_full_evo_live/evolved_workspace \
   --output-dir results/futurex_online_eval \
   --config experiments/futurex/configs/baseline.yaml
 
-# H5: Navigation - decoupled evolution with strategy tree (strict search)
+# H5: Navigation - inline branching + task routing (strict search, no multi-agent)
 run H5 navigation_strict \
-  --max-turns 20 \
+  --max-turns 50 \
   --navigation \
   --output-dir results/futurex_navigation \
   --config experiments/futurex/configs/navigation.yaml
+
+# H5_smoke: Navigation smoke test (~56 tasks spanning full timeline, small batches)
+run H5_smoke navigation_smoke \
+  --max-turns 50 \
+  --navigation \
+  --stride 6 --batch-size 10 \
+  --output-dir results/futurex_nav_smoke \
+  --config experiments/futurex/configs/navigation.yaml
+
+# H5_multi: Navigation + multi-agent orchestrated evolution (strict search)
+run H5_multi navigation_multi_strict \
+  --max-turns 50 \
+  --navigation \
+  --output-dir results/futurex_navigation_multi \
+  --config experiments/futurex/configs/navigation_multi.yaml
 
 # ─── Summary ──────────────────────────────────────────────────────────
 echo ""
@@ -210,24 +230,28 @@ echo "  strict = Wikipedia revision API (guaranteed pre-cutoff, zero leakage)"
 echo "  live   = DuckDuckGo with date filter (for online tasks)"
 echo ""
 echo "Experiments:"
-echo "  H0a  No search         Pure LLM reasoning baseline"
-echo "  H0b  Strict search     Wikipedia revision API (zero leakage)"
-echo "  H0c  Live search       DuckDuckGo unrestricted"
-echo "  H1   Full evo+strict   Evolution + Wikipedia"
-echo "  H1b  Full evo+live     Evolution + DuckDuckGo"
-echo "  H2   Freeze+strict     Evolve 40%, freeze + Wikipedia"
-echo "  H2b  Freeze+live       Evolve 40%, freeze + DuckDuckGo"
-echo "  H3   Late start+strict Last ~56 tasks, evo + Wikipedia"
-echo "  H3b  Late start+live   Last ~56 tasks, evo + DuckDuckGo"
-echo "  H4   Online eval       FutureX-Online (no GT, evolved workspace)"
+echo "  H0a  No search            Pure LLM reasoning baseline"
+echo "  H0b  Strict search        Wikipedia revision API (zero leakage)"
+echo "  H0c  Live search          DuckDuckGo unrestricted"
+echo "  H1   Full evo+strict      Evolution + Wikipedia"
+echo "  H1b  Full evo+live        Evolution + DuckDuckGo"
+echo "  H2   Freeze+strict        Evolve 40%, freeze + Wikipedia"
+echo "  H2b  Freeze+live          Evolve 40%, freeze + DuckDuckGo"
+echo "  H3   Late start+strict    Last ~56 tasks, evo + Wikipedia"
+echo "  H3b  Late start+live      Last ~56 tasks, evo + DuckDuckGo"
+echo "  H4   Online eval          FutureX-Online (no GT, evolved workspace)"
+echo "  H5   Navigation           Inline branching + task routing"
+echo "  H5_multi  Nav+multi-agent Plan-driven orchestrated navigation"
 echo ""
 echo "Key Comparisons:"
-echo "  H0c vs H0a:  Value of live search"
-echo "  H0b vs H0a:  Value of strict search (zero leakage)"
-echo "  H1  vs H0b:  Value of evolution (strict)"
-echo "  H1b vs H0c:  Value of evolution (live)"
-echo "  H2b vs H1b:  Early freeze effect"
-echo "  H3b vs H0c:  Late start on last 56 tasks"
+echo "  H0c vs H0a:      Value of live search"
+echo "  H0b vs H0a:      Value of strict search (zero leakage)"
+echo "  H1  vs H0b:      Value of evolution (strict)"
+echo "  H1b vs H0c:      Value of evolution (live)"
+echo "  H2b vs H1b:      Early freeze effect"
+echo "  H3b vs H0c:      Late start on last 56 tasks"
+echo "  H5  vs H1:       Value of navigation (branching)"
+echo "  H5_multi vs H5:  Value of multi-agent orchestration"
 echo ""
 echo "Analysis:"
 echo "  grep -h 'SUMMARY' logs/H*_futurex_*.log"

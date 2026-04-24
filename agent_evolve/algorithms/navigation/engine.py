@@ -1,12 +1,13 @@
-"""NavigationEngine -- decoupled evolution with agentic navigation.
+"""NavigationEngine -- git branching + task routing + pluggable evolution.
 
-Extends AEvolveEngine with holistic experience analysis, plan-driven
-evolution, and per-task routing (F_Navigate).
+Navigation = branching.  Git branches isolate strategies; the navigator
+routes each task to the best-equipped branch.  Evolution execution is
+delegated to a pluggable ``EvolutionTemplate``.
 
-Enforced pipeline (evolve_with_navigation):
-  Step 1: Analyze ALL experience → produce evolution plan
-  Step 2: Deepen main with stationary improvements, rebase branches
-  Step 3: Execute branch evolution for non-stationary patterns
+Usage:
+    NavigationEngine(config)                              # inline (default)
+    NavigationEngine(config, mode="orchestrated")         # plan-driven
+    NavigationEngine(config, template=MyCustomTemplate)   # custom
 
 Inherits from AEvolveEngine:
   - evolve()    -- standard workspace mutation (standalone mode)
@@ -20,30 +21,59 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ...contract.workspace import AgentWorkspace
 from ...engine.versioning import VersionControl
-from ...types import BranchInfo, StrategyTree
+from ...types import StrategyTree
 from ..aevolve.engine import AEvolveEngine
-from ..aevolve.prompts import build_evolution_prompt
-from .prompts import (
-    ANALYZE_PLAN_SYSTEM_PROMPT, NAVIGATE_SYSTEM_PROMPT,
-    build_analyze_plan_prompt, build_navigate_prompt,
-)
+from .prompts import NAVIGATE_SYSTEM_PROMPT, build_navigate_prompt
+
+if TYPE_CHECKING:
+    from .templates.base import EvolutionTemplate
 
 logger = logging.getLogger(__name__)
 
 
 class NavigationEngine(AEvolveEngine):
-    """Decoupled evolution with agentic navigation.
+    """Git branching + task routing + pluggable evolution template.
 
-    Adds to AEvolveEngine:
+    Navigation core (always available):
       - navigate()                -- F_Navigate: route task to branch (LLM)
-      - evolve_with_navigation()  -- holistic 3-step pipeline
-      - _analyze_and_plan()       -- Step 1: experience analysis → plan
-      - _execute_plan_step()      -- Steps 2-3: plan-guided evolution
+      - _read_branch_leaves()    -- read workspace content from git branches
+      - _resolve_branch_name()   -- normalize LLM branch name output
+      - _format_tree()           -- ASCII visualization of strategy tree
+
+    Evolution modes:
+      - mode="inline"        (default) — evolver decides branches in one
+                                          sandboxed call (InlineTemplate)
+      - mode="orchestrated"             — analyst → main → branches
+                                          (OrchestratedTemplate)
+      - template=<instance>             — any EvolutionTemplate subclass
     """
+
+    def __init__(
+        self,
+        config: Any,
+        llm: Any | None = None,
+        mode: str = "inline",
+        template: EvolutionTemplate | None = None,
+    ):
+        super().__init__(config, llm)
+        self.mode = mode
+        if template is not None:
+            self._template = template
+        elif mode == "orchestrated":
+            from .templates.orchestrated import OrchestratedTemplate
+            self._template = OrchestratedTemplate(self)
+        elif mode == "inline":
+            from .templates.inline import InlineTemplate
+            self._template = InlineTemplate(self)
+        else:
+            raise ValueError(
+                f"Unknown evolution mode {mode!r} "
+                f"(expected 'inline' or 'orchestrated', or pass template=)"
+            )
 
     # ── Visualization ───────────────────────────────────────────
 
@@ -107,11 +137,23 @@ class NavigationEngine(AEvolveEngine):
         Reads actual workspace content (system prompt, skills, tools) from
         each branch so the LLM can make an informed routing decision.
         Returns branch name (e.g., "main" or "branch/algebraic-reasoning").
+
+        The returned name is verified to exist in git (not just in the
+        in-memory tree), so callers can checkout it without a fallback
+        race.
         """
+        vc = VersionControl(workspace_root) if workspace_root else None
+
         if not tree.branches:
             return "main"
 
-        branch_summaries = self._read_branch_leaves(tree, workspace_root)
+        # Only offer the LLM branches that actually exist in git and
+        # haven't failed checkout too many times.
+        viable = self._viable_branches(tree, vc)
+        if not viable:
+            return "main"
+
+        branch_summaries = self._read_branch_leaves(tree, workspace_root, viable)
         prompt = build_navigate_prompt(task_description, branch_summaries)
         try:
             from ...llm.bedrock import BedrockProvider
@@ -126,54 +168,130 @@ class NavigationEngine(AEvolveEngine):
                 )
                 result = json.loads(response.content)
                 raw = result.get("branch", "main")
-                return self._resolve_branch_name(raw, tree)
+                return self._resolve_branch_name(raw, tree, vc=vc)
         except Exception:
             pass
         return "main"
 
     @staticmethod
-    def _resolve_branch_name(raw: str, tree: StrategyTree) -> str:
+    def _viable_branches(
+        tree: StrategyTree, vc: VersionControl | None
+    ) -> list[str]:
+        """Return branch names safe to route to this cycle.
+
+        Filters out (a) branches with too many recent checkout failures
+        and (b) branches present in-memory but missing from git.
+        """
+        viable: list[str] = []
+        for b in tree.branches:
+            if getattr(b, "failed_checkouts", 0) > 2:
+                continue
+            if vc is not None and not vc.branch_exists(b.name):
+                continue
+            viable.append(b.name)
+        return viable
+
+    @staticmethod
+    def _resolve_branch_name(
+        raw: str,
+        tree: StrategyTree,
+        vc: VersionControl | None = None,
+    ) -> str:
         """Normalize LLM-returned branch name to match actual git branch.
 
         The navigator LLM may return bare names like "turn-budget-convergence"
         instead of the full git name "branch/turn-budget-convergence".
-        Match against known branch names in the strategy tree.
+        Match against known branch names in the strategy tree, then
+        verify that the resolved name actually exists in git before
+        returning it (if ``vc`` is provided).
         """
         if raw == "main":
             return "main"
         known = {b.name for b in tree.branches}
-        # Exact match
+
+        candidate: str | None = None
         if raw in known:
-            return raw
-        # Try adding branch/ prefix
-        prefixed = f"branch/{raw}"
-        if prefixed in known:
-            return prefixed
-        # Try stripping branch/ prefix
-        if raw.startswith("branch/"):
+            candidate = raw
+        elif f"branch/{raw}" in known:
+            candidate = f"branch/{raw}"
+        elif raw.startswith("branch/"):
             stripped = raw[len("branch/"):]
             for name in known:
                 if name.endswith(stripped):
-                    return name
-        # Fuzzy: check if raw is a suffix of any known branch
-        for name in known:
-            if name.endswith(f"/{raw}") or name == raw:
-                return name
-        # No match — fall back to main
-        logger.warning("Navigator returned unknown branch %r, falling back to main", raw)
-        return "main"
+                    candidate = name
+                    break
+        if candidate is None:
+            for name in known:
+                if name.endswith(f"/{raw}") or name == raw:
+                    candidate = name
+                    break
+
+        if candidate is None:
+            logger.warning(
+                "Navigator returned unknown branch %r, falling back to main", raw
+            )
+            return "main"
+
+        if vc is not None and not vc.branch_exists(candidate):
+            logger.warning(
+                "Branch %r exists in strategy tree but not in git — "
+                "falling back to main", candidate,
+            )
+            return "main"
+
+        return candidate
+
+    @staticmethod
+    def _sanitize_branch_name(raw: str) -> str | None:
+        """Coerce an LLM-proposed branch name into a legal git ref.
+
+        The LLM in ``_analyze_and_plan`` tends to emit bare, task-shaped
+        names (e.g. ``"Multi-Outcome Markets"``) that fail git's
+        ref-format checks. This helper lowercases, replaces whitespace
+        with dashes, strips illegal characters, collapses consecutive
+        dots/dashes, and enforces a canonical ``branch/<slug>`` prefix.
+
+        Returns None if the sanitised name is empty or degenerate.
+        """
+        import re
+
+        if not raw or not isinstance(raw, str):
+            return None
+        s = raw.strip().lower()
+        if s == "main":
+            return "main"
+        if s.startswith("branch/"):
+            s = s[len("branch/"):]
+        s = re.sub(r"\s+", "-", s)
+        s = re.sub(r"[^a-z0-9._/\-]", "", s)
+        s = re.sub(r"\.{2,}", ".", s)
+        s = re.sub(r"-{2,}", "-", s)
+        s = s.strip("-./")
+        if not s or s.startswith(".") or s.endswith("."):
+            return None
+        return f"branch/{s}"
 
     def _read_branch_leaves(
         self,
         tree: StrategyTree,
         workspace_root: Path | None,
+        viable: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Read workspace content from each branch (git tree leaves).
 
         For each branch (including main), reads the system prompt, skill
         names, and tool registry so the navigator can compare strategies.
+
+        If ``viable`` is provided, only those branch names (plus ``main``)
+        are presented to the caller — this lets the navigator ignore
+        branches that are missing from git or have failed checkouts.
         """
-        branch_names = ["main"] + [b.name for b in tree.branches]
+        if viable is not None:
+            allowed = set(viable) | {"main"}
+            tree_branches = [b for b in tree.branches if b.name in allowed]
+        else:
+            tree_branches = list(tree.branches)
+        branch_names = ["main"] + [b.name for b in tree_branches]
         descriptions = {"main": "general-purpose root strategy"}
         for b in tree.branches:
             descriptions[b.name] = b.description
@@ -208,10 +326,14 @@ class NavigationEngine(AEvolveEngine):
                     name, "tools/registry.yaml")
             except Exception:
                 summary["tools_registry"] = ""
+            try:
+                summary["readme"] = vc.show_file_at(name, "README.md")
+            except Exception:
+                summary["readme"] = ""
             summaries.append(summary)
         return summaries
 
-    # ── Holistic Evolution Pipeline ─────────────────────────────
+    # ── Evolution with Navigation ──────────────────────────────
 
     def evolve_with_navigation(
         self,
@@ -221,12 +343,9 @@ class NavigationEngine(AEvolveEngine):
         evo_number: int = 0,
         routing_log_path: Path | None = None,
     ) -> dict[str, Any]:
-        """Holistic evolution: analyze → plan → execute.
+        """Evolve the workspace with navigation-aware branching.
 
-        Enforced pipeline:
-          Step 1: Analyze ALL experience, produce evolution plan
-          Step 2: Deepen main with stationary improvements, rebase branches
-          Step 3: Create/evolve branches for non-stationary patterns
+        Delegates to the active evolution template (inline or orchestrated).
         """
         vc = VersionControl(solver_workspace.root)
         vc.init()
@@ -237,291 +356,12 @@ class NavigationEngine(AEvolveEngine):
             tag=f"pre-nav-evo-{evo_number}",
         )
 
-        # Step 1: Analyze & Plan
-        evolution_history = []
-        if routing_log_path and routing_log_path.exists():
-            for line in routing_log_path.read_text().splitlines():
-                if line.strip():
-                    evolution_history.append(json.loads(line))
-
-        plan = self._analyze_and_plan(
-            batch_results, evolution_history, tree.branch_names(),
+        result = self._template.execute(
+            vc, solver_workspace, batch_results,
+            tree, evo_number, routing_log_path,
         )
-
-        logger.info("Evolution plan: %s", plan.get("summary", ""))
-
-        mutated = False
-        trajectory: list[dict[str, Any]] = []
-
-        # Record Step 1 trajectory
-        step1_traj = plan.pop("_trajectory", None)
-        if step1_traj:
-            trajectory.append({
-                "step": "analyze_and_plan",
-                "plan_summary": plan.get("summary", ""),
-                **step1_traj,
-            })
-
-        # Step 2: Deepen main (stationary improvements)
-        main_evo = plan.get("main_evolution", {})
-        if main_evo.get("description"):
-            current = vc.get_current_branch()
-            if current != "main":
-                vc.checkout_branch("main")
-
-            main_task_ids = set(main_evo.get("task_ids", []))
-            main_logs = ([r for r in batch_results
-                          if r.get("instance_id") in main_task_ids]
-                         if main_task_ids else batch_results)
-
-            result = self._execute_plan_step(
-                solver_workspace, main_logs, evo_number,
-                plan_context=self._format_plan_context(plan, "main"),
-                tag_suffix="main",
-            )
-            trajectory.append({
-                "step": "deepen_main",
-                "mutated": result.get("mutated", False),
-                "summary": result.get("summary", ""),
-                "conversation": result.get("conversation", []),
-            })
-            if result.get("mutated"):
-                mutated = True
-                logger.info("Main deepened: %s", result.get("summary", ""))
-
-                # Rebase all branches onto updated main
-                for br_name in vc.list_branches():
-                    try:
-                        vc.rebase_branch(br_name, "main")
-                    except Exception as e:
-                        logger.warning("Rebase %s failed: %s", br_name, e)
-
-        # Step 3: Branch (non-stationary patterns)
-        for branch_plan in plan.get("branches", []):
-            branch_name = branch_plan.get("name", "")
-            if not branch_name:
-                continue
-
-            if not vc.branch_exists(branch_name):
-                vc.create_branch(branch_name, "main")
-                tree.branches.append(BranchInfo(
-                    name=branch_name,
-                    created_at_cycle=evo_number,
-                    description=branch_plan.get("description", ""),
-                ))
-                logger.info("Created branch: %s (%s)",
-                            branch_name, branch_plan.get("description", ""))
-            else:
-                vc.checkout_branch(branch_name)
-
-            branch_task_ids = set(branch_plan.get("task_ids", []))
-            branch_logs = ([r for r in batch_results
-                            if r.get("instance_id") in branch_task_ids]
-                           if branch_task_ids else [])
-
-            result = self._execute_plan_step(
-                solver_workspace, branch_logs, evo_number,
-                plan_context=self._format_plan_context(plan, branch_name),
-                tag_suffix=branch_name.replace("/", "-"),
-            )
-            trajectory.append({
-                "step": "branch_evolution",
-                "branch": branch_name,
-                "mutated": result.get("mutated", False),
-                "summary": result.get("summary", ""),
-                "conversation": result.get("conversation", []),
-            })
-            if result.get("mutated"):
-                mutated = True
-
-        # Return to main
-        try:
-            vc.checkout_branch("main")
-        except Exception:
-            pass
 
         tree_viz = self._format_tree(tree, vc, evo_number)
         logger.info("Strategy tree after cycle %d:\n%s", evo_number, tree_viz)
 
-        return {
-            "evo_number": evo_number,
-            "mutated": mutated,
-            "plan": plan,
-            "branches": tree.branch_names(),
-            "trajectory": trajectory,
-        }
-
-    # ── Step 1: Analyze & Plan ─────────────────────────────────
-
-    def _analyze_and_plan(
-        self,
-        batch_results: list[dict],
-        evolution_history: list[dict],
-        branches: list[str],
-    ) -> dict[str, Any]:
-        """Step 1: Analyze all experience and produce evolution plan.
-
-        Pure analysis — no workspace mutation. Uses LLM prompt only.
-        Returns structured plan dict.
-        """
-        prompt = build_analyze_plan_prompt(
-            batch_results, evolution_history, branches,
-            trajectory_only=self.config.trajectory_only,
-        )
-        try:
-            from ...llm.bedrock import BedrockProvider
-            if isinstance(self.llm, BedrockProvider):
-                response = self.llm.converse_loop(
-                    system_prompt=ANALYZE_PLAN_SYSTEM_PROMPT,
-                    user_message=prompt,
-                    tools=[],
-                    tool_executor={},
-                    max_tokens=4096,
-                    temperature=0.0,
-                )
-                plan = self._parse_plan(response.content)
-                plan["_trajectory"] = {
-                    "prompt": prompt,
-                    "response": response.content,
-                }
-                return plan
-        except Exception as e:
-            logger.warning("Analysis LLM failed: %s", e)
-
-        # Fallback: everything goes to main
-        all_ids = [r.get("instance_id", "") for r in batch_results]
-        return {
-            "summary": "default plan (LLM unavailable)",
-            "main_evolution": {
-                "description": "evolve main with all tasks",
-                "insights": [],
-                "task_ids": all_ids,
-            },
-            "branches": [],
-        }
-
-    @staticmethod
-    def _parse_plan(text: str) -> dict[str, Any]:
-        """Extract evolution plan dict from LLM response text."""
-        import re
-
-        for m in re.finditer(r'\{.*\}', text, re.DOTALL):
-            try:
-                plan = json.loads(m.group(0))
-                if "main_evolution" in plan or "branches" in plan:
-                    plan.setdefault("summary", "")
-                    plan.setdefault("main_evolution", {})
-                    plan.setdefault("branches", [])
-                    return plan
-            except (json.JSONDecodeError, ValueError):
-                continue
-        return {"summary": "", "main_evolution": {}, "branches": []}
-
-    # ── Steps 2-3: Plan Execution ──────────────────────────────
-
-    def _execute_plan_step(
-        self,
-        workspace: AgentWorkspace,
-        observation_logs: list[dict[str, Any]],
-        evo_number: int,
-        plan_context: str = "",
-        tag_suffix: str = "",
-    ) -> dict[str, Any]:
-        """Execute one step of the evolution plan with sandbox access.
-
-        Builds the standard evolution prompt, prepends plan context,
-        then runs the evolver LLM with bash tool access.
-        """
-        vc = VersionControl(workspace.root)
-
-        skills_before = set(s.name for s in workspace.list_skills())
-        prompt_before = workspace.read_prompt()
-        memory_before = workspace.read_all_memories(limit=9999)
-        tools_before = workspace.read_tool_registry()
-        drafts = workspace.list_drafts()
-
-        prompt = build_evolution_prompt(
-            workspace, observation_logs, drafts, evo_number,
-            evolve_prompts=self.config.evolve_prompts,
-            evolve_skills=self.config.evolve_skills,
-            evolve_memory=self.config.evolve_memory,
-            evolve_tools=self.config.evolve_tools,
-            evolve_infra=self.config.evolve_infra,
-            include_patches=self.config.evolver_include_patches,
-            trajectory_only=self.config.trajectory_only,
-        )
-
-        if plan_context:
-            prompt = f"{plan_context}\n\n{prompt}"
-
-        disabled = [name for name, on in [
-            ("prompts", self.config.evolve_prompts),
-            ("skills",  self.config.evolve_skills),
-            ("memory",  self.config.evolve_memory),
-            ("tools",   self.config.evolve_tools),
-            ("infra",   self.config.evolve_infra),
-        ] if not on]
-        with workspace.protect(disabled):
-            llm_result = self._run_llm(prompt, workspace.root)
-
-        skills_after = set(s.name for s in workspace.list_skills())
-        prompt_changed = workspace.read_prompt() != prompt_before
-        memory_changed = (len(workspace.read_all_memories(limit=9999))
-                          != len(memory_before))
-        skills_changed = skills_after != skills_before
-        tools_changed = workspace.read_tool_registry() != tools_before
-        mutated = (prompt_changed or memory_changed
-                   or skills_changed or tools_changed)
-
-        workspace.clear_drafts()
-
-        changes = []
-        if prompt_changed:
-            changes.append("prompt")
-        if skills_changed:
-            changes.append("skills")
-        if memory_changed:
-            changes.append("memory")
-        if tools_changed:
-            changes.append("tools")
-        summary = ", ".join(changes) if changes else "no mutation"
-
-        tag = f"evo-{evo_number}"
-        if tag_suffix and tag_suffix != "main":
-            tag = f"evo-{evo_number}-{tag_suffix}"
-
-        vc.commit(message=f"{tag}: {summary}", tag=tag)
-
-        return {
-            "mutated": mutated,
-            "summary": summary,
-            "conversation": llm_result.get("conversation", []),
-        }
-
-    @staticmethod
-    def _format_plan_context(plan: dict[str, Any], target: str) -> str:
-        """Format plan context to prepend to the evolution prompt."""
-        lines = ["## Evolution Plan Context\n"]
-        lines.append(f"**Overall analysis:** {plan.get('summary', '')}\n")
-
-        if target == "main":
-            main_evo = plan.get("main_evolution", {})
-            lines.append("**Your role:** Evolve the main (general-purpose) branch.")
-            lines.append(f"**Focus:** {main_evo.get('description', '')}")
-            insights = main_evo.get("insights", [])
-            if insights:
-                lines.append("**Key insights:**")
-                for i in insights:
-                    lines.append(f"- {i}")
-        else:
-            for bp in plan.get("branches", []):
-                if bp.get("name") == target:
-                    lines.append(
-                        f"**Your role:** Evolve the specialized branch `{target}`.")
-                    lines.append(
-                        f"**Branch purpose:** {bp.get('description', '')}")
-                    lines.append(
-                        f"**Guidance:** {bp.get('evolution_guidance', '')}")
-                    break
-
-        return "\n".join(lines)
+        return result

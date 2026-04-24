@@ -19,9 +19,24 @@ The workspace follows a standard directory structure:
 - infra/             -- infrastructure pipelines (run by framework, has network)
 
 Each cycle you will receive:
-- Task observation logs with patterns, failures, and recurring themes
+- A trajectory memory index over recent task attempts (task_id, batch,
+  cycle_age, turns, task_input_preview, trajectory_file, patch_file)
 - A permissions section listing which layers you CAN and CANNOT modify
 - Instructions tailored to the enabled layers
+
+Trajectory memory:
+- Recent per-task trajectories and patches are mounted read-only under
+  /trajectories/batch_NNNN/. You can inspect them with workspace_bash:
+      cat /trajectories/batch_0042/trajectory_<task_id>.json | jq .
+      jq '[.[] | select(.role=="tool_use") | .content]' /trajectories/...
+      grep -l "error" /trajectories/batch_0042/patch_*.diff
+- The index gives you turn counts and a short task_input_preview so you
+  can decide which trajectories are worth opening. Prefer reading a few
+  representative trajectories over scanning everything.
+- You will NOT see pass/fail, score, or judge feedback for any task.
+  Infer what's working and what isn't from agent behaviour alone:
+  repeated tool failures, reasoning that doesn't converge, missed
+  affordances, verbose but fruitless loops.
 
 Follow the permissions and instructions in each cycle message exactly.
 Changes to disabled layers will be reverted automatically.
@@ -61,23 +76,77 @@ def build_evolution_prompt(
     include_patches: bool = False,
     trajectory_only: bool = False,
 ) -> str:
-    """Build the user-message prompt for one evolution cycle."""
+    """Build the user-message prompt for one evolution cycle.
+
+    Produces a privacy-safe trajectory index: task_id, batch, cycle_age,
+    turns, a short task-input preview, and pointer paths the evolver can
+    open via workspace_bash against the /trajectories mount. Evaluation
+    signals (success, score, feedback, judge claims) are deliberately
+    excluded — the evolver infers improvement from behaviour alone.
+
+    The ``include_patches`` and ``trajectory_only`` arguments are kept
+    for API compatibility but no longer gate ground-truth fields (those
+    are never emitted). ``include_patches`` is a no-op in the new
+    retrieval layout; patches are always pointer-accessed via
+    ``patch_file``.
+    """
+    del include_patches, trajectory_only  # unused in privacy-safe mode
+
+    # Order logs newest-to-oldest by batch id so the evolver can reason
+    # about temporal ordering without being handed raw timestamps.
+    def _batch_id(log: dict[str, Any]) -> int:
+        raw = log.get("batch") or log.get("batch_num") or log.get("evo_cycle") or 0
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return 0
+
+    sorted_logs = sorted(logs, key=_batch_id, reverse=True)
+    latest_batch = _batch_id(sorted_logs[0]) if sorted_logs else 0
+
     summaries = []
-    for log in logs:
-        entry: dict[str, Any] = {
-            "task_id": log.get("task_id", log.get("instance_id", "")),
+    for log in sorted_logs:
+        tid = log.get("task_id", log.get("instance_id", ""))
+        tid_safe = str(tid).replace("/", "_")
+        batch_id = _batch_id(log)
+        conversation = log.get("conversation") or []
+        task_input = log.get("task_input") or log.get("task", {}).get("input") or ""
+        entry = {
+            "task_id": tid,
+            "batch": batch_id,
+            "cycle_age": max(latest_batch - batch_id, 0),
+            "turns": len(conversation),
+            "task_input_preview": str(task_input)[:200],
+            "trajectory_file": f"/trajectories/batch_{batch_id:04d}/trajectory_{tid_safe}.json",
+            "patch_file": f"/trajectories/batch_{batch_id:04d}/patch_{tid_safe}.diff",
         }
-        if not trajectory_only:
-            entry["success"] = log.get("success", False)
-            entry["score"] = log.get("score", 0.0)
-            entry["feedback"] = log.get("feedback_detail", log.get("detail", ""))
-        if include_patches and (trajectory_only or not log.get("success", False)):
-            patch = log.get("agent_output", log.get("output", ""))
-            if patch:
-                entry["patch"] = patch
-        conversation = log.get("conversation", [])
-        if conversation:
-            entry["trajectory"] = conversation
+        # Surface liveness signal (not evaluation signal) when a task
+        # was cut off by a timeout / batch-deadline.  These come from
+        # the solver's partial snapshot via the harness enrichment
+        # (solve_all_with_evolution.py::_enrich_from_partial).
+        steps = log.get("steps") or []
+        step0 = steps[0] if isinstance(steps, list) and steps else {}
+        status = step0.get("status") if isinstance(step0, dict) else None
+        if status == "cut_off":
+            entry["status"] = "cut_off"
+            cut_off_reason = step0.get("cut_off_reason")
+            if cut_off_reason:
+                entry["cut_off_reason"] = cut_off_reason
+            partial_elapsed = step0.get("partial_elapsed")
+            if partial_elapsed is not None:
+                entry["partial_elapsed_s"] = round(float(partial_elapsed), 1)
+        # Per-tool latency summary — lets the evolver see which tools
+        # are the actual time bottleneck (e.g. a slow web_search) rather
+        # than inferring "too many turns" from trajectory length alone.
+        if isinstance(step0, dict):
+            timings = step0.get("tool_timings")
+            if timings:
+                from agent_evolve.agents._partial_trajectory import (
+                    summarise_tool_latency,
+                )
+                summary_line = summarise_tool_latency(timings)
+                if summary_line:
+                    entry["tool_latency"] = summary_line
         summaries.append(entry)
 
     skills = workspace.list_skills()
@@ -118,7 +187,17 @@ def build_evolution_prompt(
     # Only include sections for enabled layers
     sections = []
     if logs:
-        sections.append(f"### Task Summaries (this batch)\n```json\n{json.dumps(summaries, indent=2)}\n```")
+        memory_note = (
+            "### Trajectory Memory Index\n"
+            "Recent task attempts, newest-to-oldest by `batch`. "
+            "`trajectory_file` and `patch_file` are absolute paths in "
+            "your sandbox — open them via `workspace_bash` with `cat`, "
+            "`jq`, or `grep` to inspect full tool-call traces. You will "
+            "NOT see pass/fail, score, or judge feedback for any task — "
+            "infer what worked from the agent's tool calls and outputs.\n"
+            f"```json\n{json.dumps(summaries, indent=2)}\n```"
+        )
+        sections.append(memory_note)
     if evolve_skills:
         sections.append(f"### Draft Skills\n{draft_section}")
         sections.append(f"### Current Skills\n{chr(10).join(f'- {s}' for s in skill_names) if skill_names else 'No skills yet.'}")

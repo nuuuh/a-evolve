@@ -38,11 +38,32 @@ class EvolveConfig:
     # meta-learner to infer improvement opportunities from behavior alone.
     trajectory_only: bool = False
 
+    # When True, feedback is revealed per-task iff the task's
+    # resolution date is on or before the current batch timestamp
+    # (computed as ``max(task.creation_date)`` across the batch).
+    # Orthogonal to and overrides ``trajectory_only`` per-task — the
+    # realistic "drip of truth" mode for benchmarks with temporal
+    # resolution (FutureX, PolyBench).  CTF tasks have no resolution
+    # date so their labels remain hidden.
+    temporal_reveal: bool = False
+
     # Evolver LLM
     evolver_model: str = "us.anthropic.claude-opus-4-6-v1"
     evolver_max_tokens: int = 16384
     evolver_temperature: float = 0.0  # V2: evolver LLM temperature
-    evolver_include_patches: bool = False  # V2: include failed-task patches in evolver prompt
+    evolver_include_patches: bool = False  # V2: no-op in index mode; legacy inline only
+
+    # Trajectory feed mode.
+    #  - "index" (default, privacy-safe): the evolver prompt carries only a
+    #    compact index of recent trajectories (task_id, batch, cycle_age,
+    #    turns, task_input_preview, trajectory_file, patch_file). Full
+    #    trajectories are pulled on demand via workspace_bash against the
+    #    read-only /trajectories mount. Evaluation signals (success,
+    #    score, feedback, judge claims) are NEVER exposed.
+    #  - "inline" (legacy): inlines full conversation arrays plus
+    #    ground-truth fields directly in the prompt. Kept only for parity
+    #    testing against old baselines; unsafe for real evolution runs.
+    evolver_trajectory_mode: str = "index"
 
     # Parallelism (V2)
     solve_workers: int = 1

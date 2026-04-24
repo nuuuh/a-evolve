@@ -32,6 +32,7 @@ SOLVER_TEMP=0
 BRANCH_CONFIDENCE=0.7
 SUFFIX=""
 NO_INFRA_EVO=false
+MAX_TASKS=0
 TARGETS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -41,6 +42,7 @@ while [ $# -gt 0 ]; do
     --branch-confidence)   BRANCH_CONFIDENCE="$2"; shift 2 ;;
     --suffix)              SUFFIX="$2"; shift 2 ;;
     --no-infra-evo)        NO_INFRA_EVO=true; shift ;;
+    --limit)               MAX_TASKS="$2"; shift 2 ;;
     *)                     TARGETS+=("$1"); shift ;;
   esac
 done
@@ -58,6 +60,9 @@ echo "Catalog: $CATALOG ($CHALLENGE_COUNT challenges with flag hashes)"
 
 # Build extra args from options
 EXTRA_ARGS="--batch-size $BATCH_SIZE --evolver-temp $EVOLVER_TEMP --solver-temp $SOLVER_TEMP --branch-confidence $BRANCH_CONFIDENCE"
+if [ "$MAX_TASKS" -gt 0 ]; then
+  EXTRA_ARGS="$EXTRA_ARGS --limit $MAX_TASKS"
+fi
 
 # CTF challenges: 600s timeout captures ~93% of solves (6/22 pass after 600s).
 # 50 max-turns prevents endless loops while still allowing complex multi-step solves.
@@ -119,11 +124,24 @@ run H3 late_start \
   --output-dir results/ctf_dojo_late_start \
   --config experiments/ctf_dojo/configs/late_start.yaml
 
-# H4: Navigation - decoupled evolution with strategy tree
+# H4: Navigation - inline branching + task routing (no multi-agent)
 run H4 navigation \
   --navigation \
   --output-dir results/ctf_dojo_navigation \
   --config experiments/ctf_dojo/configs/navigation.yaml
+
+# H4_smoke: Navigation smoke test (~53 tasks spanning 2011-2024, small batches)
+run H4_smoke navigation_smoke \
+  --navigation \
+  --stride 5 --batch-size 10 \
+  --output-dir results/ctf_dojo_nav_smoke \
+  --config experiments/ctf_dojo/configs/navigation.yaml
+
+# H4_multi: Navigation + multi-agent orchestrated evolution
+run H4_multi navigation_multi \
+  --navigation \
+  --output-dir results/ctf_dojo_navigation_multi \
+  --config experiments/ctf_dojo/configs/navigation_multi.yaml
 
 # ─── Summary ──────────────────────────────────────────────────────────
 echo ""
