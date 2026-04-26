@@ -197,23 +197,29 @@ class VersionControl:
             return
         current_wt = None
         current_branch = None
+        def _flush():
+            nonlocal current_wt, current_branch
+            if current_branch == branch and current_wt and current_wt != str(self.root):
+                try:
+                    self._git("worktree", "remove", current_wt, "--force")
+                except RuntimeError:
+                    pass
+                try:
+                    self._git("worktree", "prune")
+                except RuntimeError:
+                    pass
+            current_wt = None
+            current_branch = None
+
         for line in output.splitlines():
             if line.startswith("worktree "):
                 current_wt = line[len("worktree "):]
             elif line.startswith("branch refs/heads/"):
                 current_branch = line[len("branch refs/heads/"):]
             elif line == "":
-                if current_branch == branch and current_wt and current_wt != str(self.root):
-                    try:
-                        self._git("worktree", "remove", current_wt, "--force")
-                    except RuntimeError:
-                        pass
-                    try:
-                        self._git("worktree", "prune")
-                    except RuntimeError:
-                        pass
-                current_wt = None
-                current_branch = None
+                _flush()
+        # Flush the final record (porcelain output may lack trailing blank).
+        _flush()
 
     # ── Branch operations (for --navigation strategy tree) ──────────
 

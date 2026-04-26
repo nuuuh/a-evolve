@@ -239,6 +239,7 @@ class Template(EvolutionTemplate):
         # Phase A: create worktrees and run all specialists concurrently.
         mutated_targets: list[tuple[str, int]] = []
         try:
+            worktree_failed = False
             for target, _, _ in specialist_specs:
                 if target == "main":
                     continue
@@ -247,25 +248,38 @@ class Template(EvolutionTemplate):
                     vc.checkout_branch_worktree(target, wt)
                     worktrees[target] = wt
                 except Exception as e:
-                    logger.warning("Worktree for %s failed: %s", target, e)
+                    logger.error(
+                        "Required worktree for %s failed: %s — aborting cycle", target, e)
+                    worktree_failed = True
+                    trajectory.append({
+                        "step": "specialist", "target": target,
+                        "mutated": False, "error": f"worktree failed: {e}",
+                    })
+
+            if worktree_failed:
+                trajectory.append({
+                    "step": "fusion", "mutated": False, "merged_from": [],
+                    "error": "cycle aborted: required worktree creation failed",
+                })
+                return {
+                    "evo_number": evo_number, "mutated": False,
+                    "plan": plan, "branches": tree.branch_names(),
+                    "trajectory": trajectory,
+                }
 
             def _run_one(target, assignment, filtered):
                 try:
                     wt = worktrees.get(target)
                     if wt:
-                        wt_ws = AgentWorkspace(wt)
-                        result = self._inner._execute_plan_step(
-                            wt_ws, filtered, evo_number,
-                            assignment=assignment, target=target,
-                            tag_suffix=f"{target.replace('/', '-')}-specialist",
-                        )
+                        ws = AgentWorkspace(wt)
                     else:
-                        vc.checkout_branch(target)
-                        result = self._inner._execute_plan_step(
-                            solver_workspace, filtered, evo_number,
-                            assignment=assignment, target=target,
-                            tag_suffix=f"{target.replace('/', '-')}-specialist",
-                        )
+                        # main target uses the primary workspace.
+                        ws = solver_workspace
+                    result = self._inner._execute_plan_step(
+                        ws, filtered, evo_number,
+                        assignment=assignment, target=target,
+                        tag_suffix=f"{target.replace('/', '-')}-specialist",
+                    )
                     return target, result
                 except Exception as e:
                     logger.warning("Specialist %s failed: %s", target, e)
