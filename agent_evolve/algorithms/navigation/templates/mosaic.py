@@ -188,16 +188,15 @@ class Template(EvolutionTemplate):
                     "step": "specialist", "target": ft,
                     "mutated": False, "error": "branch creation failed",
                 })
-            if not any(t != "main" for t in by_target):
-                trajectory.append({
-                    "step": "fusion", "mutated": False, "merged_from": [],
-                    "error": "all non-main branches failed to create",
-                })
-                return {
-                    "evo_number": evo_number, "mutated": False,
-                    "plan": plan, "branches": tree.branch_names(),
-                    "trajectory": trajectory,
-                }
+            trajectory.append({
+                "step": "fusion", "mutated": False, "merged_from": [],
+                "error": f"branch creation failed for: {sorted(failed_targets)}",
+            })
+            return {
+                "evo_number": evo_number, "mutated": False,
+                "plan": plan, "branches": tree.branch_names(),
+                "trajectory": trajectory,
+            }
 
         # ── Build per-target assignments ──
         specialist_specs: list[tuple[str, dict, list[dict]]] = []

@@ -208,8 +208,7 @@ def test_mosaic_single_assignment_still_creates_branch(tmp_path, monkeypatch):
 
 
 def test_mosaic_branch_failure_produces_hard_error_trajectory(tmp_path, monkeypatch):
-    """When all non-main branch creation fails, mosaic reports explicit error
-    in trajectory and does not produce a misleading empty-fusion success."""
+    """When the auto-branch creation fails, mosaic aborts with error trajectory."""
     ws, vc = _init_workspace(tmp_path)
     engine = _StubEngine()
     tree = StrategyTree(branches=[])
@@ -222,7 +221,6 @@ def test_mosaic_branch_failure_produces_hard_error_trajectory(tmp_path, monkeypa
         ],
     })
 
-    # Force branch creation to always fail.
     orig_create = VersionControl.create_branch
     def failing_create(self, name, from_ref="HEAD"):
         if name != "main":
@@ -236,16 +234,58 @@ def test_mosaic_branch_failure_produces_hard_error_trajectory(tmp_path, monkeypa
         routing_log_path=None,
     )
 
-    # The cycle should report failure, not a misleading success.
     assert result["mutated"] is False
-    # Should have error entries in trajectory for the failed branch.
-    error_steps = [t for t in result["trajectory"]
-                   if t.get("error")]
+    error_steps = [t for t in result["trajectory"] if t.get("error")]
     assert len(error_steps) >= 1
-    # Fusion should show error or empty merged_from.
     fusion = [t for t in result["trajectory"] if t["step"] == "fusion"]
     if fusion:
         assert fusion[0]["merged_from"] == []
+
+
+def test_mosaic_partial_branch_failure_aborts_cycle(tmp_path, monkeypatch):
+    """When planner targets multiple branches and one fails, the entire
+    cycle aborts rather than proceeding with partial branches."""
+    ws, vc = _init_workspace(tmp_path)
+    engine = _StubEngine()
+    tree = StrategyTree(branches=[])
+
+    _patch_planner(monkeypatch, {
+        "summary": "multi-branch",
+        "assignments": [
+            {"target": "main", "focus": "general", "workload": "Improve.",
+             "task_ids": ["task_0"]},
+            {"target": "branch/good", "focus": "regime-a",
+             "workload": "Specialize A.", "task_ids": ["task_1"]},
+            {"target": "branch/bad", "focus": "regime-b",
+             "workload": "Specialize B.", "task_ids": ["task_2"]},
+        ],
+    })
+
+    orig_create = VersionControl.create_branch
+    def selective_fail(self, name, from_ref="HEAD"):
+        if name == "branch/bad":
+            raise RuntimeError("simulated failure for branch/bad")
+        return orig_create(self, name, from_ref)
+    monkeypatch.setattr(VersionControl, "create_branch", selective_fail)
+
+    def mutate(workspace_root):
+        p = Path(workspace_root) / "prompts" / "system.md"
+        p.write_text(p.read_text() + "\n# mutated")
+
+    engine.set_mutate(mutate)
+
+    tpl = Template(engine)
+    result = tpl.execute(
+        vc, ws, _four_batch_results(), tree, evo_number=7,
+        routing_log_path=None,
+    )
+
+    # Cycle must abort — any branch failure is fatal.
+    assert result["mutated"] is False
+    error_steps = [t for t in result["trajectory"] if t.get("error")]
+    assert any("branch/bad" in str(s.get("error", "")) or
+               s.get("target") == "branch/bad"
+               for s in error_steps)
 
 
 def test_mosaic_no_mutation_reports_false(tmp_path, monkeypatch):
