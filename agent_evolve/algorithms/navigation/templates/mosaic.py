@@ -107,46 +107,66 @@ class Template(EvolutionTemplate):
         })
 
         # ── Step 2: Per-branch specialist evolvers ──
-        # Group assignments by target branch.
+        # Group assignments by target branch.  Sanitize branch names
+        # through the engine's normalizer.
         by_target: dict[str, list[dict]] = {}
+        from ..engine import NavigationEngine
         for a in assignments:
-            target = a.get("target", "main")
-            by_target.setdefault(target, []).append(a)
+            raw_target = a.get("target", "main")
+            if raw_target != "main":
+                raw_target = NavigationEngine._sanitize_branch_name(raw_target)
+            by_target.setdefault(raw_target, []).append(a)
 
-        # Always include main even if planner didn't mention it.
+        # Always include main.
         if "main" not in by_target:
             by_target["main"] = [{"target": "main", "focus": "general",
                                   "workload": "Improve stationary artifacts."}]
 
+        # If the planner only produced main-targeting assignments but
+        # we have >1, split half to an auto-created branch so we always
+        # exercise branch-specialist + fusion.
+        if len(by_target) == 1 and "main" in by_target and len(assignments) > 1:
+            half = len(assignments) // 2
+            branch_name = f"branch/mosaic-auto-{evo_number}"
+            by_target[branch_name] = assignments[half:]
+            by_target["main"] = assignments[:half]
+
+        # ── Run specialists (main first, then branches) ──
+        ordered_targets = sorted(
+            by_target, key=lambda t: 0 if t == "main" else 1,
+        )
+
         branch_diffs: dict[str, str] = {}
-        for target, target_assignments in by_target.items():
-            try:
-                vc.checkout_branch(target)
-            except Exception:
-                # Branch might not exist yet — create from main.
+        for target in ordered_targets:
+            target_assignments = by_target[target]
+
+            # Ensure we're on the right branch.
+            if target == "main":
+                vc.checkout_branch("main")
+            else:
                 try:
                     vc.checkout_branch("main")
-                    if target != "main":
-                        vc.create_branch(target, from_ref="main")
-                except Exception as e:
-                    logger.warning("Cannot reach branch %s: %s", target, e)
-                    continue
+                    vc.create_branch(target, from_ref="main")
+                except Exception:
+                    try:
+                        vc.checkout_branch(target)
+                    except Exception as e:
+                        logger.warning("Cannot reach branch %s: %s", target, e)
+                        continue
 
-            # Build a focused prompt for this branch.
+            # Build focused prompt for this branch.
             task_ids = []
             workloads = []
             for a in target_assignments:
                 task_ids.extend(a.get("task_ids", []))
                 workloads.append(a.get("workload", ""))
 
-            # Filter batch_results to this branch's tasks.
             if task_ids:
                 filtered = [r for r in batch_results
                             if r.get("instance_id") in set(task_ids)]
             else:
                 filtered = batch_results
 
-            # Run the specialist evolver.
             combined_workload = "\n".join(workloads)
             assignment = {
                 "target": target,
@@ -154,7 +174,6 @@ class Template(EvolutionTemplate):
                 "workload": combined_workload,
                 "task_ids": task_ids,
             }
-
             if target != "main":
                 assignment["workload"] = (
                     BRANCH_EVOLVER_PREFIX.format(
@@ -177,36 +196,38 @@ class Template(EvolutionTemplate):
             if step_mutated:
                 mutated = True
 
-            # Capture diff for fusion agent.
-            try:
-                diff = vc.diff_from_head()
+            # Capture diff for fusion: use diff_from_head for main,
+            # diff_branch_from_main for branches.
+            if target != "main" and step_mutated:
+                diff = vc.diff_branch_from_main(target)
                 if diff:
                     branch_diffs[target] = diff[:4000]
-            except Exception:
-                pass
+            elif target == "main" and step_mutated:
+                diff = vc.diff_from_head()
+                if diff:
+                    branch_diffs["main"] = diff[:4000]
 
             logger.info("Specialist %s: mutated=%s (%d tasks)",
                         target, step_mutated, len(filtered))
 
         # ── Step 3: Fusion agent ──
-        # Only run fusion if there are branch diffs to merge.
         non_main_diffs = {k: v for k, v in branch_diffs.items() if k != "main"}
-        if non_main_diffs and mutated:
+        if non_main_diffs:
             vc.checkout_branch("main")
             fusion_result = self._run_fusion(
                 solver_workspace, branch_diffs, evo_number,
             )
+            fusion_mutated = fusion_result.get("mutated", False)
             trajectory.append({
                 "step": "fusion",
-                "mutated": fusion_result.get("mutated", False),
+                "mutated": fusion_mutated,
                 "merged_from": list(non_main_diffs.keys()),
             })
-            if fusion_result.get("mutated"):
+            if fusion_mutated:
                 mutated = True
             logger.info("Fusion: mutated=%s, merged from %s",
-                        fusion_result.get("mutated"), list(non_main_diffs.keys()))
+                        fusion_mutated, list(non_main_diffs.keys()))
         else:
-            # No branches or no mutations — skip fusion.
             vc.checkout_branch("main")
             trajectory.append({"step": "fusion", "mutated": False, "merged_from": []})
 

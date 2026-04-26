@@ -94,13 +94,6 @@ class Template(EvolutionTemplate):
             except Exception:
                 pass
 
-            # Snapshot before proposal
-            before_diff = ""
-            try:
-                before_diff = vc.diff_from_head()
-            except Exception:
-                pass
-
             # ── Propose ──
             result = self._inner._execute_plan_step(
                 solver_workspace, batch_results, evo_number,
@@ -116,11 +109,12 @@ class Template(EvolutionTemplate):
             if not propose_mutated:
                 continue
 
-            # Get the diff for the critic
-            try:
-                diff_text = vc.diff_from_head()
-            except Exception:
-                diff_text = "(could not generate diff)"
+            # Capture the proposer's committed diff (HEAD~1..HEAD).
+            diff_text = vc.diff_from_head()
+            if not diff_text:
+                logger.warning("Propose step committed but diff is empty; skipping critique")
+                mutated = True
+                continue
 
             # ── Critique ──
             critique = self._run_critic(diff_text, solver_workspace)

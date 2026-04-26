@@ -165,21 +165,28 @@ class Template(EvolutionTemplate):
                 self._patience += 1
         self._prev_pass_count = pass_count
 
+        # Deterministic tool health check.
+        tool_health = self._test_tool_health(solver_workspace, batch_results)
+
         # Decide role(s) to dispatch.
         dispatches = self._decide_dispatches(
-            n_tools, batch_results, pass_count,
+            n_tools, tool_health, pass_count,
         )
 
         trajectory.append({
             "step": "state_inspection",
             "n_tools": n_tools,
+            "tool_health": tool_health,
             "pass_count": pass_count,
             "patience": self._patience,
             "dispatches": [d[0] for d in dispatches],
         })
         logger.info(
-            "Adaptive state: tools=%d, pass=%d/%d, patience=%d → dispatching: %s",
-            n_tools, pass_count, len(batch_results), self._patience,
+            "Adaptive state: tools=%d (health: %d/%d pass, error_rate=%.2f), "
+            "pass=%d/%d, patience=%d → dispatching: %s",
+            n_tools, tool_health["n_pass"], tool_health["n_tested"],
+            tool_health["error_rate"],
+            pass_count, len(batch_results), self._patience,
             [d[0] for d in dispatches],
         )
 
@@ -235,13 +242,80 @@ class Template(EvolutionTemplate):
             "trajectory": trajectory,
         }
 
+    def _test_tool_health(
+        self,
+        workspace,
+        batch_results: list[dict],
+    ) -> dict:
+        """Deterministic tool health check: execute each registered tool
+        with a sample query and measure runtime failures.
+
+        Returns: {n_tested, n_pass, n_fail, error_rate, failed_tools}
+        """
+        import subprocess
+        tools = workspace.read_tool_registry()
+        if not tools:
+            return {"n_tested": 0, "n_pass": 0, "n_fail": 0,
+                    "error_rate": 0.0, "failed_tools": []}
+
+        sample_query = "test query 2026"
+        for r in batch_results[:3]:
+            inp = r.get("task_input") or r.get("input") or ""
+            if isinstance(inp, dict):
+                inp = inp.get("input", "")
+            if inp:
+                sample_query = str(inp)[:100]
+                break
+
+        n_pass = 0
+        n_fail = 0
+        failed_tools = []
+        for t in tools:
+            name = t.get("name", "")
+            script = workspace.tools_dir / f"{name}.py"
+            if not script.exists():
+                n_fail += 1
+                failed_tools.append(f"{name}: script missing")
+                continue
+            try:
+                proc = subprocess.run(
+                    ["python3", str(script), sample_query, "2026-01-15"],
+                    capture_output=True, text=True, timeout=15,
+                    cwd=str(workspace.root),
+                )
+                if proc.returncode != 0:
+                    n_fail += 1
+                    stderr = (proc.stderr or "")[:100]
+                    failed_tools.append(f"{name}: exit {proc.returncode} ({stderr})")
+                elif not proc.stdout.strip():
+                    n_fail += 1
+                    failed_tools.append(f"{name}: empty output")
+                else:
+                    n_pass += 1
+            except subprocess.TimeoutExpired:
+                n_fail += 1
+                failed_tools.append(f"{name}: timeout (>15s)")
+            except Exception as e:
+                n_fail += 1
+                failed_tools.append(f"{name}: {e}")
+
+        n_tested = n_pass + n_fail
+        error_rate = n_fail / max(n_tested, 1)
+        return {
+            "n_tested": n_tested,
+            "n_pass": n_pass,
+            "n_fail": n_fail,
+            "error_rate": error_rate,
+            "failed_tools": failed_tools,
+        }
+
     def _decide_dispatches(
         self,
         n_tools: int,
-        batch_results: list[dict],
+        tool_health: dict,
         pass_count: int,
     ) -> list[tuple[str, str]]:
-        """Deterministic dispatch based on workspace state."""
+        """Deterministic dispatch based on workspace state + tool health."""
         dispatches: list[tuple[str, str]] = []
 
         # Rule 1: No tools → always build tools first.
@@ -249,15 +323,8 @@ class Template(EvolutionTemplate):
             dispatches.append(("tool_builder", TOOL_BUILDER_SYSTEM))
             return dispatches
 
-        # Rule 2: Tools exist but many errors → debug first.
-        # Estimate error rate from batch: tasks with high turn counts
-        # and no success likely hit tool errors.
-        error_indicators = sum(
-            1 for r in batch_results
-            if r.get("turns", 0) > 15 and not r.get("success", False)
-        )
-        error_rate = error_indicators / max(len(batch_results), 1)
-        if error_rate > 0.3:
+        # Rule 2: Tools exist but measured error rate > 30% → debug.
+        if tool_health.get("error_rate", 0.0) > 0.3:
             dispatches.append(("debugger", DEBUGGER_SYSTEM))
             return dispatches
 

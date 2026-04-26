@@ -165,6 +165,10 @@ def test_skillbench_benchmark_loads_from_repo_env(tmp_path: Path, monkeypatch: p
     assert benchmark.tasks_dir == str((repo / "tasks").resolve())
 
 
+@pytest.mark.skipif(
+    not (resolve_skillbench_seed_workspaces_root() / "skillbench" / "manifest.yaml").exists(),
+    reason="SkillBench seed workspace not available in this fork",
+)
 def test_seed_workspaces_root_contains_skillbench_manifest() -> None:
     seed_root = resolve_skillbench_seed_workspaces_root()
     assert (seed_root / "skillbench" / "manifest.yaml").exists()

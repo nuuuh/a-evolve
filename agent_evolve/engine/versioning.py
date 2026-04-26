@@ -85,6 +85,20 @@ class VersionControl:
     def get_diff_stat(self, from_ref: str = "HEAD~1", to_ref: str = "HEAD") -> str:
         return self._git("diff", "--stat", from_ref, to_ref)
 
+    def diff_from_head(self) -> str:
+        """Return the diff of the most recent commit (HEAD~1..HEAD)."""
+        try:
+            return self._git("diff", "HEAD~1", "HEAD")
+        except RuntimeError:
+            return ""
+
+    def diff_branch_from_main(self, branch: str) -> str:
+        """Return the diff between main and *branch* tip."""
+        try:
+            return self._git("diff", "main", branch)
+        except RuntimeError:
+            return ""
+
     def get_log(self, n: int = 20) -> str:
         return self._git("log", "--oneline", f"-{n}")
 
