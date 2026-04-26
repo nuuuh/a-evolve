@@ -207,6 +207,47 @@ def test_mosaic_single_assignment_still_creates_branch(tmp_path, monkeypatch):
         "Expected fusion to have non-empty merged_from"
 
 
+def test_mosaic_branch_failure_produces_hard_error_trajectory(tmp_path, monkeypatch):
+    """When all non-main branch creation fails, mosaic reports explicit error
+    in trajectory and does not produce a misleading empty-fusion success."""
+    ws, vc = _init_workspace(tmp_path)
+    engine = _StubEngine()
+    tree = StrategyTree(branches=[])
+
+    _patch_planner(monkeypatch, {
+        "summary": "single",
+        "assignments": [
+            {"target": "main", "focus": "general", "workload": "Improve.",
+             "task_ids": []},
+        ],
+    })
+
+    # Force branch creation to always fail.
+    orig_create = VersionControl.create_branch
+    def failing_create(self, name, from_ref="HEAD"):
+        if name != "main":
+            raise RuntimeError("simulated branch failure")
+        return orig_create(self, name, from_ref)
+    monkeypatch.setattr(VersionControl, "create_branch", failing_create)
+
+    tpl = Template(engine)
+    result = tpl.execute(
+        vc, ws, _four_batch_results(), tree, evo_number=6,
+        routing_log_path=None,
+    )
+
+    # The cycle should report failure, not a misleading success.
+    assert result["mutated"] is False
+    # Should have error entries in trajectory for the failed branch.
+    error_steps = [t for t in result["trajectory"]
+                   if t.get("error")]
+    assert len(error_steps) >= 1
+    # Fusion should show error or empty merged_from.
+    fusion = [t for t in result["trajectory"] if t["step"] == "fusion"]
+    if fusion:
+        assert fusion[0]["merged_from"] == []
+
+
 def test_mosaic_no_mutation_reports_false(tmp_path, monkeypatch):
     """When no specialist mutates, mutated=False and fusion is skipped."""
     ws, vc = _init_workspace(tmp_path)
