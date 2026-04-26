@@ -297,16 +297,21 @@ class Template(EvolutionTemplate):
 
         for t in tools:
             name = t.get("name", "")
-            tool_passed = False
+            tool_failed = False
 
             for query in sample_queries:
                 cmd = self._resolve_tool_command(
                     t, workspace, query, cutoff,
                 )
                 if cmd is None:
-                    n_fail += 1
+                    tool_failed = True
                     failed_tools.append(f"{name}: no executable script found")
                     failure_categories["missing_script"] += 1
+                    break
+                if cmd == "PARSE_ERROR":
+                    tool_failed = True
+                    failed_tools.append(f"{name}: command template parse error")
+                    failure_categories["parse_error"] += 1
                     break
 
                 try:
@@ -319,28 +324,28 @@ class Template(EvolutionTemplate):
                         stderr = (proc.stderr or "")[:100]
                         failed_tools.append(
                             f"{name}: exit {proc.returncode} ({stderr})")
-                        n_fail += 1
+                        tool_failed = True
                         failure_categories["nonzero_exit"] += 1
                         break
                     elif not proc.stdout.strip():
                         failed_tools.append(f"{name}: empty output")
-                        n_fail += 1
+                        tool_failed = True
                         failure_categories["empty_output"] += 1
                         break
-                    else:
-                        tool_passed = True
                 except subprocess.TimeoutExpired:
                     failed_tools.append(f"{name}: timeout (>15s)")
-                    n_fail += 1
+                    tool_failed = True
                     failure_categories["timeout"] += 1
                     break
                 except Exception as e:
                     failed_tools.append(f"{name}: {e}")
-                    n_fail += 1
+                    tool_failed = True
                     failure_categories["other"] += 1
                     break
 
-            if tool_passed:
+            if tool_failed:
+                n_fail += 1
+            else:
                 n_pass += 1
 
         n_tested = n_pass + n_fail
@@ -357,10 +362,11 @@ class Template(EvolutionTemplate):
     @staticmethod
     def _resolve_tool_command(
         entry: dict, workspace, query: str, cutoff: str,
-    ) -> list[str] | None:
+    ) -> list[str] | str | None:
         """Build the invocation command for a registry tool entry.
 
-        Always returns a list (argv) so the caller never needs shell=True.
+        Returns a list (argv) on success, the string ``"PARSE_ERROR"`` if a
+        command template cannot be parsed by shlex, or None if no script found.
         """
         import shlex
 
@@ -373,7 +379,7 @@ class Template(EvolutionTemplate):
             try:
                 return shlex.split(rendered)
             except ValueError:
-                return None
+                return "PARSE_ERROR"
 
         # Priority 2: registry `path` field.
         path = entry.get("path", "")

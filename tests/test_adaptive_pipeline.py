@@ -405,3 +405,49 @@ def test_adaptive_failure_categories(tmp_path):
     cats = health["failure_categories"]
     assert "nonzero_exit" in cats
     assert cats["nonzero_exit"] >= 1
+
+
+def test_adaptive_health_no_double_counting(tmp_path):
+    """A flaky tool (succeeds on some queries, fails on others) must be
+    counted exactly once, not once per pass AND once per fail."""
+    ws_dir = tmp_path / "ws"
+    ws_dir.mkdir()
+    for d in ("prompts", "skills", "tools", "memory"):
+        (ws_dir / d).mkdir()
+    (ws_dir / "prompts" / "system.md").write_text("prompt")
+    (ws_dir / "skills" / "_drafts").mkdir()
+    # Tool succeeds on short queries, fails on longer ones.
+    (ws_dir / "tools" / "flaky.py").write_text(
+        '#!/usr/bin/env python3\n'
+        'import sys\n'
+        'q = sys.argv[1] if len(sys.argv) > 1 else ""\n'
+        'if len(q) > 20:\n'
+        '    sys.exit(1)\n'
+        'print("ok", q)\n'
+    )
+    import yaml
+    (ws_dir / "tools" / "registry.yaml").write_text(yaml.dump({"tools": [
+        {"name": "flaky", "description": "flaky tool"},
+    ]}))
+    vc = VersionControl(ws_dir)
+    vc.init()
+    ws = AgentWorkspace(ws_dir)
+
+    batch = [
+        {"instance_id": f"t{i}", "success": False, "turns": 1,
+         "input": "short" if i == 0 else "a very long query string that exceeds twenty chars"}
+        for i in range(3)
+    ]
+
+    engine = _StubEngine()
+    tree = StrategyTree(branches=[])
+    tpl = Template(engine)
+    result = tpl.execute(
+        vc, ws, batch, tree, evo_number=1, routing_log_path=None,
+    )
+
+    health = result["trajectory"][0]["tool_health"]
+    assert health["n_tested"] == 1, \
+        f"Expected 1 tool tested, got {health['n_tested']} (double-counting bug)"
+    assert health["n_pass"] + health["n_fail"] == 1, \
+        "Tool must be classified exactly once"
