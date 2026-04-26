@@ -271,3 +271,43 @@ def test_specialists_tool_builder_and_strategy_writer(
     assert "specialist" in step_names
     assert "merge" in step_names
     assert result["mutated"] is True
+
+
+# ── Mosaic stale worktree regression ─────────────────────────────────
+
+
+def test_mosaic_survives_stale_worktree(
+    workspace, engine, vc, agent_workspace,
+):
+    """Simulate a stale worktree from a killed run, then verify mosaic
+    still creates a branch specialist and fusion in a subsequent cycle."""
+    from agent_evolve.algorithms.navigation.templates.mosaic import Template
+
+    # Create a stale worktree that would block branch/mosaic-auto-1.
+    import tempfile, shutil
+    stale_wt = Path(tempfile.mkdtemp(prefix="mosaic-wt-stale-"))
+    subprocess.run(
+        ["git", "worktree", "add", "--detach", str(stale_wt), "main"],
+        cwd=workspace, check=True,
+    )
+    # Leave it dangling (don't remove it — simulating a killed process).
+
+    template = Template(engine)
+    result = template.execute(
+        vc, agent_workspace, _make_batch(4),
+        _StubTree(), evo_number=1, routing_log_path=None,
+    )
+    steps = [s["step"] for s in result["trajectory"]]
+    assert "specialist" in steps
+    assert "fusion" in steps
+    assert result["mutated"] is True
+
+    # Clean up the stale worktree.
+    try:
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(stale_wt)],
+            cwd=workspace, capture_output=True,
+        )
+    except Exception:
+        pass
+    shutil.rmtree(stale_wt, ignore_errors=True)
