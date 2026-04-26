@@ -221,22 +221,26 @@ class Template(EvolutionTemplate):
                     logger.warning("Worktree for %s failed: %s", target, e)
 
             def _run_one(target, assignment, filtered):
-                wt = worktrees.get(target)
-                if wt:
-                    wt_ws = AgentWorkspace(wt)
-                    result = self._inner._execute_plan_step(
-                        wt_ws, filtered, evo_number,
-                        assignment=assignment, target=target,
-                        tag_suffix=f"{target.replace('/', '-')}-specialist",
-                    )
-                else:
-                    vc.checkout_branch(target)
-                    result = self._inner._execute_plan_step(
-                        solver_workspace, filtered, evo_number,
-                        assignment=assignment, target=target,
-                        tag_suffix=f"{target.replace('/', '-')}-specialist",
-                    )
-                return target, result
+                try:
+                    wt = worktrees.get(target)
+                    if wt:
+                        wt_ws = AgentWorkspace(wt)
+                        result = self._inner._execute_plan_step(
+                            wt_ws, filtered, evo_number,
+                            assignment=assignment, target=target,
+                            tag_suffix=f"{target.replace('/', '-')}-specialist",
+                        )
+                    else:
+                        vc.checkout_branch(target)
+                        result = self._inner._execute_plan_step(
+                            solver_workspace, filtered, evo_number,
+                            assignment=assignment, target=target,
+                            tag_suffix=f"{target.replace('/', '-')}-specialist",
+                        )
+                    return target, result
+                except Exception as e:
+                    logger.warning("Specialist %s failed: %s", target, e)
+                    return target, {"mutated": False}
 
             vc.checkout_branch("main")
 
@@ -295,9 +299,13 @@ class Template(EvolutionTemplate):
         non_main_diffs = {k: v for k, v in branch_diffs.items() if k != "main"}
         if non_main_diffs:
             vc.checkout_branch("main")
-            fusion_result = self._run_fusion(
-                solver_workspace, branch_diffs, evo_number,
-            )
+            try:
+                fusion_result = self._run_fusion(
+                    solver_workspace, branch_diffs, evo_number,
+                )
+            except Exception as e:
+                logger.warning("Fusion execution failed: %s", e)
+                fusion_result = {"mutated": False}
             fusion_mutated = fusion_result.get("mutated", False)
             trajectory.append({
                 "step": "fusion",
