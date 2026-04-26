@@ -1,0 +1,273 @@
+"""Adaptive evolution template — state-driven dispatch with escalation.
+
+No LLM planner. Instead, deterministic workspace state inspection
+decides which mutation operator to dispatch:
+
+  - no tools       → ToolBuilder (build from scratch)
+  - tools + errors → Debugger (fix broken tools)
+  - tools ok, flat → Strategist (rethink approach, with escalation)
+  - tools ok, up   → Refiner (small improvements)
+
+Patience counters track consecutive non-improving cycles and trigger
+tiered escalation: tweak → restructure → paradigm shift.
+
+Inspired by MLEvolve's MCGS state-based dispatch (P2) and tiered
+escalation (P4).
+
+Activated via config: ``orchestrator: adaptive``
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import Any
+
+from .base import EvolutionTemplate
+from .orchestrated import OrchestratedTemplate
+
+logger = logging.getLogger(__name__)
+
+# ── Role-specific system prompts ──
+
+TOOL_BUILDER_SYSTEM = """\
+You are a TOOL BUILDER. The solver workspace has no working external-data
+tools. Your job: build 2-3 web search tools under tools/*.py so the solver
+can gather evidence for its predictions.
+
+Priority order:
+1. A general web search tool (DuckDuckGo HTML scraping or Google News RSS)
+2. A Wikipedia revision API tool (zero-leakage by construction)
+3. A domain-specific API tool (finance, sports, prediction markets)
+
+Every tool must:
+- Accept (query, cutoff_date) as CLI args
+- Use htmldate for date filtering on web content
+- Handle timeouts and network errors gracefully
+- Print results to stdout
+
+Register all tools in tools/registry.yaml.
+Update prompts/system.md to teach the solver how to use each tool.
+Commit: git add -A && git commit -m "tools: <summary>"
+"""
+
+DEBUGGER_SYSTEM = """\
+You are a TOOL DEBUGGER. The solver's evolved tools have a high error rate.
+Your job: fix the broken tools so they reliably return data.
+
+Steps:
+1. Read tools/registry.yaml to see what tools exist.
+2. Test each tool with workspace_bash: python3 tools/<name>.py "test query" "2026-01-15"
+3. For each failure: diagnose (ImportError? timeout? bad URL? bad parsing?)
+4. Fix the tool code, then re-test to confirm it works.
+5. If a tool is unfixable, remove it from the registry.
+
+Commit: git add -A && git commit -m "debug: <summary>"
+"""
+
+STRATEGIST_SYSTEM_TWEAK = """\
+You are a STRATEGY REFINER. The solver's tools work but the pass rate is
+stagnant. Make targeted improvements to prompts and skills.
+
+Focus on:
+- Is the system prompt teaching the solver to use tools effectively?
+- Are there domain-specific skills that could help (sports, finance, etc.)?
+- Is the solver searching with good queries, or wasting turns?
+
+Do NOT rebuild tools from scratch — they are working.
+Commit: git add -A && git commit -m "strategy: <summary>"
+"""
+
+STRATEGIST_SYSTEM_RESTRUCTURE = """\
+You are a STRATEGY RESTRUCTURER. The solver's tools work but the pass rate
+has been flat for multiple cycles. Minor tweaks are not enough.
+
+Consider more significant changes:
+- Replace the system prompt entirely with a new approach
+- Reorganize skills into a different structure
+- Change the search workflow (e.g., search → verify → search again)
+- Add new tool types that complement existing ones
+
+Do NOT remove working tools — build on them.
+Commit: git add -A && git commit -m "restructure: <summary>"
+"""
+
+STRATEGIST_SYSTEM_PARADIGM = """\
+You are a PARADIGM SHIFTER. The solver's evolution has been stagnant for
+3+ cycles despite working tools. Something fundamental needs to change.
+
+Consider radical approaches:
+- Entirely different data sources (prediction markets instead of news?)
+- Different reasoning frameworks (Bayesian, base-rate, ensemble?)
+- Different tool architecture (one mega-tool vs many specialized tools?)
+- Completely rewrite the system prompt from scratch
+
+This is the last resort before giving up on this strategy.
+Commit: git add -A && git commit -m "paradigm: <summary>"
+"""
+
+REFINER_SYSTEM = """\
+You are a WORKSPACE REFINER. The solver is improving — make small,
+targeted improvements without disrupting what works.
+
+Focus on:
+- Memory curation: add useful lessons, prune outdated entries
+- Skill refinement: sharpen existing skills based on recent results
+- Tool polish: improve error messages, add retry logic, optimize
+- Prompt tuning: small wording changes that improve clarity
+
+Do NOT make large structural changes. If it ain't broke, don't fix it.
+Commit: git add -A && git commit -m "refine: <summary>"
+"""
+
+ESCALATION_TIERS = [
+    ("tweak", STRATEGIST_SYSTEM_TWEAK),
+    ("restructure", STRATEGIST_SYSTEM_RESTRUCTURE),
+    ("paradigm", STRATEGIST_SYSTEM_PARADIGM),
+]
+
+
+class Template(EvolutionTemplate):
+    """State-driven dispatch with patience-based escalation."""
+
+    def __init__(self, engine):
+        self.engine = engine
+        self._inner = OrchestratedTemplate(engine)
+        self._patience = 0          # consecutive non-improving cycles
+        self._prev_pass_count = -1  # previous batch pass count
+
+    @property
+    def name(self) -> str:
+        return "adaptive"
+
+    def execute(
+        self,
+        vc, solver_workspace, batch_results,
+        tree, evo_number, routing_log_path,
+    ) -> dict[str, Any]:
+        trajectory: list[dict] = []
+
+        # ── State inspection (deterministic, no LLM) ──
+        tools = solver_workspace.read_tool_registry()
+        n_tools = len(tools)
+
+        # Count revealed pass/fail from batch.
+        revealed = [r for r in batch_results if "success" in r]
+        pass_count = sum(1 for r in revealed if r.get("success"))
+
+        # Track improvement.
+        if self._prev_pass_count >= 0:
+            improved = pass_count > self._prev_pass_count
+            if improved:
+                self._patience = 0
+            else:
+                self._patience += 1
+        self._prev_pass_count = pass_count
+
+        # Decide role(s) to dispatch.
+        dispatches = self._decide_dispatches(
+            n_tools, batch_results, pass_count,
+        )
+
+        trajectory.append({
+            "step": "state_inspection",
+            "n_tools": n_tools,
+            "pass_count": pass_count,
+            "patience": self._patience,
+            "dispatches": [d[0] for d in dispatches],
+        })
+        logger.info(
+            "Adaptive state: tools=%d, pass=%d/%d, patience=%d → dispatching: %s",
+            n_tools, pass_count, len(batch_results), self._patience,
+            [d[0] for d in dispatches],
+        )
+
+        # ── Execute each dispatch ──
+        mutated = False
+        for role_name, system_prompt in dispatches:
+            try:
+                vc.checkout_branch("main")
+            except Exception:
+                pass
+
+            from ....algorithms.aevolve.prompts import build_evolution_prompt
+            cfg = self.engine.config
+            base_prompt = build_evolution_prompt(
+                solver_workspace, batch_results, drafts=[],
+                evo_number=evo_number,
+                evolve_prompts=cfg.evolve_prompts,
+                evolve_skills=cfg.evolve_skills,
+                evolve_memory=cfg.evolve_memory,
+                evolve_tools=cfg.evolve_tools,
+                evolve_infra=cfg.evolve_infra,
+            )
+
+            full_prompt = base_prompt
+            try:
+                result = self.engine._run_llm(
+                    full_prompt, solver_workspace.root,
+                    system_prompt=system_prompt,
+                )
+                vc.commit(
+                    message=f"evo-{evo_number}-{role_name}: adaptive evolution",
+                    tag=f"evo-{evo_number}-{role_name}",
+                )
+                step_mutated = True
+            except Exception as e:
+                logger.warning("Adaptive %s failed: %s", role_name, e)
+                step_mutated = False
+
+            trajectory.append({
+                "step": role_name,
+                "mutated": step_mutated,
+            })
+            if step_mutated:
+                mutated = True
+
+            logger.info("Adaptive %s: mutated=%s", role_name, step_mutated)
+
+        return {
+            "evo_number": evo_number,
+            "mutated": mutated,
+            "plan": {"summary": f"adaptive dispatch: {[d[0] for d in dispatches]}"},
+            "branches": tree.branch_names(),
+            "trajectory": trajectory,
+        }
+
+    def _decide_dispatches(
+        self,
+        n_tools: int,
+        batch_results: list[dict],
+        pass_count: int,
+    ) -> list[tuple[str, str]]:
+        """Deterministic dispatch based on workspace state."""
+        dispatches: list[tuple[str, str]] = []
+
+        # Rule 1: No tools → always build tools first.
+        if n_tools == 0:
+            dispatches.append(("tool_builder", TOOL_BUILDER_SYSTEM))
+            return dispatches
+
+        # Rule 2: Tools exist but many errors → debug first.
+        # Estimate error rate from batch: tasks with high turn counts
+        # and no success likely hit tool errors.
+        error_indicators = sum(
+            1 for r in batch_results
+            if r.get("turns", 0) > 15 and not r.get("success", False)
+        )
+        error_rate = error_indicators / max(len(batch_results), 1)
+        if error_rate > 0.3:
+            dispatches.append(("debugger", DEBUGGER_SYSTEM))
+            return dispatches
+
+        # Rule 3: Tools work, score stagnant → strategist with escalation.
+        if self._patience >= 1:
+            tier_idx = min(self._patience - 1, len(ESCALATION_TIERS) - 1)
+            tier_name, tier_prompt = ESCALATION_TIERS[tier_idx]
+            dispatches.append((f"strategist_{tier_name}", tier_prompt))
+            return dispatches
+
+        # Rule 4: Tools work, score improving → refine.
+        dispatches.append(("refiner", REFINER_SYSTEM))
+        return dispatches
