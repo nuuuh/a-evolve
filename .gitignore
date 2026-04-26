@@ -164,3 +164,4 @@ agent_evolve/benchmarks/tb2/challenges/
 examples/run_skillbench_solve_all_ablate.sh
 examples/skillbench_evolve_one.py
 .humanize*
+docs/futurex/multi_agent_evolution_plan.md
