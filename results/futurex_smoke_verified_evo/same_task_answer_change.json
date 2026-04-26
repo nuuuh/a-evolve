@@ -1,0 +1,429 @@
+{
+  "template": "verified",
+  "comparison_baseline": "H0a (no search, pure LLM)",
+  "method": "Same instance_ids, batch 2+ from verified vs H0a. Answers extracted from trajectory boxed/submit outputs.",
+  "total_compared": 46,
+  "answers_changed": 25,
+  "changed_to_correct": 8,
+  "changed_to_wrong": 3,
+  "both_correct_unchanged": 11,
+  "both_wrong_unchanged": 24,
+  "h0a_pass_rate": "14/46",
+  "verified_pass_rate": "19/46",
+  "per_task_evidence": [
+    {
+      "instance_id": "futurex_past_0057_20260118",
+      "h0a_answer": "Yes",
+      "h0a_correct": false,
+      "verified_answer": "Yes",
+      "verified_correct": false,
+      "verified_bash_calls": 6,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0067_20260120",
+      "h0a_answer": "Tommy Fleetwood (12), Hideki Matsuyama (13), Patrick Cantlay (14)",
+      "h0a_correct": false,
+      "verified_answer": "12. Hideki Matsuyama, 13. Shane Lowry, 14. Russell Henley",
+      "verified_correct": false,
+      "verified_bash_calls": 10,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0068_20260119",
+      "h0a_answer": "The specific titles for ranks 13-15 on the Amazon Charts Most Read Fiction list for January 26, 2026 cannot be determined with confidence. Based on historical patterns, these positions would likely be occupied by recent releases from major bestselling authors (such as James Patterson, Nora Roberts, Colleen Hoover, or similar), carry-over holiday season titles from late 2025, or early 2026 releases. Exact titles are unknown without knowledge of future publishing schedules.",
+      "h0a_correct": false,
+      "verified_answer": "Rank 13: Wind and Truth (Brandon Sanderson), Rank 14: The Women (Kristin Hannah), Rank 15: James (Percival Everett)",
+      "verified_correct": false,
+      "verified_bash_calls": 8,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0079_20260124",
+      "h0a_answer": "C, D",
+      "h0a_correct": false,
+      "verified_answer": "E",
+      "verified_correct": false,
+      "verified_bash_calls": 8,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0086_20260125",
+      "h0a_answer": "A",
+      "h0a_correct": true,
+      "verified_answer": "D",
+      "verified_correct": false,
+      "verified_bash_calls": 20,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0096_20260125",
+      "h0a_answer": "B",
+      "h0a_correct": false,
+      "verified_answer": "A",
+      "verified_correct": true,
+      "verified_bash_calls": 9,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0105_20260126",
+      "h0a_answer": "Yes",
+      "h0a_correct": false,
+      "verified_answer": "Yes",
+      "verified_correct": false,
+      "verified_bash_calls": 11,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0106_20260124",
+      "h0a_answer": "Yes",
+      "h0a_correct": true,
+      "verified_answer": "Yes",
+      "verified_correct": true,
+      "verified_bash_calls": 12,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0112_20260125",
+      "h0a_answer": "A",
+      "h0a_correct": false,
+      "verified_answer": "A",
+      "verified_correct": false,
+      "verified_bash_calls": 12,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0115_20260129",
+      "h0a_answer": "A, D, G, M",
+      "h0a_correct": false,
+      "verified_answer": "A",
+      "verified_correct": true,
+      "verified_bash_calls": 16,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0117_20260203",
+      "h0a_answer": "I",
+      "h0a_correct": false,
+      "verified_answer": "G",
+      "verified_correct": false,
+      "verified_bash_calls": 3,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0119_20260130",
+      "h0a_answer": "A",
+      "h0a_correct": true,
+      "verified_answer": "A",
+      "verified_correct": true,
+      "verified_bash_calls": 3,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0124_20260202",
+      "h0a_answer": "B, C, F",
+      "h0a_correct": false,
+      "verified_answer": "A, B, F",
+      "verified_correct": false,
+      "verified_bash_calls": 22,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0133_20260201",
+      "h0a_answer": "A",
+      "h0a_correct": false,
+      "verified_answer": "A",
+      "verified_correct": false,
+      "verified_bash_calls": 7,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0137_20260130",
+      "h0a_answer": "No",
+      "h0a_correct": true,
+      "verified_answer": "No",
+      "verified_correct": true,
+      "verified_bash_calls": 4,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0149_20260201",
+      "h0a_answer": "A",
+      "h0a_correct": true,
+      "verified_answer": "A",
+      "verified_correct": true,
+      "verified_bash_calls": 8,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0156_20260228",
+      "h0a_answer": "J",
+      "h0a_correct": true,
+      "verified_answer": "J",
+      "verified_correct": true,
+      "verified_bash_calls": 7,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0164_20260302",
+      "h0a_answer": "B",
+      "h0a_correct": false,
+      "verified_answer": "A",
+      "verified_correct": true,
+      "verified_bash_calls": 12,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0166_20260303",
+      "h0a_answer": "No",
+      "h0a_correct": false,
+      "verified_answer": "No",
+      "verified_correct": false,
+      "verified_bash_calls": 26,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0169_20260226",
+      "h0a_answer": "No",
+      "h0a_correct": true,
+      "verified_answer": "No",
+      "verified_correct": true,
+      "verified_bash_calls": 9,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0174_20260301",
+      "h0a_answer": "Yes",
+      "h0a_correct": false,
+      "verified_answer": "Yes",
+      "verified_correct": false,
+      "verified_bash_calls": 8,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0183_20260308",
+      "h0a_answer": "A",
+      "h0a_correct": false,
+      "verified_answer": "D",
+      "verified_correct": true,
+      "verified_bash_calls": 16,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0192_20260308",
+      "h0a_answer": "I",
+      "h0a_correct": false,
+      "verified_answer": "B, G",
+      "verified_correct": false,
+      "verified_bash_calls": 5,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0207_20260306",
+      "h0a_answer": "No",
+      "h0a_correct": true,
+      "verified_answer": "No",
+      "verified_correct": true,
+      "verified_bash_calls": 8,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0209_20260309",
+      "h0a_answer": "Yes",
+      "h0a_correct": false,
+      "verified_answer": "No",
+      "verified_correct": true,
+      "verified_bash_calls": 20,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0211_20260310",
+      "h0a_answer": "Yes",
+      "h0a_correct": false,
+      "verified_answer": "Yes",
+      "verified_correct": false,
+      "verified_bash_calls": 12,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0213_20260308",
+      "h0a_answer": "B",
+      "h0a_correct": false,
+      "verified_answer": "A",
+      "verified_correct": true,
+      "verified_bash_calls": 4,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0219_20260314",
+      "h0a_answer": "A",
+      "h0a_correct": true,
+      "verified_answer": "D",
+      "verified_correct": false,
+      "verified_bash_calls": 6,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0221_20260315",
+      "h0a_answer": "B",
+      "h0a_correct": true,
+      "verified_answer": "B",
+      "verified_correct": true,
+      "verified_bash_calls": 12,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0228_20260315",
+      "h0a_answer": "C",
+      "h0a_correct": true,
+      "verified_answer": "C",
+      "verified_correct": true,
+      "verified_bash_calls": 5,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0233_20260313",
+      "h0a_answer": "C",
+      "h0a_correct": false,
+      "verified_answer": "C",
+      "verified_correct": false,
+      "verified_bash_calls": 9,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0239_20260312",
+      "h0a_answer": "A",
+      "h0a_correct": false,
+      "verified_answer": "B",
+      "verified_correct": true,
+      "verified_bash_calls": 11,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0241_20260316",
+      "h0a_answer": "No",
+      "h0a_correct": false,
+      "verified_answer": "Yes",
+      "verified_correct": true,
+      "verified_bash_calls": 6,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0255_20260313",
+      "h0a_answer": "Ranks 15-17 on the 2026-03-20 daily chart are predicted to be provincial-level Political and Legal Affairs Commission Weibo accounts, most likely from: Rank 15: \u6e56\u5357\u653f\u6cd5 or similar provincial account; Rank 16: \u56db\u5ddd\u653f\u6cd5 or similar provincial account; Rank 17: \u6e56\u5317\u653f\u6cd5 or similar provincial account. Note: High uncertainty due to the daily/volatile nature of this ranking and the long prediction horizon.",
+      "h0a_correct": false,
+      "verified_answer": "Unable to determine the specific Weibo accounts ranked 15-17 on the 2026-03-20 daily chart of the Political and Legal Affairs Commissions Weibo Accounts Influence Ranking published by Youmei/Midu, as this is highly specific daily data from a niche Chinese media analytics platform that is not accessible through available research tools.",
+      "verified_correct": false,
+      "verified_bash_calls": 5,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0260_20260316",
+      "h0a_answer": "Rank 3: \u7406\u60f3L6 (Li Auto L6), Rank 4: \u95ee\u754cM9 (AITO M9), Rank 5: \u6bd4\u4e9a\u8fea\u5b8bL (BYD Song L)",
+      "h0a_correct": false,
+      "verified_answer": "Positions 3-5 on Dongchedi's SUV\u5168\u56fd\u70ed\u95e8\u699c for March 23, 2026 are likely: 3rd - Tesla Model Y (\u7279\u65af\u62c9Model Y), 4th - BYD Yuan Plus (\u6bd4\u4e9a\u8fea\u5143PLUS), 5th - Li Auto L6 (\u7406\u60f3L6)",
+      "verified_correct": false,
+      "verified_bash_calls": 6,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0266_20260312",
+      "h0a_answer": "1.45",
+      "h0a_correct": false,
+      "verified_answer": "1.05",
+      "verified_correct": false,
+      "verified_bash_calls": 5,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0274_20260316",
+      "h0a_answer": "23.5",
+      "h0a_correct": false,
+      "verified_answer": "26",
+      "verified_correct": false,
+      "verified_bash_calls": 5,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0284_20260322",
+      "h0a_answer": "E, F, G",
+      "h0a_correct": false,
+      "verified_answer": "B, C, F",
+      "verified_correct": false,
+      "verified_bash_calls": 2,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0286_20260324",
+      "h0a_answer": "A",
+      "h0a_correct": true,
+      "verified_answer": "A",
+      "verified_correct": true,
+      "verified_bash_calls": 8,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0290_20260323",
+      "h0a_answer": "B",
+      "h0a_correct": false,
+      "verified_answer": "B",
+      "verified_correct": false,
+      "verified_bash_calls": 5,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0295_20260324",
+      "h0a_answer": "No",
+      "h0a_correct": true,
+      "verified_answer": "Yes",
+      "verified_correct": false,
+      "verified_bash_calls": 5,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0302_20260319",
+      "h0a_answer": "A",
+      "h0a_correct": false,
+      "verified_answer": "A",
+      "verified_correct": false,
+      "verified_bash_calls": 5,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0303_20260324",
+      "h0a_answer": "Israel",
+      "h0a_correct": true,
+      "verified_answer": "Israel",
+      "verified_correct": true,
+      "verified_bash_calls": 5,
+      "answer_changed": false
+    },
+    {
+      "instance_id": "futurex_past_0310_20260320",
+      "h0a_answer": "The specific movies ranked 4-6 on Douban's weekly word-of-mouth ranking for March 27, 2026 cannot be reliably predicted without knowledge of the Chinese film release schedule for that period. Based on historical patterns, these positions would likely feature a mix of high-rated domestic Chinese films and international releases showing in Chinese cinemas during that week, but specific titles are unknown at this time.",
+      "h0a_correct": false,
+      "verified_answer": "Scare Out (\u9171\u56ed\u5f04), Per Aspera ad Astra (\u661f\u9645\u7a7f\u8d8a), Blades of the Guardians (\u9556\u4eba)",
+      "verified_correct": false,
+      "verified_bash_calls": 8,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0320_20260323",
+      "h0a_answer": "The specific projects ranked 5-7 on OpenGithub's github-weekly-rank for 2026-03-30 cannot be reliably predicted. Based on current trends (2024-2025), they are most likely to be AI/ML-related repositories, LLM tools, or developer utilities that go viral around that time. Probable candidates would be from categories like: AI coding assistants, LLM frameworks, or trending developer tools active in late March 2026.",
+      "h0a_correct": false,
+      "verified_answer": "Unable to determine the specific projects ranked 5-7 on OpenGithub's github-weekly-rank for 2026-03-30, as this requires real-time GitHub trending data that cannot be predicted in advance. The rankings change weekly based on GitHub activity metrics.",
+      "verified_correct": false,
+      "verified_bash_calls": 8,
+      "answer_changed": true
+    },
+    {
+      "instance_id": "futurex_past_0326_20260324",
+      "h0a_answer": "4200",
+      "h0a_correct": false,
+      "verified_answer": "3900.00",
+      "verified_correct": false,
+      "verified_bash_calls": 5,
+      "answer_changed": true
+    }
+  ]
+}
