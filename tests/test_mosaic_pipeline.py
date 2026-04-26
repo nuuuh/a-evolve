@@ -161,6 +161,45 @@ def test_mosaic_auto_branch_when_planner_only_targets_main(tmp_path, monkeypatch
     assert len(targets) >= 2, "Expected at least main + auto-branch"
 
 
+def test_mosaic_single_assignment_still_creates_branch(tmp_path, monkeypatch):
+    """When planner emits exactly 1 assignment for a 4-task batch, mosaic
+    deterministically splits to exercise branch-specialist + fusion."""
+    ws, vc = _init_workspace(tmp_path)
+    engine = _StubEngine()
+    tree = StrategyTree(branches=[])
+
+    _patch_planner(monkeypatch, {
+        "summary": "single assignment",
+        "assignments": [
+            {"target": "main", "focus": "general", "workload": "Improve all.",
+             "task_ids": []},
+        ],
+    })
+
+    def mutate(workspace_root):
+        p = Path(workspace_root) / "prompts" / "system.md"
+        p.write_text(p.read_text() + "\n# mutated")
+
+    engine.set_mutate(mutate)
+
+    tpl = Template(engine)
+    result = tpl.execute(
+        vc, ws, _four_batch_results(), tree, evo_number=5,
+        routing_log_path=None,
+    )
+
+    specialist_steps = [t for t in result["trajectory"] if t["step"] == "specialist"]
+    targets = {t["target"] for t in specialist_steps}
+    assert "main" in targets
+    assert any(t != "main" for t in targets), \
+        "Expected auto-created branch specialist for single-assignment 4-task batch"
+
+    fusion_steps = [t for t in result["trajectory"] if t["step"] == "fusion"]
+    assert len(fusion_steps) == 1
+    assert len(fusion_steps[0]["merged_from"]) >= 1, \
+        "Expected fusion to have non-empty merged_from"
+
+
 def test_mosaic_no_mutation_reports_false(tmp_path, monkeypatch):
     """When no specialist mutates, mutated=False and fusion is skipped."""
     ws, vc = _init_workspace(tmp_path)
