@@ -1,6 +1,8 @@
 # FutureX full evolution with plan-driven multi-agent orchestration
 # (no task routing — the analyst classifies batch failures and guides
 # the evolver, but every task still flows through main).
+# Starts with NO built-in search; evolution must earn search capability
+# via /tools/*.py + bash.
 batch_size: 20
 max_cycles: 0
 holdout_ratio: 0.0
@@ -19,7 +21,8 @@ egl_window: 3
 # FutureX-specific
 model_name: us.anthropic.claude-sonnet-4-6
 sort_by_timestamp: true
-search_mode: strict
+builtin_search: "off"
+sandbox_network: bridge
 
 # Multi-agent orchestration (no navigation)
 orchestrator: plan_driven

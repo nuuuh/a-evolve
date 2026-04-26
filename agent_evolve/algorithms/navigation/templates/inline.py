@@ -51,8 +51,24 @@ def build_branching_section(
     else:
         branch_lines.append("(no branches yet — only main)")
 
+    # Reveal-aware counts: a record with no "success" key came through
+    # the reveal gate with its label withheld (trajectory_only on, or
+    # temporal_reveal holding the label back until resolution).  Those
+    # are *pending*, not *failed* — report them separately.
     n_tasks = len(batch_results)
-    n_success = sum(1 for r in batch_results if r.get("success", False))
+    revealed = [r for r in batch_results if "success" in r]
+    n_success = sum(1 for r in revealed if r.get("success"))
+    n_fail = len(revealed) - n_success
+    n_pending = n_tasks - len(revealed)
+    if n_pending == n_tasks:
+        batch_summary = f"{n_tasks} tasks this cycle (labels withheld — infer from behaviour)."
+    elif n_pending:
+        batch_summary = (
+            f"{n_tasks} tasks this cycle ({n_success} passed, "
+            f"{n_fail} failed, {n_pending} pending reveal)."
+        )
+    else:
+        batch_summary = f"{n_tasks} tasks this cycle ({n_success} passed, {n_fail} failed)."
 
     return f"""
 
@@ -68,7 +84,7 @@ You have full git access via workspace_bash.
 
 ### Batch Summary
 
-{n_tasks} tasks this cycle ({n_success} passed, {n_tasks - n_success} failed/unknown).
+{batch_summary}
 
 ### Exploring Existing Branches
 

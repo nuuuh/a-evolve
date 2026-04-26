@@ -268,13 +268,29 @@ def main():
         # only see config, not args) can check navigation_enabled.
         config.navigation_enabled = navigation_enabled
         orchestrator_type = config.extra.get("orchestrator", "")
-        multi_agent = orchestrator_type == "plan_driven"
+        multi_agent = bool(orchestrator_type)
         if navigation_enabled or multi_agent:
             from agent_evolve.algorithms.navigation import NavigationEngine
-            mode = "orchestrated" if multi_agent else "inline"
-            if mode == "orchestrated":
+            if orchestrator_type == "plan_driven":
+                mode = "orchestrated"
                 log.info("Evolution template: orchestrated (plan-driven)")
-            evolver = NavigationEngine(config, mode=mode)
+                evolver = NavigationEngine(config, mode=mode)
+            elif orchestrator_type:
+                # Dynamic template: import from templates/<name>.py
+                import importlib
+                mod = importlib.import_module(
+                    f"agent_evolve.algorithms.navigation.templates.{orchestrator_type}")
+                log.info("Evolution template: %s (custom)", orchestrator_type)
+                evolver = NavigationEngine(config, mode="inline")
+                evolver._template = mod.Template(evolver)
+            else:
+                mode = "inline"
+                evolver = NavigationEngine(config, mode=mode)
+            # Hand the engine a reference to the observer so its templates
+            # can honour trajectory_only / temporal_reveal when composing
+            # evolver/planner prompts (inline batch summaries + orchestrated
+            # planner task summaries).
+            evolver.observer = observer
         else:
             evolver = AEvolveEngine(config)
         strategy_tree = None

@@ -1,4 +1,5 @@
-# FutureX navigation + multi-agent orchestration (strict Wikipedia search)
+# FutureX navigation + multi-agent orchestration — starts with NO built-in
+# search; evolution must earn search capability via /tools/*.py + bash.
 batch_size: 20
 max_cycles: 0
 holdout_ratio: 0.0
@@ -17,7 +18,8 @@ egl_window: 3
 # FutureX-specific
 model_name: us.anthropic.claude-sonnet-4-6
 sort_by_timestamp: true
-search_mode: strict
+builtin_search: "off"
+sandbox_network: bridge
 
 # Navigation + multi-agent orchestration
 navigation_enabled: true

@@ -1,0 +1,25 @@
+# FutureX multi-agent evolution — verified template.
+# Starts with NO built-in search; evolution must earn search capability.
+batch_size: 20
+max_cycles: 0
+holdout_ratio: 0.0
+
+evolve_prompts: true
+evolve_skills: true
+evolve_memory: true
+evolve_tools: true
+
+evolver_model: us.anthropic.claude-opus-4-6-v1
+evolver_max_tokens: 128000
+
+egl_threshold: 0.05
+egl_window: 3
+
+# FutureX-specific
+model_name: us.anthropic.claude-sonnet-4-6
+sort_by_timestamp: true
+builtin_search: "off"
+sandbox_network: bridge
+
+# Multi-agent template
+orchestrator: verified

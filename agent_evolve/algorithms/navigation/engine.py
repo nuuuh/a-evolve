@@ -61,6 +61,11 @@ class NavigationEngine(AEvolveEngine):
     ):
         super().__init__(config, llm)
         self.mode = mode
+        # Optional Observer — when set, the engine applies the reveal gate
+        # (trajectory_only + temporal_reveal) to batch_results before
+        # handing them to any template.  Set by the harness after
+        # construction via ``engine.observer = observer``.
+        self.observer: Any | None = None
         if template is not None:
             self._template = template
         elif mode == "orchestrated":
@@ -356,8 +361,17 @@ class NavigationEngine(AEvolveEngine):
             tag=f"pre-nav-evo-{evo_number}",
         )
 
+        # Apply the reveal gate once, centrally, before any template sees
+        # the batch.  Templates then treat records with missing
+        # success/score as "pending" (not "failed") — see
+        # build_branching_section / build_planner_prompt.
+        gated_batch = (
+            self.observer.filter_batch_for_evolver(batch_results)
+            if self.observer is not None else batch_results
+        )
+
         result = self._template.execute(
-            vc, solver_workspace, batch_results,
+            vc, solver_workspace, gated_batch,
             tree, evo_number, routing_log_path,
         )
 

@@ -65,10 +65,20 @@ class FutureXAgent(BaseAgent):
 
         if self.tool_registry:
             parts.append("\n\n## Evolved Tools\n")
-            parts.append(
-                "Analysis tools available at /tools/ in the sandbox. "
-                "Run them via the bash tool.\n"
+            builtin_search = getattr(self.config, "extra", {}).get(
+                "builtin_search", "strict"
             )
+            if builtin_search == "off":
+                parts.append(
+                    "You have no built-in web_search tool. The scripts at /tools/ "
+                    "are your only path to external data — invoke them via the "
+                    "bash tool.\n"
+                )
+            else:
+                parts.append(
+                    "Analysis tools available at /tools/ in the sandbox. "
+                    "Run them via the bash tool.\n"
+                )
             for t in self.tool_registry:
                 name = t.get("name", "")
                 desc = t.get("description", "")

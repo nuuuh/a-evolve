@@ -76,12 +76,21 @@ def _ensure_sandbox_image():
     if result.returncode == 0:
         _sandbox_image_ready = True
         return
-    # Build it from alpine + bash + git
+    # Build it from alpine + common packages evolved tools need.
     logger.info("Building sandbox image %s (one-time)...", SANDBOX_IMAGE)
+    dockerfile = (
+        f"FROM {_SANDBOX_BASE}\n"
+        "RUN apk add --no-cache bash git python3 py3-pip curl jq \\\n"
+        "    && pip3 install --break-system-packages \\\n"
+        "       requests beautifulsoup4 lxml htmldate \\\n"
+        "       duckduckgo-search feedparser pyyaml \\\n"
+        "       numpy sympy yfinance \\\n"
+        "       pycryptodome python-dateutil\n"
+    )
     result = subprocess.run(
         ["docker", "build", "-t", SANDBOX_IMAGE, "-"],
-        input=f"FROM {_SANDBOX_BASE}\nRUN apk add --no-cache bash git python3\n",
-        capture_output=True, text=True, timeout=120,
+        input=dockerfile,
+        capture_output=True, text=True, timeout=300,
     )
     if result.returncode != 0:
         raise RuntimeError(f"Failed to build sandbox image: {result.stderr}")

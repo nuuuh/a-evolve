@@ -3,10 +3,11 @@
 export PYTHONDONTWRITEBYTECODE=1
 # Smoke tests for FutureX temporal prediction evolution.
 #
-# Five short experiments (~56 temporally-spread tasks each, batch_size=10)
+# Six short experiments (~56 temporally-spread tasks each, batch_size=10)
 # exercising every evolution mode:
 #
-#   H0a_smoke        Baseline (no evolution, strict search)
+#   H0a_smoke        Baseline — no evolution, NO web search (pure LLM)
+#   H0b_smoke        Baseline — no evolution, strict web search
 #   H1_smoke         Naive evolution (single-agent)
 #   H1_multi_smoke   Multi-agent naive evolution (plan-driven, no routing)
 #   H5_smoke         Navigation (inline branching)
@@ -127,8 +128,13 @@ run() {
 
 # ─── Smoke experiments ────────────────────────────────────────────────
 
-# H0a_smoke: Baseline — no evolution, strict search
-run H0a_smoke baseline_smoke \
+# H0a_smoke: Baseline — no evolution, NO web search (pure LLM reasoning)
+run H0a_smoke baseline_no_search_smoke \
+  --output-dir results/futurex_smoke_baseline_no_search \
+  --config experiments/futurex/configs/baseline_no_search.yaml
+
+# H0b_smoke: Baseline — no evolution, strict search (Wikipedia revision API)
+run H0b_smoke baseline_smoke \
   --output-dir results/futurex_smoke_baseline \
   --config experiments/futurex/configs/baseline.yaml
 
@@ -159,14 +165,21 @@ echo ""
 echo "=== All requested smoke experiments complete ==="
 echo ""
 echo "Smoke experiments:"
-echo "  H0a_smoke        Baseline (no evolution)"
-echo "  H1_smoke         Naive evolution"
-echo "  H1_multi_smoke   Multi-agent naive evolution (plan-driven, no routing)"
-echo "  H5_smoke         Navigation (inline branching)"
-echo "  H5_multi_smoke   Navigation + multi-agent (plan-driven + routing)"
+echo "  H0a_smoke        Baseline — no built-in search, no evolution (pure-LLM floor)"
+echo "  H0b_smoke        Baseline — built-in strict search, no evolution (search upper bound)"
+echo "  H1_smoke         Naive evolution starting from H0a floor (builtin_search=off)"
+echo "  H1_multi_smoke   Multi-agent naive evolution, same floor"
+echo "  H5_smoke         Navigation (inline branching), same floor"
+echo "  H5_multi_smoke   Navigation + multi-agent, same floor"
+echo ""
+echo "All H1/H5 experiments start with NO built-in search — evolution must"
+echo "earn search capability by writing tools under /tools/*.py that the"
+echo "solver invokes via the bash tool."
 echo ""
 echo "Key comparisons:"
-echo "  H1_smoke        vs H0a_smoke:     Value of naive evolution"
+echo "  H0b_smoke       vs H0a_smoke:     Value of handwritten search"
+echo "  H1_smoke        vs H0a_smoke:     Value of evolution (from same floor)"
+echo "  H1_smoke        vs H0b_smoke:     Can evolution match handwritten search?"
 echo "  H1_multi_smoke  vs H1_smoke:      Value of multi-agent (no navigation)"
 echo "  H5_smoke        vs H1_smoke:      Value of navigation"
 echo "  H5_multi_smoke  vs H5_smoke:      Value of multi-agent on top of navigation"

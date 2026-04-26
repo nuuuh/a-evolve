@@ -20,4 +20,4 @@ evo_trigger_threshold: -1
 # FutureX-specific
 model_name: us.anthropic.claude-sonnet-4-6
 sort_by_timestamp: true
-search_mode: live
+builtin_search: live

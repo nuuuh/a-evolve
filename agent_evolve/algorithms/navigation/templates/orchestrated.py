@@ -226,6 +226,14 @@ def build_planner_prompt(
     ``navigation_enabled``; this function builds the batch + context
     section the planner reads to write the plan.
     """
+    # The reveal gate has already been applied upstream (by the
+    # NavigationEngine using the Observer): records whose labels are
+    # still hidden no longer carry ``success``/``detail`` fields.  We
+    # simply include those fields whenever they are present.
+    # ``trajectory_only`` is kept for API compatibility but unused — the
+    # observer owns the reveal decision now.
+    del trajectory_only  # now observer-driven
+
     summaries = []
     for r in batch_results[:30]:  # cap to avoid prompt bloat
         entry: dict[str, Any] = {
@@ -251,22 +259,33 @@ def build_planner_prompt(
             s = summarise_tool_latency(timings)
             if s:
                 entry["tool_latency"] = s
-        if not trajectory_only:
-            entry["success"] = r.get("success", False)
-            entry["detail"] = r.get("detail", "")[:300]
+        # Include ground-truth fields only when they survived the
+        # reveal gate (observer stripped them otherwise).
+        if "success" in r:
+            entry["success"] = r["success"]
+            if "detail" in r:
+                entry["detail"] = str(r["detail"])[:300]
         summaries.append(entry)
 
     if not batch_results:
         return "No task results to analyze."
 
-    if trajectory_only:
-        header = f"## Batch Results ({len(batch_results)} tasks)"
-    else:
-        n_success = sum(1 for r in batch_results if r.get("success", False))
-        n_fail = len(batch_results) - n_success
+    revealed = [r for r in batch_results if "success" in r]
+    n_revealed = len(revealed)
+    n_total = len(batch_results)
+    n_pending = n_total - n_revealed
+    if n_revealed == 0:
         header = (
-            f"## Batch Results ({len(batch_results)} tasks: "
-            f"{n_success} passed, {n_fail} failed)"
+            f"## Batch Results ({n_total} tasks; labels withheld — "
+            f"infer from behaviour)"
+        )
+    else:
+        n_success = sum(1 for r in revealed if r.get("success"))
+        n_fail = n_revealed - n_success
+        pending_part = f", {n_pending} pending reveal" if n_pending else ""
+        header = (
+            f"## Batch Results ({n_total} tasks: {n_success} passed, "
+            f"{n_fail} failed{pending_part})"
         )
 
     tree_block = ""

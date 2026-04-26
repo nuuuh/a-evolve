@@ -318,6 +318,54 @@ class Observer:
         self._batch_id += 1
         return batch_file
 
+    # ── Reveal-gate API ───────────────────────────────────────────────
+    # These helpers answer "may the evolver see ground-truth labels for
+    # task X?" at the point where a template is about to inline raw
+    # ``batch_results`` dicts into an evolver/planner prompt.  Reuse
+    # these wherever ``success``/``score``/``detail``/``feedback`` would
+    # otherwise leak from the harness's live results.
+
+    _LABEL_FIELDS = (
+        "success", "score", "detail", "feedback", "feedback_detail",
+    )
+
+    def is_revealed(self, task_id: str) -> bool:
+        """Whether the evolver may see ground-truth labels for ``task_id``.
+
+        - ``trajectory_only=True`` → never reveal.
+        - ``temporal_reveal=False`` → always reveal (legacy behaviour).
+        - ``temporal_reveal=True`` → reveal iff the task is already in
+          ``self._revealed_ids`` (either in-batch resolved or surfaced
+          by a prior ``update_reveal_state``).
+        """
+        if self.trajectory_only:
+            return False
+        if not self.temporal_reveal:
+            return True
+        return task_id in self._revealed_ids
+
+    def filter_batch_for_evolver(
+        self, batch_results: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Return a shallow-copied batch with label fields stripped for
+        any task that's not yet revealed.
+
+        Unrevealed tasks still carry task_id, instance_id, turns,
+        conversation, tool_timings, cut_off status — i.e. *behaviour*
+        stays visible, only the *evaluation* is hidden.
+        """
+        out: list[dict[str, Any]] = []
+        for r in batch_results:
+            tid = r.get("instance_id") or r.get("task_id") or ""
+            if self.is_revealed(tid):
+                out.append(r)
+                continue
+            scrubbed = dict(r)
+            for k in self._LABEL_FIELDS:
+                scrubbed.pop(k, None)
+            out.append(scrubbed)
+        return out
+
     def update_reveal_state(
         self,
         cycle: int,

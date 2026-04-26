@@ -1,0 +1,28 @@
+{
+  "snapshot_date": "2026-04-26",
+  "events": 59,
+  "source": "https://futurex.live/",
+  "entries": [
+    {"rank": 1, "model": "GPT-5", "agent": "MiroFlow", "org": "MiroMind", "type": "Hosted", "overall": 57.28, "l1": 66.67, "l2": 64.10, "l3": 50.83, "l4": 56.35},
+    {"rank": 2, "model": "FPAgent_30B", "agent": "FPAgent", "org": "Individual_AI_Researcher", "type": "Self", "overall": 54.27, "l1": 60.00, "l2": 68.81, "l3": 47.45, "l4": 50.67},
+    {"rank": 3, "model": "claude_sonnet_4.6", "agent": "H2O_AI_Super_Agent_v1.82", "org": "h2o.ai", "type": "Self", "overall": 53.21, "l1": 60.00, "l2": 69.29, "l3": 51.66, "l4": 44.63},
+    {"rank": 4, "model": "claude_sonnet_4.6", "agent": "H2O_AI_Super_Agent_v1.81", "org": "h2o.ai", "type": "Self", "overall": 52.96, "l1": 60.00, "l2": 69.29, "l3": 50.82, "l4": 44.63},
+    {"rank": 5, "model": "GPT-5.4-high", "agent": "Search", "org": "OpenAI", "type": "Hosted", "overall": 51.96, "l1": 53.33, "l2": 52.14, "l3": 52.41, "l4": 51.20},
+    {"rank": 6, "model": "GPT5.4", "agent": "Goat", "org": "Individual_AI_Researcher", "type": "Self", "overall": 50.50, "l1": 73.33, "l2": 49.38, "l3": 38.29, "l4": 54.52},
+    {"rank": 7, "model": "FPAgent_235B", "agent": "FPAgent_beta", "org": "Individual_AI_Researcher", "type": "Self", "overall": 49.97, "l1": 66.67, "l2": 64.10, "l3": 48.40, "l4": 39.91},
+    {"rank": 8, "model": "GPT5.4", "agent": "Galaxy_v1", "org": "Individual_AI_Researcher", "type": "Self", "overall": 46.41, "l1": 60.00, "l2": 61.12, "l3": 34.96, "l4": 44.25},
+    {"rank": 9, "model": "Moonshot-kimi-k2.5-thinking", "agent": "Search", "org": "Moonshot AI", "type": "Hosted", "overall": 45.52, "l1": 60.00, "l2": 48.91, "l3": 53.54, "l4": 34.18},
+    {"rank": 10, "model": "GLM-5-thinking", "agent": "Search", "org": "Zhipu AI", "type": "Hosted", "overall": 44.06, "l1": 33.33, "l2": 53.91, "l3": 46.19, "l4": 40.22},
+    {"rank": 11, "model": "DeepSeek-V3.2-thinking", "agent": "Search", "org": "DeepSeek", "type": "Hosted", "overall": 42.07, "l1": 66.67, "l2": 48.81, "l3": 49.38, "l4": 27.06},
+    {"rank": 12, "model": "Claude-Opus-4.6-thinking", "agent": "Search", "org": "Unknown", "type": "Hosted", "overall": 39.50, "l1": 46.67, "l2": 47.14, "l3": 28.31, "l4": 42.28},
+    {"rank": 13, "model": "Qwen3.5_27B", "agent": "DragonAgent", "org": "Individual_AI_Researcher", "type": "Self", "overall": 39.38, "l1": 40.00, "l2": 59.10, "l3": 38.26, "l4": 30.21},
+    {"rank": 14, "model": "GPT5.2", "agent": "AG2_Agent_gpt5.2", "org": "AG2", "type": "Self", "overall": 35.63, "l1": 53.33, "l2": 41.50, "l3": 29.07, "l4": 33.19},
+    {"rank": 15, "model": "Minimax-M2.5", "agent": "Search", "org": "Unknown", "type": "Hosted", "overall": 33.04, "l1": 40.00, "l2": 43.91, "l3": 28.39, "l4": 29.34},
+    {"rank": 16, "model": "Minimax-M2.7", "agent": "Search", "org": "Unknown", "type": "Hosted", "overall": 32.21, "l1": 46.67, "l2": 52.14, "l3": 28.32, "l4": 21.55},
+    {"rank": 17, "model": "QwenAPI-3.5-plus-thinking", "agent": "Search", "org": "Alibaba", "type": "Hosted", "overall": 29.92, "l1": 73.33, "l2": 47.14, "l3": 12.42, "l4": 23.57},
+    {"rank": 18, "model": "Grok-4", "agent": "Search", "org": "xAI", "type": "Hosted", "overall": 29.05, "l1": 53.33, "l2": 38.91, "l3": 25.00, "l4": 21.10},
+    {"rank": 19, "model": "claude_sonnet_4.6", "agent": "A_EVOLVE_V2", "org": "Individual_AI_Researcher", "type": "Self", "overall": 21.58, "l1": 40.00, "l2": 53.52, "l3": 0.16, "l4": 17.06},
+    {"rank": 20, "model": "OpenRouter-gemini-3.1-pro-preview", "agent": "Search", "org": "Google", "type": "Hosted", "overall": 17.36, "l1": 60.00, "l2": 42.14, "l3": 0.00, "l4": 7.32},
+    {"rank": 21, "model": "GLM5", "agent": "Kairos", "org": "Individual_AI_Researcher", "type": "Self", "overall": 8.73, "l1": 53.33, "l2": 5.96, "l3": 0.00, "l4": 5.50}
+  ]
+}

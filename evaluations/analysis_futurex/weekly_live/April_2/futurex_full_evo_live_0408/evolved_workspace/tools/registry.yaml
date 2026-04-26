@@ -1,0 +1,4 @@
+tools:
+  - name: analyze_task
+    description: Analyze a temporal prediction task to identify its type (sports, election, economic data, prediction market, box office, oscars, book charts, sports prop bets, MMA/UFC, esports, chess, corporate M&A, weather, academic competition, financial market (including crypto/Bitcoin), golf rankings, AI benchmarks, tech prices, political statements, geopolitical events) and suggest optimal search strategy with specific query templates and known data points
+    usage: python tools/analyze_task.py "<task_description>"

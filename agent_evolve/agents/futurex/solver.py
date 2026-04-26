@@ -53,10 +53,11 @@ def setup(args) -> dict:
             shutil.copytree(seed, ws_dir)
         else:
             ws_dir.mkdir(parents=True, exist_ok=True)
-            (ws_dir / "SYSTEM.md").write_text(
-                "# FutureX Temporal Prediction Agent\n\n"
-                "Specialized agent for temporal prediction tasks "
-                "with time-bounded web search.\n")
+            (ws_dir / "prompts").mkdir(exist_ok=True)
+            (ws_dir / "prompts" / "system.md").write_text(
+                "You are a temporal prediction agent that forecasts "
+                "future events using only information available before "
+                "the task's creation date.\n")
             (ws_dir / "skills").mkdir(exist_ok=True)
             (ws_dir / "memory").mkdir(exist_ok=True)
             (ws_dir / "infra").mkdir(exist_ok=True)
@@ -214,16 +215,15 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
         # ── Model ────────────────────────────────────────────────
         system_prompt = args_dict.get("system_prompt",
             "You are a temporal prediction agent that forecasts future events "
-            "using pre-event information.\n\n"
+            "using only information available before the task's creation date.\n\n"
             "Strategy:\n"
-            "1. Search for relevant information (predictions, odds, expert "
-            "analysis, historical data, standings, polls).\n"
-            "2. After a few searches, reason from the evidence gathered.\n"
+            "1. Gather evidence from the tools available this cycle (they "
+            "may include search, APIs, or evolved helpers under /tools/).\n"
+            "2. If no external-data tool is available, reason from model "
+            "knowledge and base rates.\n"
             "3. Make your best prediction with \\boxed{ANSWER} or call submit.\n\n"
             "Important: You are predicting events BEFORE they happen. "
-            "Search results contain only pre-event information. "
-            "A definitive answer may not exist — make your best judgment. "
-            "Do not repeat the same search query.")
+            "A definitive answer may not exist — make your best judgment.")
         model_id = args_dict.get("model_id", "us.anthropic.claude-sonnet-4-6")
         config_obj = args_dict.get("config")
         if config_obj and hasattr(config_obj, 'extra'):
@@ -256,12 +256,20 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
         _search_call_count = [0]
         _MAX_SEARCHES = 15  # Generous cap — prevents 20+ search spirals
 
-        # Check config for search mode
-        no_web_search = False
-        search_mode = "strict"  # "strict" (Wikipedia+CC) or "live" (DDGS)
+        # Built-in search pipeline selector.
+        #   strict — built-in web_search via Wikipedia + DDGS+htmldate (default)
+        #   live   — built-in web_search via DDGS unrestricted
+        #   off    — no built-in web_search tool at all
+        # The agent can always still do search via evolved /tools/*.py + bash.
+        builtin_search = "strict"
         if config_obj and hasattr(config_obj, 'extra'):
-            no_web_search = config_obj.extra.get("no_web_search", False)
-            search_mode = config_obj.extra.get("search_mode", "strict")
+            extra = config_obj.extra
+            if "builtin_search" in extra:
+                builtin_search = extra["builtin_search"]
+            elif extra.get("no_web_search"):       # legacy
+                builtin_search = "off"
+            elif "search_mode" in extra:           # legacy
+                builtin_search = extra["search_mode"]
 
         _cutoff_iso = task_creation_date.strftime('%Y-%m-%dT23:59:59Z')
 
@@ -414,11 +422,11 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                     fetch_workers=3,
                 )
                 try:
-                    raw = future.result(timeout=30)
+                    raw = future.result(timeout=15)
                 except _cf.TimeoutError:
                     future.cancel()
                     log.warning(
-                        "htmldate search timed out for %r (>30s)", query[:50],
+                        "htmldate search timed out for %r (>15s)", query[:50],
                     )
                     return []
                 except Exception as e:
@@ -518,9 +526,9 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                 pass
             return []
 
-        if no_web_search:
-            log.info("Web search DISABLED (no_web_search=true)")
-        elif search_mode == "live":
+        if builtin_search == "off":
+            log.info("Built-in web_search DISABLED (builtin_search=off)")
+        elif builtin_search == "live":
             log.info("LIVE search (DDGS, unrestricted)")
         else:
             _sources = ["Wikipedia"]
@@ -543,7 +551,7 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
             Args:
                 query: Search query relevant to the prediction task.
             """
-            if search_mode == "live":
+            if builtin_search == "live":
                 return _live_search(query)
             _search_call_count[0] += 1
             if _search_call_count[0] > _MAX_SEARCHES:
@@ -642,51 +650,6 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
             except Exception as e:
                 return f"Search failed: {e}"
 
-        # -- sequentialthinking --
-        _thought_history = []
-        _branches = {}
-
-        @tool
-        def sequentialthinking(
-            thought: str,
-            next_thought_needed: bool,
-            thought_number: int,
-            total_thoughts: int,
-            is_revision: bool = False,
-            revises_thought: int = 0,
-            branch_from_thought: int = 0,
-            branch_id: str = "",
-            needs_more_thoughts: bool = False,
-        ) -> str:
-            """Break down complex problems through step-by-step reasoning.
-
-            Args:
-                thought: Your current thinking step.
-                next_thought_needed: True if more thinking is needed.
-                thought_number: Current step number (starts at 1).
-                total_thoughts: Estimated total steps.
-                is_revision: True if revising a previous thought.
-                revises_thought: Which thought number is being revised.
-                branch_from_thought: Branching point thought number.
-                branch_id: Branch identifier.
-                needs_more_thoughts: True if more steps needed beyond total.
-            """
-            entry = {
-                "thought": thought,
-                "thought_number": thought_number,
-                "total_thoughts": max(total_thoughts, thought_number),
-                "next_thought_needed": next_thought_needed,
-            }
-            _thought_history.append(entry)
-            if branch_from_thought and branch_id:
-                _branches.setdefault(branch_id, []).append(entry)
-            return json.dumps({
-                "thought_number": entry["thought_number"],
-                "total_thoughts": entry["total_thoughts"],
-                "next_thought_needed": next_thought_needed,
-                "history_length": len(_thought_history),
-            }, indent=2)
-
         # -- submit --
         @tool
         def submit(
@@ -763,8 +726,8 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                 )
 
         # ── Agent ────────────────────────────────────────────────
-        tools = [sequentialthinking, submit]
-        if not no_web_search:
+        tools = [submit]
+        if builtin_search != "off":
             tools.insert(0, web_search)
         if container_name:
             tools.insert(-1, bash)  # add bash before submit
@@ -930,7 +893,8 @@ def _extract_conv(messages):
                         if isinstance(c, dict)
                     )
                     parts.append(f"[tool_result]\n{txt}")
-        conv.append({"role": role, "content": "".join(parts)})
+        if parts:
+            conv.append({"role": role, "content": "\n".join(parts)})
     return conv
 
 

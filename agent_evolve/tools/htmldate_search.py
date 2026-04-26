@@ -132,7 +132,7 @@ def _extract_date(html: str, url: str = "") -> Optional[str]:
         return find_date(
             html,
             url=url,
-            extensive_search=True,
+            extensive_search=False,
             original_date=True,  # prefer original publication over last-modified
             outputformat="%Y-%m-%d",
         )

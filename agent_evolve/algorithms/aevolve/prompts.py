@@ -78,19 +78,21 @@ def build_evolution_prompt(
 ) -> str:
     """Build the user-message prompt for one evolution cycle.
 
-    Produces a privacy-safe trajectory index: task_id, batch, cycle_age,
-    turns, a short task-input preview, and pointer paths the evolver can
-    open via workspace_bash against the /trajectories mount. Evaluation
-    signals (success, score, feedback, judge claims) are deliberately
-    excluded — the evolver infers improvement from behaviour alone.
+    Produces a trajectory index: task_id, batch, cycle_age, turns, a
+    short task-input preview, and pointer paths the evolver can open via
+    workspace_bash against the /trajectories mount.
 
-    The ``include_patches`` and ``trajectory_only`` arguments are kept
-    for API compatibility but no longer gate ground-truth fields (those
-    are never emitted). ``include_patches`` is a no-op in the new
-    retrieval layout; patches are always pointer-accessed via
-    ``patch_file``.
+    Ground-truth labels (success/score) are included transparently when
+    the upstream gate left them in the logs — either via
+    ``observer.get_recent_logs`` (which overlays revealed_supplement) or
+    via ``filter_batch_for_evolver`` (which strips unrevealed tasks).
+    The prompt builder itself is a passthrough: it includes whatever
+    fields survived the upstream reveal decision.
+
+    ``include_patches`` and ``trajectory_only`` are kept for API
+    compatibility but are no-ops.
     """
-    del include_patches, trajectory_only  # unused in privacy-safe mode
+    del include_patches, trajectory_only
 
     # Order logs newest-to-oldest by batch id so the evolver can reason
     # about temporal ordering without being handed raw timestamps.
@@ -126,7 +128,15 @@ def build_evolution_prompt(
         # (solve_all_with_evolution.py::_enrich_from_partial).
         steps = log.get("steps") or []
         step0 = steps[0] if isinstance(steps, list) and steps else {}
-        status = step0.get("status") if isinstance(step0, dict) else None
+        if not isinstance(step0, dict):
+            step0 = {}
+        # Raw batch_results (navigation path) carry liveness signals at
+        # top level; observer JSONL nests them in steps[0].  Merge so
+        # downstream reads are shape-agnostic.
+        for k in ("status", "cut_off_reason", "partial_elapsed", "tool_timings"):
+            if k not in step0 and k in log:
+                step0[k] = log[k]
+        status = step0.get("status")
         if status == "cut_off":
             entry["status"] = "cut_off"
             cut_off_reason = step0.get("cut_off_reason")
@@ -138,15 +148,22 @@ def build_evolution_prompt(
         # Per-tool latency summary — lets the evolver see which tools
         # are the actual time bottleneck (e.g. a slow web_search) rather
         # than inferring "too many turns" from trajectory length alone.
-        if isinstance(step0, dict):
-            timings = step0.get("tool_timings")
-            if timings:
+        timings = step0.get("tool_timings")
+        if timings:
                 from agent_evolve.agents._partial_trajectory import (
                     summarise_tool_latency,
                 )
                 summary_line = summarise_tool_latency(timings)
                 if summary_line:
                     entry["tool_latency"] = summary_line
+        # Pass through revealed ground-truth labels.  The upstream gate
+        # (observer.get_recent_logs or filter_batch_for_evolver) already
+        # stripped these from tasks that haven't resolved yet — we just
+        # include whatever survived.
+        if "success" in log:
+            entry["success"] = log["success"]
+        if "score" in log:
+            entry["score"] = log["score"]
         summaries.append(entry)
 
     skills = workspace.list_skills()
@@ -187,14 +204,26 @@ def build_evolution_prompt(
     # Only include sections for enabled layers
     sections = []
     if logs:
+        n_labeled = sum(1 for s in summaries if "success" in s)
+        if n_labeled:
+            label_note = (
+                f"Ground-truth labels (success/score) are shown for "
+                f"{n_labeled}/{len(summaries)} tasks whose outcome is "
+                f"known. Unlabeled tasks are still pending — infer from "
+                f"behaviour."
+            )
+        else:
+            label_note = (
+                "No ground-truth labels available — infer what worked "
+                "from the agent's tool calls and outputs."
+            )
         memory_note = (
             "### Trajectory Memory Index\n"
             "Recent task attempts, newest-to-oldest by `batch`. "
             "`trajectory_file` and `patch_file` are absolute paths in "
             "your sandbox — open them via `workspace_bash` with `cat`, "
-            "`jq`, or `grep` to inspect full tool-call traces. You will "
-            "NOT see pass/fail, score, or judge feedback for any task — "
-            "infer what worked from the agent's tool calls and outputs.\n"
+            "`jq`, or `grep` to inspect full tool-call traces. "
+            f"{label_note}\n"
             f"```json\n{json.dumps(summaries, indent=2)}\n```"
         )
         sections.append(memory_note)

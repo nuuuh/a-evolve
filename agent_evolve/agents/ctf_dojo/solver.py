@@ -213,7 +213,7 @@ def solve_one(task_dict: dict, args_dict: dict) -> dict:
     log = logging.getLogger("ctf_worker")
 
     task_id = task_dict["id"]
-    max_turns = args_dict["max_turns"]
+    max_turns = args_dict.get("max_turns", 80)
     task_timeout = args_dict.get("task_timeout", 600)
     out_dir = Path(args_dict["output_dir"])
 
