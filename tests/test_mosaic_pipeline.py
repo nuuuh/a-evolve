@@ -176,9 +176,16 @@ def test_mosaic_single_assignment_still_creates_branch(tmp_path, monkeypatch):
         ],
     })
 
+    import threading
+    call_counter = {"n": 0}
+    lock = threading.Lock()
+
     def mutate(workspace_root):
+        with lock:
+            call_counter["n"] += 1
+            n = call_counter["n"]
         p = Path(workspace_root) / "prompts" / "system.md"
-        p.write_text(p.read_text() + "\n# mutated")
+        p.write_text(f"evolved variant {n} for {Path(workspace_root).name}")
 
     engine.set_mutate(mutate)
 

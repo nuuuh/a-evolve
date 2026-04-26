@@ -137,6 +137,40 @@ def test_specialists_creates_and_merges_branches(tmp_path, monkeypatch):
     assert vc.get_current_branch() == "main"
 
 
+def test_specialists_merge_failure_does_not_report_mutation(tmp_path, monkeypatch):
+    """A failed merge must not report mutated=True."""
+    ws, vc = _init_workspace(tmp_path)
+    engine = _StubEngine()
+    tree = StrategyTree(branches=[])
+
+    _patch_planner(monkeypatch, {
+        "summary": "test",
+        "assignments": [{"target": "main", "focus": "test",
+                         "workload": "Test.", "task_ids": []}],
+    })
+
+    def mutate(workspace_root):
+        p = Path(workspace_root) / "prompts" / "system.md"
+        p.write_text(p.read_text() + "\n# specialist change")
+
+    engine.set_mutate(mutate)
+
+    # Patch merge_branch to always raise (simulate conflict)
+    orig_merge = VersionControl.merge_branch
+    def failing_merge(self, source, target="main"):
+        raise RuntimeError("simulated merge conflict")
+    monkeypatch.setattr(VersionControl, "merge_branch", failing_merge)
+
+    tpl = Template(engine)
+    result = tpl.execute(vc, ws, _four_batch(), tree, evo_number=1,
+                         routing_log_path=None)
+
+    assert result["mutated"] is False
+    merge_step = [t for t in result["trajectory"] if t["step"] == "merge"]
+    assert len(merge_step) == 1
+    assert merge_step[0]["mutated"] is False
+
+
 def test_specialists_noop_mutation(tmp_path, monkeypatch):
     """When specialists don't modify files, mutated=False."""
     ws, vc = _init_workspace(tmp_path)

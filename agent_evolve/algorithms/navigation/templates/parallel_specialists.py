@@ -213,21 +213,14 @@ class Template(EvolutionTemplate):
             if not r.get("mutated"):
                 continue
             try:
-                vc.merge_branch(branch)
-                mutated = True
-                logger.info("Merged %s into main", branch)
-            except Exception as e:
-                logger.warning("Merge %s failed (conflict?): %s", branch, e)
-                # On conflict, try cherry-picking the commit
-                try:
-                    import subprocess
-                    subprocess.run(
-                        ["git", "merge", "--abort"],
-                        cwd=solver_workspace.root,
-                        capture_output=True,
-                    )
-                except Exception:
-                    pass
+                merged = vc.merge_branch(branch)
+                if merged:
+                    mutated = True
+                    logger.info("Merged %s into main", branch)
+                else:
+                    logger.info("Merge %s: nothing new to merge", branch)
+            except RuntimeError as e:
+                logger.warning("Merge %s failed: %s", branch, e)
 
         # Commit merged result
         if mutated:

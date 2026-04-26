@@ -51,7 +51,12 @@ class VersionControl:
             pass  # HEAD doesn't exist yet
 
     def commit(self, message: str, tag: str | None = None) -> bool:
-        """Stage all changes and commit.  Returns True if a commit was created."""
+        """Stage all changes and commit.  Returns True if a commit was created.
+
+        Raises ``RuntimeError`` for real git failures (hook errors, lock
+        files, config problems).  Returns False only for the benign
+        "nothing to commit" case.
+        """
         self._git("add", "-A")
         result = subprocess.run(
             ["git", "commit", "-m", message],
@@ -60,9 +65,13 @@ class VersionControl:
         if result.returncode == 0:
             logger.info("Committed: %s", message)
             committed = True
-        else:
+        elif "nothing to commit" in (result.stdout + result.stderr):
             logger.debug("Nothing to commit: %s", message)
             committed = False
+        else:
+            raise RuntimeError(
+                f"git commit failed: {result.stderr.strip()}"
+            )
         if tag:
             self._git("tag", "-f", tag)
             logger.debug("Tagged: %s", tag)
@@ -179,27 +188,34 @@ class VersionControl:
         """Switch to an existing branch (or 'main')."""
         self._git("checkout", name)
 
-    def merge_branch(self, source: str, target: str = "main") -> None:
+    def merge_branch(self, source: str, target: str = "main") -> bool:
         """Merge *source* branch into *target*.
 
-        On conflict, accepts the source branch's version (the promoted
-        specialization takes priority over root's version of the same file).
+        Returns True if the merge produced a commit (or fast-forwarded),
+        False if there was nothing to merge.  Raises ``RuntimeError`` on
+        unresolvable conflicts (after aborting the merge).
         """
         current = self.get_current_branch()
         if current != target:
             self._git("checkout", target)
+        pre_sha = self._git("rev-parse", "HEAD")
         try:
             self._git("merge", source, "-X", "theirs",
                        "-m", f"promote {source} into {target}")
-        except RuntimeError:
-            # If merge still fails, abort
+            post_sha = self._git("rev-parse", "HEAD")
+            return post_sha != pre_sha
+        except RuntimeError as e:
             try:
                 self._git("merge", "--abort")
             except RuntimeError:
                 pass
+            raise RuntimeError(f"Merge {source} into {target} failed: {e}") from e
         finally:
             if current != target:
-                self._git("checkout", current)
+                try:
+                    self._git("checkout", current)
+                except RuntimeError:
+                    pass
 
     def rebase_branch(self, branch: str, onto: str = "main") -> None:
         """Rebase *branch* onto *onto* so it inherits latest root changes."""

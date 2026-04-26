@@ -301,7 +301,7 @@ class Template(EvolutionTemplate):
                     proc = subprocess.run(
                         cmd,
                         capture_output=True, text=True, timeout=15,
-                        cwd=str(workspace.root), shell=isinstance(cmd, str),
+                        cwd=str(workspace.root),
                     )
                     if proc.returncode != 0:
                         stderr = (proc.stderr or "")[:100]
@@ -340,8 +340,11 @@ class Template(EvolutionTemplate):
     @staticmethod
     def _resolve_tool_command(
         entry: dict, workspace, query: str, cutoff: str,
-    ) -> list[str] | str | None:
-        """Build the invocation command for a registry tool entry."""
+    ) -> list[str] | None:
+        """Build the invocation command for a registry tool entry.
+
+        Always returns a list (argv) so the caller never needs shell=True.
+        """
         import shlex
 
         # Priority 1: registry `command` with template substitution.
@@ -350,7 +353,10 @@ class Template(EvolutionTemplate):
             rendered = command_tpl.replace("{query}", query).replace(
                 "{cutoff_date}", cutoff
             ).replace("{url}", query)
-            return rendered
+            try:
+                return shlex.split(rendered)
+            except ValueError:
+                return None
 
         # Priority 2: registry `path` field.
         path = entry.get("path", "")

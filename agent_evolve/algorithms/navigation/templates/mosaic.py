@@ -198,8 +198,8 @@ class Template(EvolutionTemplate):
         worktree_dir = Path(tempfile.mkdtemp(prefix="mosaic-wt-"))
         worktrees: dict[str, Path] = {}
 
-        # Create worktrees for ALL specialists (including main) so they
-        # all start from the same pre-specialist base and run concurrently.
+        # Phase A: create worktrees and run all specialists concurrently.
+        mutated_targets: list[tuple[str, int]] = []
         try:
             for target, _, _ in specialist_specs:
                 if target == "main":
@@ -229,9 +229,6 @@ class Template(EvolutionTemplate):
                     )
                 return target, result
 
-            # Run ALL specialists concurrently (true parallel barrier).
-            # Main runs on the primary checkout; branches on worktrees.
-            branch_diffs: dict[str, str] = {}
             vc.checkout_branch("main")
 
             if len(specialist_specs) >= 2 and worktrees:
@@ -251,12 +248,7 @@ class Template(EvolutionTemplate):
                         })
                         if step_mutated:
                             mutated = True
-                            if target != "main":
-                                diff = vc.diff_branch_from_main(target)
-                            else:
-                                diff = vc.diff_from_head()
-                            if diff:
-                                branch_diffs[target] = diff[:4000]
+                            mutated_targets.append((target, n_tasks))
                         logger.info("Specialist %s: mutated=%s", target, step_mutated)
             else:
                 for target, assignment, filtered in specialist_specs:
@@ -268,12 +260,7 @@ class Template(EvolutionTemplate):
                     })
                     if step_mutated:
                         mutated = True
-                        if target != "main":
-                            diff = vc.diff_branch_from_main(target)
-                        else:
-                            diff = vc.diff_from_head()
-                        if diff:
-                            branch_diffs[target] = diff[:4000]
+                        mutated_targets.append((target, len(filtered)))
                     logger.info("Specialist %s: mutated=%s", target, step_mutated)
         finally:
             for wt in worktrees.values():
@@ -283,6 +270,17 @@ class Template(EvolutionTemplate):
                     pass
             shutil.rmtree(worktree_dir, ignore_errors=True)
             vc.checkout_branch("main")
+
+        # Phase B: collect diffs AFTER worktree cleanup so branch refs are
+        # settled and visible from the main repo.
+        branch_diffs: dict[str, str] = {}
+        for target, _ in mutated_targets:
+            if target != "main":
+                diff = vc.diff_branch_from_main(target)
+            else:
+                diff = vc.diff_from_head()
+            if diff:
+                branch_diffs[target] = diff[:4000]
 
         # ── Step 3: Fusion agent ──
         non_main_diffs = {k: v for k, v in branch_diffs.items() if k != "main"}
