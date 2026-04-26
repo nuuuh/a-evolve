@@ -317,3 +317,91 @@ def test_adaptive_tool_health_honors_registry_path(tmp_path):
     health = result["trajectory"][0]["tool_health"]
     assert health["n_tested"] == 1
     assert health["n_pass"] == 1
+
+
+def test_adaptive_top_level_state_inspection_fields(tmp_path):
+    """State inspection step must expose tools_tested, tool_error_rate,
+    and failed_tools as top-level fields (not only nested in tool_health)."""
+    ws, vc = _init_workspace(tmp_path, with_tools=True)
+    engine = _StubEngine()
+    tree = StrategyTree(branches=[])
+
+    tpl = Template(engine)
+    result = tpl.execute(
+        vc, ws, _four_batch_results(), tree, evo_number=1,
+        routing_log_path=None,
+    )
+
+    state_step = result["trajectory"][0]
+    assert state_step["step"] == "state_inspection"
+    assert "tools_tested" in state_step
+    assert "tool_error_rate" in state_step
+    assert "failed_tools" in state_step
+    assert isinstance(state_step["tools_tested"], int)
+    assert isinstance(state_step["tool_error_rate"], float)
+    assert isinstance(state_step["failed_tools"], list)
+
+
+def test_adaptive_shell_metacharacters_safe(tmp_path):
+    """Queries with shell metacharacters must not be executed by a shell."""
+    ws_dir = tmp_path / "ws"
+    ws_dir.mkdir()
+    for d in ("prompts", "skills", "tools", "memory"):
+        (ws_dir / d).mkdir()
+    (ws_dir / "prompts" / "system.md").write_text("prompt")
+    (ws_dir / "skills" / "_drafts").mkdir()
+    marker = ws_dir / "PWNED"
+    (ws_dir / "tools" / "safe_tool.py").write_text(
+        '#!/usr/bin/env python3\nimport sys\nprint("safe", sys.argv[1:])\n'
+    )
+    import yaml
+    (ws_dir / "tools" / "registry.yaml").write_text(yaml.dump({"tools": [
+        {"name": "safe_tool", "description": "test",
+         "command": "python3 tools/safe_tool.py --query '{query}'"},
+    ]}))
+    vc = VersionControl(ws_dir)
+    vc.init()
+    ws = AgentWorkspace(ws_dir)
+
+    malicious_batch = [
+        {"instance_id": "evil", "success": False, "turns": 1,
+         "input": "$(touch PWNED)"},
+    ]
+
+    engine = _StubEngine()
+    tree = StrategyTree(branches=[])
+    tpl = Template(engine)
+    tpl.execute(
+        vc, ws, malicious_batch, tree, evo_number=1,
+        routing_log_path=None,
+    )
+
+    assert not marker.exists(), "Shell metacharacter was executed!"
+
+
+def test_adaptive_failure_categories(tmp_path):
+    """Tool health must report failure_categories breakdown."""
+    ws, vc = _init_workspace(tmp_path, with_tools=True)
+    (ws.root / "tools" / "web_search.py").write_text(
+        "#!/usr/bin/env python3\nimport sys; sys.exit(1)\n"
+    )
+    vc.commit("break tool")
+
+    engine = _StubEngine()
+    tree = StrategyTree(branches=[])
+    tpl = Template(engine)
+
+    def mutate(workspace_root):
+        p = Path(workspace_root) / "prompts" / "system.md"
+        p.write_text(p.read_text() + "\n# fixed")
+    engine.set_mutate(mutate)
+
+    result = tpl.execute(
+        vc, ws, _four_batch_results(), tree, evo_number=1,
+        routing_log_path=None,
+    )
+
+    health = result["trajectory"][0]["tool_health"]
+    cats = health["failure_categories"]
+    assert "nonzero_exit" in cats
+    assert cats["nonzero_exit"] >= 1

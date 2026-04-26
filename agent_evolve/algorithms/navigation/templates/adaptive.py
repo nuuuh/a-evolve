@@ -177,6 +177,9 @@ class Template(EvolutionTemplate):
             "step": "state_inspection",
             "n_tools": n_tools,
             "tool_health": tool_health,
+            "tools_tested": tool_health["n_tested"],
+            "tool_error_rate": tool_health["error_rate"],
+            "failed_tools": tool_health["failed_tools"],
             "pass_count": pass_count,
             "patience": self._patience,
             "dispatches": [d[0] for d in dispatches],
@@ -282,7 +285,15 @@ class Template(EvolutionTemplate):
         cutoff = "2026-01-15"
         n_pass = 0
         n_fail = 0
-        failed_tools = []
+        failed_tools: list[str] = []
+        failure_categories: dict[str, int] = {
+            "missing_script": 0,
+            "parse_error": 0,
+            "nonzero_exit": 0,
+            "timeout": 0,
+            "empty_output": 0,
+            "other": 0,
+        }
 
         for t in tools:
             name = t.get("name", "")
@@ -295,6 +306,7 @@ class Template(EvolutionTemplate):
                 if cmd is None:
                     n_fail += 1
                     failed_tools.append(f"{name}: no executable script found")
+                    failure_categories["missing_script"] += 1
                     break
 
                 try:
@@ -308,20 +320,24 @@ class Template(EvolutionTemplate):
                         failed_tools.append(
                             f"{name}: exit {proc.returncode} ({stderr})")
                         n_fail += 1
+                        failure_categories["nonzero_exit"] += 1
                         break
                     elif not proc.stdout.strip():
                         failed_tools.append(f"{name}: empty output")
                         n_fail += 1
+                        failure_categories["empty_output"] += 1
                         break
                     else:
                         tool_passed = True
                 except subprocess.TimeoutExpired:
                     failed_tools.append(f"{name}: timeout (>15s)")
                     n_fail += 1
+                    failure_categories["timeout"] += 1
                     break
                 except Exception as e:
                     failed_tools.append(f"{name}: {e}")
                     n_fail += 1
+                    failure_categories["other"] += 1
                     break
 
             if tool_passed:
@@ -335,6 +351,7 @@ class Template(EvolutionTemplate):
             "n_fail": n_fail,
             "error_rate": error_rate,
             "failed_tools": failed_tools,
+            "failure_categories": failure_categories,
         }
 
     @staticmethod
