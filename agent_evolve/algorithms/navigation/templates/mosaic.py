@@ -125,6 +125,10 @@ class Template(EvolutionTemplate):
         # Mosaic MUST exercise at least one non-main specialist + fusion
         # whenever the batch has >=2 observations.  If the planner only
         # targeted main, deterministically split the batch.
+        logger.info(
+            "Mosaic pre-split: by_target=%s, n_batch=%d",
+            list(by_target.keys()), len(batch_results),
+        )
         if len(by_target) == 1 and "main" in by_target and len(batch_results) >= 2:
             branch_name = f"branch/mosaic-auto-{evo_number}"
             main_assignments = by_target["main"]
@@ -147,6 +151,11 @@ class Template(EvolutionTemplate):
                     ),
                     "task_ids": branch_task_ids,
                 }]
+
+        logger.info(
+            "Mosaic post-split: targets=%s",
+            list(by_target.keys()),
+        )
 
         # ── Create all non-main branches (serialized git setup) ──
         vc.checkout_branch("main")
