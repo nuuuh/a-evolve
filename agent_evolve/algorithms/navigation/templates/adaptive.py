@@ -249,56 +249,83 @@ class Template(EvolutionTemplate):
         batch_results: list[dict],
     ) -> dict:
         """Deterministic tool health check: execute each registered tool
-        with a sample query and measure runtime failures.
+        with sample queries and measure runtime failures.
+
+        Resolves invocation in priority order:
+          1. Registry ``command`` field (with {query}/{cutoff_date} substitution)
+          2. Registry ``path`` field
+          3. Fallback: ``tools/{name}.py`` with positional args
+
+        Tests 2-3 sample queries derived from the batch.
 
         Returns: {n_tested, n_pass, n_fail, error_rate, failed_tools}
         """
+        import shlex
         import subprocess
         tools = workspace.read_tool_registry()
         if not tools:
             return {"n_tested": 0, "n_pass": 0, "n_fail": 0,
                     "error_rate": 0.0, "failed_tools": []}
 
-        sample_query = "test query 2026"
-        for r in batch_results[:3]:
+        sample_queries = []
+        for r in batch_results[:5]:
             inp = r.get("task_input") or r.get("input") or ""
             if isinstance(inp, dict):
                 inp = inp.get("input", "")
             if inp:
-                sample_query = str(inp)[:100]
+                sample_queries.append(str(inp)[:100])
+            if len(sample_queries) >= 3:
                 break
+        if not sample_queries:
+            sample_queries = ["test query 2026"]
 
+        cutoff = "2026-01-15"
         n_pass = 0
         n_fail = 0
         failed_tools = []
+
         for t in tools:
             name = t.get("name", "")
-            script = workspace.tools_dir / f"{name}.py"
-            if not script.exists():
-                n_fail += 1
-                failed_tools.append(f"{name}: script missing")
-                continue
-            try:
-                proc = subprocess.run(
-                    ["python3", str(script), sample_query, "2026-01-15"],
-                    capture_output=True, text=True, timeout=15,
-                    cwd=str(workspace.root),
+            tool_passed = False
+
+            for query in sample_queries:
+                cmd = self._resolve_tool_command(
+                    t, workspace, query, cutoff,
                 )
-                if proc.returncode != 0:
+                if cmd is None:
                     n_fail += 1
-                    stderr = (proc.stderr or "")[:100]
-                    failed_tools.append(f"{name}: exit {proc.returncode} ({stderr})")
-                elif not proc.stdout.strip():
+                    failed_tools.append(f"{name}: no executable script found")
+                    break
+
+                try:
+                    proc = subprocess.run(
+                        cmd,
+                        capture_output=True, text=True, timeout=15,
+                        cwd=str(workspace.root), shell=isinstance(cmd, str),
+                    )
+                    if proc.returncode != 0:
+                        stderr = (proc.stderr or "")[:100]
+                        failed_tools.append(
+                            f"{name}: exit {proc.returncode} ({stderr})")
+                        n_fail += 1
+                        break
+                    elif not proc.stdout.strip():
+                        failed_tools.append(f"{name}: empty output")
+                        n_fail += 1
+                        break
+                    else:
+                        tool_passed = True
+                except subprocess.TimeoutExpired:
+                    failed_tools.append(f"{name}: timeout (>15s)")
                     n_fail += 1
-                    failed_tools.append(f"{name}: empty output")
-                else:
-                    n_pass += 1
-            except subprocess.TimeoutExpired:
-                n_fail += 1
-                failed_tools.append(f"{name}: timeout (>15s)")
-            except Exception as e:
-                n_fail += 1
-                failed_tools.append(f"{name}: {e}")
+                    break
+                except Exception as e:
+                    failed_tools.append(f"{name}: {e}")
+                    n_fail += 1
+                    break
+
+            if tool_passed:
+                n_pass += 1
 
         n_tested = n_pass + n_fail
         error_rate = n_fail / max(n_tested, 1)
@@ -309,6 +336,36 @@ class Template(EvolutionTemplate):
             "error_rate": error_rate,
             "failed_tools": failed_tools,
         }
+
+    @staticmethod
+    def _resolve_tool_command(
+        entry: dict, workspace, query: str, cutoff: str,
+    ) -> list[str] | str | None:
+        """Build the invocation command for a registry tool entry."""
+        import shlex
+
+        # Priority 1: registry `command` with template substitution.
+        command_tpl = entry.get("command", "")
+        if command_tpl:
+            rendered = command_tpl.replace("{query}", query).replace(
+                "{cutoff_date}", cutoff
+            ).replace("{url}", query)
+            return rendered
+
+        # Priority 2: registry `path` field.
+        path = entry.get("path", "")
+        if path:
+            script = workspace.root / path
+            if script.exists():
+                return ["python3", str(script), query, cutoff]
+
+        # Priority 3: fallback to tools/{name}.py with positional args.
+        name = entry.get("name", "")
+        script = workspace.tools_dir / f"{name}.py"
+        if script.exists():
+            return ["python3", str(script), query, cutoff]
+
+        return None
 
     def _decide_dispatches(
         self,

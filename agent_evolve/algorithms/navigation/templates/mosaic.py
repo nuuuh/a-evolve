@@ -122,14 +122,31 @@ class Template(EvolutionTemplate):
             by_target["main"] = [{"target": "main", "focus": "general",
                                   "workload": "Improve stationary artifacts."}]
 
-        # If the planner only produced main-targeting assignments but
-        # we have >1, split half to an auto-created branch so we always
-        # exercise branch-specialist + fusion.
-        if len(by_target) == 1 and "main" in by_target and len(assignments) > 1:
-            half = len(assignments) // 2
+        # Mosaic MUST exercise at least one non-main specialist + fusion
+        # whenever the batch has >=2 observations.  If the planner only
+        # targeted main, deterministically split the batch.
+        if len(by_target) == 1 and "main" in by_target and len(batch_results) >= 2:
             branch_name = f"branch/mosaic-auto-{evo_number}"
-            by_target[branch_name] = assignments[half:]
-            by_target["main"] = assignments[:half]
+            main_assignments = by_target["main"]
+            if len(main_assignments) > 1:
+                half = len(main_assignments) // 2
+                by_target[branch_name] = main_assignments[half:]
+                by_target["main"] = main_assignments[:half]
+            else:
+                half = len(batch_results) // 2
+                branch_task_ids = [
+                    r.get("instance_id", "") for r in batch_results[half:]
+                ]
+                by_target[branch_name] = [{
+                    "target": branch_name,
+                    "focus": "regime-specialist",
+                    "workload": (
+                        "Specialize the workspace for this subset of tasks. "
+                        "Build or tune tools and strategies that help these "
+                        "specific tasks."
+                    ),
+                    "task_ids": branch_task_ids,
+                }]
 
         # ── Create all non-main branches (serialized git setup) ──
         vc.checkout_branch("main")
@@ -181,9 +198,12 @@ class Template(EvolutionTemplate):
         worktree_dir = Path(tempfile.mkdtemp(prefix="mosaic-wt-"))
         worktrees: dict[str, Path] = {}
 
+        # Create worktrees for ALL specialists (including main) so they
+        # all start from the same pre-specialist base and run concurrently.
         try:
-            non_main = [s for s in specialist_specs if s[0] != "main"]
-            for target, _, _ in non_main:
+            for target, _, _ in specialist_specs:
+                if target == "main":
+                    continue
                 wt = worktree_dir / target.replace("/", "-")
                 try:
                     vc.checkout_branch_worktree(target, wt)
@@ -209,48 +229,37 @@ class Template(EvolutionTemplate):
                     )
                 return target, result
 
-            # Main always runs first (so branch worktrees start from updated main).
-            main_specs = [s for s in specialist_specs if s[0] == "main"]
-            branch_specs = [s for s in specialist_specs if s[0] != "main"]
-
+            # Run ALL specialists concurrently (true parallel barrier).
+            # Main runs on the primary checkout; branches on worktrees.
             branch_diffs: dict[str, str] = {}
-            for target, assignment, filtered in main_specs:
-                vc.checkout_branch("main")
-                _, result = _run_one(target, assignment, filtered)
-                step_mutated = result.get("mutated", False)
-                trajectory.append({
-                    "step": "specialist", "target": target,
-                    "mutated": step_mutated, "n_tasks": len(filtered),
-                })
-                if step_mutated:
-                    mutated = True
-                    diff = vc.diff_from_head()
-                    if diff:
-                        branch_diffs["main"] = diff[:4000]
+            vc.checkout_branch("main")
 
-            # Run branch specialists concurrently.
-            if len(worktrees) >= 2:
-                with ThreadPoolExecutor(max_workers=len(branch_specs)) as pool:
+            if len(specialist_specs) >= 2 and worktrees:
+                with ThreadPoolExecutor(max_workers=len(specialist_specs)) as pool:
                     futures = {
                         pool.submit(_run_one, t, a, f): t
-                        for t, a, f in branch_specs
+                        for t, a, f in specialist_specs
                     }
                     for fut in as_completed(futures):
                         target, result = fut.result()
                         step_mutated = result.get("mutated", False)
+                        spec = next((s for s in specialist_specs if s[0] == target), None)
+                        n_tasks = len(spec[2]) if spec else 0
                         trajectory.append({
                             "step": "specialist", "target": target,
-                            "mutated": step_mutated,
-                            "n_tasks": len([s for s in specialist_specs if s[0] == target][0][2]) if specialist_specs else 0,
+                            "mutated": step_mutated, "n_tasks": n_tasks,
                         })
                         if step_mutated:
                             mutated = True
-                            diff = vc.diff_branch_from_main(target)
+                            if target != "main":
+                                diff = vc.diff_branch_from_main(target)
+                            else:
+                                diff = vc.diff_from_head()
                             if diff:
                                 branch_diffs[target] = diff[:4000]
                         logger.info("Specialist %s: mutated=%s", target, step_mutated)
             else:
-                for target, assignment, filtered in branch_specs:
+                for target, assignment, filtered in specialist_specs:
                     _, result = _run_one(target, assignment, filtered)
                     step_mutated = result.get("mutated", False)
                     trajectory.append({
@@ -259,7 +268,10 @@ class Template(EvolutionTemplate):
                     })
                     if step_mutated:
                         mutated = True
-                        diff = vc.diff_branch_from_main(target)
+                        if target != "main":
+                            diff = vc.diff_branch_from_main(target)
+                        else:
+                            diff = vc.diff_from_head()
                         if diff:
                             branch_diffs[target] = diff[:4000]
                     logger.info("Specialist %s: mutated=%s", target, step_mutated)

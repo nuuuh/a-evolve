@@ -244,3 +244,76 @@ def test_adaptive_tool_health_records_details(tmp_path):
     assert "n_fail" in health
     assert "error_rate" in health
     assert isinstance(health["failed_tools"], list)
+
+
+def test_adaptive_tool_health_honors_registry_command(tmp_path):
+    """Tool health checker uses registry `command` field with template substitution."""
+    ws_dir = tmp_path / "ws"
+    ws_dir.mkdir()
+    for d in ("prompts", "skills", "tools", "memory"):
+        (ws_dir / d).mkdir()
+    (ws_dir / "prompts" / "system.md").write_text("prompt")
+    (ws_dir / "skills" / "_drafts").mkdir()
+    (ws_dir / "tools" / "cli_tool.py").write_text(
+        '#!/usr/bin/env python3\n'
+        'import argparse\n'
+        'p = argparse.ArgumentParser()\n'
+        'p.add_argument("--query", required=True)\n'
+        'p.add_argument("--cutoff_date", required=True)\n'
+        'args = p.parse_args()\n'
+        'print(f"result for {args.query}")\n'
+    )
+    import yaml
+    (ws_dir / "tools" / "registry.yaml").write_text(yaml.dump({"tools": [
+        {"name": "cli_tool", "description": "test",
+         "command": "python tools/cli_tool.py --query '{query}' --cutoff_date '{cutoff_date}'"},
+    ]}))
+    vc = VersionControl(ws_dir)
+    vc.init()
+    ws = AgentWorkspace(ws_dir)
+
+    engine = _StubEngine()
+    tree = StrategyTree(branches=[])
+    tpl = Template(engine)
+    result = tpl.execute(
+        vc, ws, _four_batch_results(), tree, evo_number=1,
+        routing_log_path=None,
+    )
+
+    health = result["trajectory"][0]["tool_health"]
+    assert health["n_tested"] == 1
+    assert health["n_pass"] == 1
+    assert health["error_rate"] == 0.0
+
+
+def test_adaptive_tool_health_honors_registry_path(tmp_path):
+    """Tool health checker falls back to registry `path` field."""
+    ws_dir = tmp_path / "ws"
+    ws_dir.mkdir()
+    for d in ("prompts", "skills", "tools", "memory"):
+        (ws_dir / d).mkdir()
+    (ws_dir / "prompts" / "system.md").write_text("prompt")
+    (ws_dir / "skills" / "_drafts").mkdir()
+    (ws_dir / "tools" / "my_search.py").write_text(
+        '#!/usr/bin/env python3\nimport sys\nprint(f"result for {sys.argv[1]}")\n'
+    )
+    import yaml
+    (ws_dir / "tools" / "registry.yaml").write_text(yaml.dump({"tools": [
+        {"name": "my_search", "description": "test",
+         "path": "tools/my_search.py"},
+    ]}))
+    vc = VersionControl(ws_dir)
+    vc.init()
+    ws = AgentWorkspace(ws_dir)
+
+    engine = _StubEngine()
+    tree = StrategyTree(branches=[])
+    tpl = Template(engine)
+    result = tpl.execute(
+        vc, ws, _four_batch_results(), tree, evo_number=1,
+        routing_log_path=None,
+    )
+
+    health = result["trajectory"][0]["tool_health"]
+    assert health["n_tested"] == 1
+    assert health["n_pass"] == 1
