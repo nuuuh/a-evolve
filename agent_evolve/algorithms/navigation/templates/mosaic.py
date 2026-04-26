@@ -161,21 +161,43 @@ class Template(EvolutionTemplate):
         # First, prune stale worktrees left by killed/restarted processes.
         vc.prune_worktrees()
         vc.checkout_branch("main")
-        for target in by_target:
-            if target != "main":
-                vc.release_branch_from_worktrees(target)
-                if vc.branch_exists(target):
-                    try:
-                        vc.delete_branch(target)
-                    except Exception:
-                        pass
+        failed_targets: set[str] = set()
+        for target in list(by_target):
+            if target == "main":
+                continue
+            vc.release_branch_from_worktrees(target)
+            if vc.branch_exists(target):
                 try:
-                    vc.create_branch(target, from_ref="main")
-                    vc.checkout_branch("main")
-                except Exception as e:
-                    logger.warning("Cannot create branch %s: %s", target, e)
-                    vc.checkout_branch("main")
-                    continue
+                    vc.delete_branch(target)
+                except Exception:
+                    pass
+            try:
+                vc.create_branch(target, from_ref="main")
+                vc.checkout_branch("main")
+            except Exception as e:
+                logger.error(
+                    "Failed to create required branch %s: %s", target, e,
+                )
+                vc.checkout_branch("main")
+                failed_targets.add(target)
+
+        if failed_targets:
+            for ft in failed_targets:
+                by_target.pop(ft, None)
+                trajectory.append({
+                    "step": "specialist", "target": ft,
+                    "mutated": False, "error": "branch creation failed",
+                })
+            if not any(t != "main" for t in by_target):
+                trajectory.append({
+                    "step": "fusion", "mutated": False, "merged_from": [],
+                    "error": "all non-main branches failed to create",
+                })
+                return {
+                    "evo_number": evo_number, "mutated": False,
+                    "plan": plan, "branches": tree.branch_names(),
+                    "trajectory": trajectory,
+                }
 
         # ── Build per-target assignments ──
         specialist_specs: list[tuple[str, dict, list[dict]]] = []
