@@ -50,16 +50,23 @@ class VersionControl:
         except RuntimeError:
             pass  # HEAD doesn't exist yet
 
-    def commit(self, message: str, tag: str | None = None) -> None:
+    def commit(self, message: str, tag: str | None = None) -> bool:
+        """Stage all changes and commit.  Returns True if a commit was created."""
         self._git("add", "-A")
-        try:
-            self._git("commit", "-m", message)
+        result = subprocess.run(
+            ["git", "commit", "-m", message],
+            capture_output=True, text=True, cwd=str(self.root),
+        )
+        if result.returncode == 0:
             logger.info("Committed: %s", message)
-        except RuntimeError:
+            committed = True
+        else:
             logger.debug("Nothing to commit: %s", message)
+            committed = False
         if tag:
             self._git("tag", "-f", tag)
             logger.debug("Tagged: %s", tag)
+        return committed
 
     def rollback(self, ref: str = "HEAD~1") -> None:
         """Restore workspace content from *ref* as a NEW commit.
@@ -120,6 +127,14 @@ class VersionControl:
     def remove_copy(self, dest: Path) -> None:
         """Remove a working copy created by :meth:`checkout_copy`."""
         self._git("worktree", "remove", str(dest), "--force")
+
+    def checkout_branch_worktree(self, branch: str, dest: Path) -> None:
+        """Create a working copy on *branch* (non-detached).
+
+        Unlike :meth:`checkout_copy`, the worktree tracks the branch so
+        commits advance its pointer.  Use :meth:`remove_copy` to clean up.
+        """
+        self._git("worktree", "add", str(dest), branch)
 
     # ── Branch operations (for --navigation strategy tree) ──────────
 

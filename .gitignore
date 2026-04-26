@@ -54,6 +54,14 @@ inspect_evals/
 !/tests/
 /tests/*
 !/tests/test_skillbench_setup.py
+!/tests/test_custom_templates.py
+!/tests/test_activity_template_behaviour.py
+!/tests/test_mosaic_pipeline.py
+!/tests/test_adaptive_pipeline.py
+!/tests/test_verified_pipeline.py
+!/tests/test_debate_pipeline.py
+!/tests/test_specialists_pipeline.py
+!/tests/test_e2e_trajectory.py
 !/tests/gepa/
 
 # Root-level artifacts

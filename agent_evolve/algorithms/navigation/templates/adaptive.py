@@ -220,7 +220,8 @@ class Template(EvolutionTemplate):
                     message=f"evo-{evo_number}-{role_name}: adaptive evolution",
                     tag=f"evo-{evo_number}-{role_name}",
                 )
-                step_mutated = True
+                # Detect mutation from actual diff, not just our commit.
+                step_mutated = bool(vc.get_diff_stat("HEAD~1", "HEAD").strip())
             except Exception as e:
                 logger.warning("Adaptive %s failed: %s", role_name, e)
                 step_mutated = False

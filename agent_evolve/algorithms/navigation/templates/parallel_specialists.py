@@ -136,21 +136,68 @@ class Template(EvolutionTemplate):
              STRATEGY_WRITER_PROMPT + "\n\n" + context_block + base_prompt),
         ]
 
-        results = {}
-        for name, branch, prompt in specialists:
-            try:
-                vc.checkout_branch("main")
-                vc.create_branch(branch, from_ref="main")
-                result = self.engine._run_llm(prompt, solver_workspace.root)
-                vc.commit(
-                    message=f"evo-{evo_number}-{name}: specialist evolution",
-                    tag=f"evo-{evo_number}-{name}",
-                )
-                r = {"name": name, "branch": branch, "mutated": True}
-            except Exception as e:
-                logger.warning("Specialist %s failed: %s", name, e)
-                r = {"name": name, "branch": branch, "mutated": False}
-            results[name] = r
+        # Create branches from main (serialized git setup).
+        vc.checkout_branch("main")
+        for _, branch, _ in specialists:
+            vc.create_branch(branch, from_ref="main")
+            vc.checkout_branch("main")
+
+        # Run specialists in parallel using isolated git worktrees.
+        import tempfile, shutil
+        worktree_dir = Path(tempfile.mkdtemp(prefix="specialist-wt-"))
+        worktrees: dict[str, Path] = {}
+
+        try:
+            for name, branch, _ in specialists:
+                wt = worktree_dir / name
+                try:
+                    vc.checkout_branch_worktree(branch, wt)
+                    worktrees[name] = wt
+                except Exception as e:
+                    logger.warning("Worktree for %s failed, falling back to serial: %s", name, e)
+
+            def _run_specialist(name, branch, prompt):
+                wt = worktrees.get(name)
+                ws_root = wt if wt else solver_workspace.root
+                try:
+                    if not wt:
+                        vc.checkout_branch(branch)
+                    self.engine._run_llm(prompt, ws_root)
+                    wt_vc = VersionControl(ws_root)
+                    wt_vc.commit(
+                        message=f"evo-{evo_number}-{name}: specialist evolution",
+                        tag=f"evo-{evo_number}-{name}",
+                    )
+                    mutated = bool(wt_vc.get_diff_stat("HEAD~1", "HEAD").strip())
+                    return {"name": name, "branch": branch, "mutated": mutated}
+                except Exception as e:
+                    logger.warning("Specialist %s failed: %s", name, e)
+                    return {"name": name, "branch": branch, "mutated": False}
+
+            if len(worktrees) >= 2:
+                with ThreadPoolExecutor(max_workers=len(specialists)) as pool:
+                    futures = {
+                        pool.submit(_run_specialist, n, b, p): n
+                        for n, b, p in specialists
+                    }
+                    results = {}
+                    for fut in as_completed(futures):
+                        r = fut.result()
+                        results[r["name"]] = r
+            else:
+                results = {}
+                for name, branch, prompt in specialists:
+                    results[name] = _run_specialist(name, branch, prompt)
+        finally:
+            for wt in worktrees.values():
+                try:
+                    vc.remove_copy(wt)
+                except Exception:
+                    pass
+            shutil.rmtree(worktree_dir, ignore_errors=True)
+
+        for name, branch, _ in specialists:
+            r = results.get(name, {"name": name, "branch": branch, "mutated": False})
             trajectory.append({
                 "step": "specialist", "name": name,
                 "branch": branch, "mutated": r["mutated"],

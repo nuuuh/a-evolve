@@ -131,42 +131,32 @@ class Template(EvolutionTemplate):
             by_target[branch_name] = assignments[half:]
             by_target["main"] = assignments[:half]
 
-        # ── Run specialists (main first, then branches) ──
-        ordered_targets = sorted(
-            by_target, key=lambda t: 0 if t == "main" else 1,
-        )
-
-        branch_diffs: dict[str, str] = {}
-        for target in ordered_targets:
-            target_assignments = by_target[target]
-
-            # Ensure we're on the right branch.
-            if target == "main":
-                vc.checkout_branch("main")
-            else:
+        # ── Create all non-main branches (serialized git setup) ──
+        vc.checkout_branch("main")
+        for target in by_target:
+            if target != "main":
                 try:
-                    vc.checkout_branch("main")
                     vc.create_branch(target, from_ref="main")
+                    vc.checkout_branch("main")
                 except Exception:
-                    try:
-                        vc.checkout_branch(target)
-                    except Exception as e:
-                        logger.warning("Cannot reach branch %s: %s", target, e)
+                    if not vc.branch_exists(target):
+                        logger.warning("Cannot create branch %s", target)
                         continue
+                    vc.checkout_branch("main")
 
-            # Build focused prompt for this branch.
+        # ── Build per-target assignments ──
+        specialist_specs: list[tuple[str, dict, list[dict]]] = []
+        for target, target_assignments in by_target.items():
             task_ids = []
             workloads = []
             for a in target_assignments:
                 task_ids.extend(a.get("task_ids", []))
                 workloads.append(a.get("workload", ""))
-
             if task_ids:
                 filtered = [r for r in batch_results
                             if r.get("instance_id") in set(task_ids)]
             else:
                 filtered = batch_results
-
             combined_workload = "\n".join(workloads)
             assignment = {
                 "target": target,
@@ -180,35 +170,107 @@ class Template(EvolutionTemplate):
                         branch=target, task_ids=task_ids)
                     + combined_workload
                 )
+            specialist_specs.append((target, assignment, filtered))
 
-            result = self._inner._execute_plan_step(
-                solver_workspace, filtered, evo_number,
-                assignment=assignment, target=target,
-                tag_suffix=f"{target.replace('/', '-')}-specialist",
-            )
-            step_mutated = result.get("mutated", False)
-            trajectory.append({
-                "step": "specialist",
-                "target": target,
-                "mutated": step_mutated,
-                "n_tasks": len(filtered),
-            })
-            if step_mutated:
-                mutated = True
+        # ── Run specialists in parallel via worktrees ──
+        import tempfile, shutil
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from ....contract.workspace import AgentWorkspace
+        from ....engine.versioning import VersionControl
 
-            # Capture diff for fusion: use diff_from_head for main,
-            # diff_branch_from_main for branches.
-            if target != "main" and step_mutated:
-                diff = vc.diff_branch_from_main(target)
-                if diff:
-                    branch_diffs[target] = diff[:4000]
-            elif target == "main" and step_mutated:
-                diff = vc.diff_from_head()
-                if diff:
-                    branch_diffs["main"] = diff[:4000]
+        worktree_dir = Path(tempfile.mkdtemp(prefix="mosaic-wt-"))
+        worktrees: dict[str, Path] = {}
 
-            logger.info("Specialist %s: mutated=%s (%d tasks)",
-                        target, step_mutated, len(filtered))
+        try:
+            non_main = [s for s in specialist_specs if s[0] != "main"]
+            for target, _, _ in non_main:
+                wt = worktree_dir / target.replace("/", "-")
+                try:
+                    vc.checkout_branch_worktree(target, wt)
+                    worktrees[target] = wt
+                except Exception as e:
+                    logger.warning("Worktree for %s failed: %s", target, e)
+
+            def _run_one(target, assignment, filtered):
+                wt = worktrees.get(target)
+                if wt:
+                    wt_ws = AgentWorkspace(wt)
+                    result = self._inner._execute_plan_step(
+                        wt_ws, filtered, evo_number,
+                        assignment=assignment, target=target,
+                        tag_suffix=f"{target.replace('/', '-')}-specialist",
+                    )
+                else:
+                    vc.checkout_branch(target)
+                    result = self._inner._execute_plan_step(
+                        solver_workspace, filtered, evo_number,
+                        assignment=assignment, target=target,
+                        tag_suffix=f"{target.replace('/', '-')}-specialist",
+                    )
+                return target, result
+
+            # Main always runs first (so branch worktrees start from updated main).
+            main_specs = [s for s in specialist_specs if s[0] == "main"]
+            branch_specs = [s for s in specialist_specs if s[0] != "main"]
+
+            branch_diffs: dict[str, str] = {}
+            for target, assignment, filtered in main_specs:
+                vc.checkout_branch("main")
+                _, result = _run_one(target, assignment, filtered)
+                step_mutated = result.get("mutated", False)
+                trajectory.append({
+                    "step": "specialist", "target": target,
+                    "mutated": step_mutated, "n_tasks": len(filtered),
+                })
+                if step_mutated:
+                    mutated = True
+                    diff = vc.diff_from_head()
+                    if diff:
+                        branch_diffs["main"] = diff[:4000]
+
+            # Run branch specialists concurrently.
+            if len(worktrees) >= 2:
+                with ThreadPoolExecutor(max_workers=len(branch_specs)) as pool:
+                    futures = {
+                        pool.submit(_run_one, t, a, f): t
+                        for t, a, f in branch_specs
+                    }
+                    for fut in as_completed(futures):
+                        target, result = fut.result()
+                        step_mutated = result.get("mutated", False)
+                        trajectory.append({
+                            "step": "specialist", "target": target,
+                            "mutated": step_mutated,
+                            "n_tasks": len([s for s in specialist_specs if s[0] == target][0][2]) if specialist_specs else 0,
+                        })
+                        if step_mutated:
+                            mutated = True
+                            diff = vc.diff_branch_from_main(target)
+                            if diff:
+                                branch_diffs[target] = diff[:4000]
+                        logger.info("Specialist %s: mutated=%s", target, step_mutated)
+            else:
+                for target, assignment, filtered in branch_specs:
+                    _, result = _run_one(target, assignment, filtered)
+                    step_mutated = result.get("mutated", False)
+                    trajectory.append({
+                        "step": "specialist", "target": target,
+                        "mutated": step_mutated, "n_tasks": len(filtered),
+                    })
+                    if step_mutated:
+                        mutated = True
+                        diff = vc.diff_branch_from_main(target)
+                        if diff:
+                            branch_diffs[target] = diff[:4000]
+                    logger.info("Specialist %s: mutated=%s", target, step_mutated)
+        finally:
+            for wt in worktrees.values():
+                try:
+                    vc.remove_copy(wt)
+                except Exception:
+                    pass
+            shutil.rmtree(worktree_dir, ignore_errors=True)
+            vc.checkout_branch("main")
 
         # ── Step 3: Fusion agent ──
         non_main_diffs = {k: v for k, v in branch_diffs.items() if k != "main"}
@@ -270,14 +332,13 @@ class Template(EvolutionTemplate):
                 prompt, workspace.root,
                 system_prompt=FUSION_SYSTEM,
             )
-            # Check if fusion made changes.
             from ....engine.versioning import VersionControl
             vc = VersionControl(workspace.root)
-            vc.commit(
+            committed = vc.commit(
                 message=f"evo-{evo_number}-fusion: merged generalizable techniques",
                 tag=f"evo-{evo_number}-fusion",
             )
-            return {"mutated": True, "content": result.get("content", "")}
+            return {"mutated": committed, "content": result.get("content", "")}
         except Exception as e:
             logger.warning("Fusion agent failed: %s", e)
             return {"mutated": False}
