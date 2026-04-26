@@ -272,3 +272,58 @@ def test_mosaic_fusion_receives_diff_content(tmp_path, monkeypatch):
         fusion_prompts = [p for p in captured_prompts if "Branch Diffs" in p]
         if fusion_prompts:
             assert "diff" in fusion_prompts[-1].lower() or "```" in fusion_prompts[-1]
+
+
+def test_mosaic_recovers_from_stale_worktree(tmp_path, monkeypatch):
+    """Mosaic must handle stale worktree registrations from killed processes.
+    A prior run may leave /tmp/mosaic-wt-* registered for branch/mosaic-auto-N.
+    The current cycle must prune it and still produce branch + fusion."""
+    ws, vc = _init_workspace(tmp_path)
+    engine = _StubEngine()
+    tree = StrategyTree(branches=[])
+
+    _patch_planner(monkeypatch, {
+        "summary": "single assignment",
+        "assignments": [
+            {"target": "main", "focus": "general", "workload": "Improve.",
+             "task_ids": []},
+        ],
+    })
+
+    # Simulate a stale worktree: create branch/mosaic-auto-5 and a worktree,
+    # then remove the worktree directory but leave git metadata.
+    stale_wt = tmp_path / "stale-mosaic-wt"
+    stale_wt.mkdir()
+    vc.create_branch("branch/mosaic-auto-5", from_ref="main")
+    vc.checkout_branch("main")
+    vc.checkout_branch_worktree("branch/mosaic-auto-5", stale_wt)
+    # Simulate process death: remove the worktree dir but don't unregister.
+    import shutil
+    shutil.rmtree(stale_wt)
+    # The branch is now "locked" by a stale worktree entry.
+
+    import threading
+    call_counter = {"n": 0}
+    lock = threading.Lock()
+    def mutate(workspace_root):
+        with lock:
+            call_counter["n"] += 1
+            n = call_counter["n"]
+        p = Path(workspace_root) / "prompts" / "system.md"
+        p.write_text(f"evolved variant {n}")
+    engine.set_mutate(mutate)
+
+    tpl = Template(engine)
+    result = tpl.execute(
+        vc, ws, _four_batch_results(), tree, evo_number=5,
+        routing_log_path=None,
+    )
+
+    specialist_steps = [t for t in result["trajectory"] if t["step"] == "specialist"]
+    targets = {t["target"] for t in specialist_steps}
+    assert "main" in targets
+    assert any(t != "main" for t in targets), \
+        "Expected non-main specialist after stale worktree recovery"
+
+    fusion_steps = [t for t in result["trajectory"] if t["step"] == "fusion"]
+    assert len(fusion_steps) == 1
