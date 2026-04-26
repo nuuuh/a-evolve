@@ -159,24 +159,31 @@ class VersionControl:
             output = self._git("worktree", "list", "--porcelain")
         except RuntimeError:
             return
+        def _try_remove(wt_path_str: str) -> None:
+            if "/tmp/mosaic-wt-" in wt_path_str and wt_path_str != str(self.root):
+                try:
+                    self._git("worktree", "remove", wt_path_str, "--force")
+                    logger.info("Pruned stale worktree: %s", wt_path_str)
+                except RuntimeError:
+                    wt_path = Path(wt_path_str)
+                    if wt_path.exists():
+                        shutil.rmtree(wt_path, ignore_errors=True)
+                    try:
+                        self._git("worktree", "prune")
+                    except RuntimeError:
+                        pass
+
         current_wt = None
         for line in output.splitlines():
             if line.startswith("worktree "):
+                if current_wt:
+                    _try_remove(current_wt)
                 current_wt = line[len("worktree "):]
             elif line == "" and current_wt:
-                if "/tmp/mosaic-wt-" in current_wt and current_wt != str(self.root):
-                    try:
-                        self._git("worktree", "remove", current_wt, "--force")
-                        logger.info("Pruned stale worktree: %s", current_wt)
-                    except RuntimeError:
-                        wt_path = Path(current_wt)
-                        if wt_path.exists():
-                            shutil.rmtree(wt_path, ignore_errors=True)
-                        try:
-                            self._git("worktree", "prune")
-                        except RuntimeError:
-                            pass
+                _try_remove(current_wt)
                 current_wt = None
+        if current_wt:
+            _try_remove(current_wt)
 
     def release_branch_from_worktrees(self, branch: str) -> None:
         """Ensure *branch* is not locked by any worktree so it can be
