@@ -368,3 +368,30 @@ def test_mosaic_recovers_from_stale_worktree(tmp_path, monkeypatch):
 
     fusion_steps = [t for t in result["trajectory"] if t["step"] == "fusion"]
     assert len(fusion_steps) == 1
+
+
+def test_release_branch_from_worktrees_final_record_no_trailing_blank(tmp_path):
+    """release_branch_from_worktrees must handle porcelain output where
+    the target branch is the final record without a trailing blank line."""
+    ws_dir = tmp_path / "ws"
+    ws_dir.mkdir()
+    (ws_dir / "file.txt").write_text("content")
+    vc = VersionControl(ws_dir)
+    vc.init()
+
+    vc.create_branch("branch/test-final", from_ref="main")
+    vc.checkout_branch("main")
+    wt = tmp_path / "wt-test"
+    wt.mkdir()
+    vc.checkout_branch_worktree("branch/test-final", wt)
+
+    import shutil
+    shutil.rmtree(wt)
+
+    vc.release_branch_from_worktrees("branch/test-final")
+
+    vc.checkout_branch("main")
+    try:
+        vc.delete_branch("branch/test-final")
+    except RuntimeError:
+        pytest.fail("Branch still locked by worktree after release")
