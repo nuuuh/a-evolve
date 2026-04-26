@@ -158,17 +158,24 @@ class Template(EvolutionTemplate):
         )
 
         # ── Create all non-main branches (serialized git setup) ──
+        # First, prune stale worktrees left by killed/restarted processes.
+        vc.prune_worktrees()
         vc.checkout_branch("main")
         for target in by_target:
             if target != "main":
+                vc.release_branch_from_worktrees(target)
+                if vc.branch_exists(target):
+                    try:
+                        vc.delete_branch(target)
+                    except Exception:
+                        pass
                 try:
                     vc.create_branch(target, from_ref="main")
                     vc.checkout_branch("main")
-                except Exception:
-                    if not vc.branch_exists(target):
-                        logger.warning("Cannot create branch %s", target)
-                        continue
+                except Exception as e:
+                    logger.warning("Cannot create branch %s: %s", target, e)
                     vc.checkout_branch("main")
+                    continue
 
         # ── Build per-target assignments ──
         specialist_specs: list[tuple[str, dict, list[dict]]] = []

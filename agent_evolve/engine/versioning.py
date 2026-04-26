@@ -145,6 +145,69 @@ class VersionControl:
         """
         self._git("worktree", "add", str(dest), branch)
 
+    def prune_worktrees(self) -> None:
+        """Remove stale worktree metadata left by killed processes.
+
+        Runs ``git worktree prune`` to clean up entries whose working
+        directory no longer exists on disk, then forcibly removes any
+        remaining worktrees whose paths match ``/tmp/mosaic-wt-*`` (the
+        tempdir prefix used by the mosaic template).
+        """
+        import shutil
+        self._git("worktree", "prune")
+        try:
+            output = self._git("worktree", "list", "--porcelain")
+        except RuntimeError:
+            return
+        current_wt = None
+        for line in output.splitlines():
+            if line.startswith("worktree "):
+                current_wt = line[len("worktree "):]
+            elif line == "" and current_wt:
+                if "/tmp/mosaic-wt-" in current_wt and current_wt != str(self.root):
+                    try:
+                        self._git("worktree", "remove", current_wt, "--force")
+                        logger.info("Pruned stale worktree: %s", current_wt)
+                    except RuntimeError:
+                        wt_path = Path(current_wt)
+                        if wt_path.exists():
+                            shutil.rmtree(wt_path, ignore_errors=True)
+                        try:
+                            self._git("worktree", "prune")
+                        except RuntimeError:
+                            pass
+                current_wt = None
+
+    def release_branch_from_worktrees(self, branch: str) -> None:
+        """Ensure *branch* is not locked by any worktree so it can be
+        recreated or checked out.  Prunes stale worktree metadata first,
+        then forcibly removes any worktree still tracking *branch*.
+        """
+        self.prune_worktrees()
+        try:
+            output = self._git("worktree", "list", "--porcelain")
+        except RuntimeError:
+            return
+        current_wt = None
+        current_branch = None
+        for line in output.splitlines():
+            if line.startswith("worktree "):
+                current_wt = line[len("worktree "):]
+            elif line.startswith("branch refs/heads/"):
+                current_branch = line[len("branch refs/heads/"):]
+            elif line == "":
+                if current_branch == branch and current_wt and current_wt != str(self.root):
+                    try:
+                        self._git("worktree", "remove", current_wt, "--force")
+                    except RuntimeError:
+                        pass
+                    try:
+                        self._git("worktree", "prune")
+                    except RuntimeError:
+                        pass
+                current_wt = None
+                current_branch = None
+
     # ── Branch operations (for --navigation strategy tree) ──────────
 
     @staticmethod
