@@ -61,20 +61,27 @@ def fake_tree():
 
 @pytest.fixture
 def batch_results():
+    """4-task batch per AC1 requirement."""
     return [
         {
             "task_id": "futurex_past_0001",
             "task_input": "Will Bitcoin exceed $100K in January 2026?",
-            "turns": 5,
-            "error": "",
-            "correct": False,
+            "turns": 5, "error": "", "correct": False,
         },
         {
             "task_id": "futurex_past_0002",
             "task_input": "What was the S&P 500 close on Jan 15?",
-            "turns": 8,
-            "error": "",
-            "correct": False,
+            "turns": 8, "error": "", "correct": False,
+        },
+        {
+            "task_id": "futurex_past_0003",
+            "task_input": "Who won the AFCON 2025 tournament?",
+            "turns": 6, "error": "", "correct": False,
+        },
+        {
+            "task_id": "futurex_past_0004",
+            "task_input": "What was the Douban rating of Ne Zha 2?",
+            "turns": 4, "error": "", "correct": False,
         },
     ]
 
@@ -98,8 +105,12 @@ class TestFourPhaseTrajectory:
             elif "research agent" in sp:
                 return {"content": json.dumps({
                     "cycle": 1, "regime": "finance",
-                    "approach": "stooq",
-                    "tested": True, "works": True,
+                    "approach": "stooq", "endpoint": "https://stooq.com/",
+                    "tested": True, "works": True, "latency_ms": 300,
+                    "coverage": ["us_stocks"], "does_not_cover": [],
+                    "complementary_to": [], "sample_output": "Date,Close",
+                    "credential_needed": False, "credential_env": "",
+                    "error": "", "notes": "CSV data",
                 })}
             elif "infrastructure builder" in sp:
                 return {"content": "Built finance pipeline."}
@@ -138,7 +149,9 @@ class TestBuildVerifyLoop:
         init_evolution_workspace(ws_root)
         append_research(ws_root, {
             "cycle": 1, "regime": "finance", "approach": "api1",
-            "tested": True, "works": True,
+            "endpoint": "https://api1.example.com", "tested": True, "works": True,
+            "coverage": ["us_stocks"], "sample_output": "data",
+            "credential_needed": False, "error": "",
         })
 
         verify_count = [0]
@@ -179,7 +192,9 @@ class TestBuildVerifyLoop:
         init_evolution_workspace(ws_root)
         append_research(ws_root, {
             "cycle": 1, "regime": "finance", "approach": "api1",
-            "tested": True, "works": True,
+            "endpoint": "https://api1.example.com", "tested": True, "works": True,
+            "coverage": ["us_stocks"], "sample_output": "data",
+            "credential_needed": False, "error": "",
         })
 
         def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
@@ -214,7 +229,9 @@ class TestBuildVerifyLoop:
         init_evolution_workspace(ws_root)
         append_research(ws_root, {
             "cycle": 1, "regime": "finance", "approach": "api1",
-            "tested": True, "works": True,
+            "endpoint": "https://api1.example.com", "tested": True, "works": True,
+            "coverage": ["us_stocks"], "sample_output": "data",
+            "credential_needed": False, "error": "",
         })
 
         def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
@@ -254,7 +271,9 @@ class TestBuildVerifyLoop:
         init_evolution_workspace(ws_root)
         append_research(ws_root, {
             "cycle": 1, "regime": "finance", "approach": "api1",
-            "tested": True, "works": True,
+            "endpoint": "https://api1.example.com", "tested": True, "works": True,
+            "coverage": ["us_stocks"], "sample_output": "data",
+            "credential_needed": False, "error": "",
         })
 
         def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
@@ -284,6 +303,50 @@ class TestBuildVerifyLoop:
         assert tool_tests[-1]["works"] is True
 
 
+class TestRollbackRemovesAddedFiles:
+    """AC3: rollback_to_tag removes files added after the tag."""
+
+    def test_rollback_removes_new_file(self, tmp_path):
+        """Integration test with real git repo: file added after tag is gone."""
+        import subprocess
+        repo = tmp_path / "repo"
+        repo.mkdir()
+
+        def run(*args):
+            subprocess.run(args, cwd=repo, capture_output=True, check=True)
+
+        run("git", "init")
+        run("git", "config", "user.email", "test@test.com")
+        run("git", "config", "user.name", "test")
+
+        # Initial commit + tag
+        (repo / "good.txt").write_text("original")
+        (repo / "tools").mkdir()
+        (repo / "tools" / "registry.yaml").write_text("tools: []\n")
+        run("git", "add", "-A")
+        run("git", "commit", "-m", "initial")
+        run("git", "tag", "pre-build")
+
+        # Builder adds a bad pipeline + modifies registry
+        (repo / "infra").mkdir()
+        (repo / "infra" / "bad_pipeline.py").write_text("class Bad: pass")
+        (repo / "tools" / "registry.yaml").write_text("tools:\n  - bad_pipeline\n")
+        run("git", "add", "-A")
+        run("git", "commit", "-m", "build: bad pipeline")
+
+        # Rollback using VersionControl
+        from agent_evolve.engine.versioning import VersionControl
+        vc = VersionControl(repo)
+        vc.rollback_to_tag("pre-build")
+
+        # bad_pipeline.py must be gone
+        assert not (repo / "infra" / "bad_pipeline.py").exists()
+        # registry restored to original
+        assert "bad_pipeline" not in (repo / "tools" / "registry.yaml").read_text()
+        # original file preserved
+        assert (repo / "good.txt").read_text() == "original"
+
+
 class TestResearchLogAccumulation:
     """AC2: Research records accumulate across cycles."""
 
@@ -307,7 +370,12 @@ class TestResearchLogAccumulation:
                 return {"content": json.dumps({
                     "cycle": 1, "regime": "finance",
                     "approach": f"source_{n}",
-                    "tested": True, "works": True,
+                    "endpoint": f"https://source{n}.example.com",
+                    "tested": True, "works": True, "latency_ms": 200,
+                    "coverage": ["us_stocks"], "does_not_cover": [],
+                    "complementary_to": [], "sample_output": "data",
+                    "credential_needed": False, "credential_env": "",
+                    "error": "", "notes": "",
                 })}
             elif "builder" in (system_prompt or "").lower() or "infrastructure" in (system_prompt or "").lower():
                 return {"content": "Built pipeline."}
@@ -379,6 +447,17 @@ class TestHITL:
             sp = (system_prompt or "").lower()
             if "failure analyst" in sp:
                 return {"content": "## Failure Patterns\n- chinese_search: PRIORITY: HIGH\n"}
+            elif "retesting" in sp:
+                # Retest call after credential supplied
+                return {"content": json.dumps({
+                    "cycle": 1, "regime": "chinese_search",
+                    "approach": "serper_api", "endpoint": "https://serper.dev/",
+                    "tested": True, "works": True, "latency_ms": 500,
+                    "coverage": ["chinese_web"], "does_not_cover": [],
+                    "complementary_to": [], "sample_output": "results...",
+                    "credential_needed": True, "credential_env": "SERPER_API_KEY",
+                    "error": "", "notes": "Needs API key",
+                })}
             elif "research agent" in sp:
                 return {"content": ""}
             elif "infrastructure builder" in sp:
@@ -393,7 +472,6 @@ class TestHITL:
             "agent_evolve.algorithms.navigation.templates.structured_evolution.create_interface",
             return_value=mock_hi,
         ):
-            # Need to import create_interface in the template's namespace
             template = Template(fake_engine)
             result = template.execute(
                 fake_vc, fake_workspace, batch_results,
@@ -408,10 +486,21 @@ class TestHITL:
         ]
         assert len(cred_calls) >= 1
 
-        # hitl_credentials step in trajectory
+        # hitl_credentials step with retest
         hitl_steps = [t for t in result["trajectory"] if t["step"] == "hitl_credentials"]
         assert len(hitl_steps) == 1
         assert hitl_steps[0]["pending"] >= 1
+        assert hitl_steps[0]["retested"] >= 1
+
+        # A real source-test record was appended (not tool_test)
+        records = load_research_log(ws_root)
+        retest_records = [
+            r for r in records
+            if r.get("approach") == "serper_api" and r.get("tested") is True
+            and r.get("type") != "tool_test"
+        ]
+        assert len(retest_records) >= 1
+        assert retest_records[-1]["works"] is True
 
     def test_hitl_task_board_updated(
         self, fake_engine, fake_workspace, fake_vc, fake_tree, batch_results,

@@ -143,16 +143,34 @@ class TestValidation:
 
 
 class TestFiltering:
-    def test_get_verified(self, ws):
-        append_research(ws, _make_record(works=True, approach="a"))
+    def test_get_verified_full_records(self, ws):
+        append_research(ws, _make_record(works=True, approach="a",
+                                          coverage=["us_stocks"], endpoint="https://x"))
         append_research(ws, _make_record(works=False, approach="b"))
-        append_research(ws, _make_record(works=True, approach="c"))
+        append_research(ws, _make_record(works=True, approach="c",
+                                          coverage=["cn_stocks"], endpoint="https://y"))
         verified = get_verified_approaches(ws)
         assert len(verified) == 2
         assert {r["approach"] for r in verified} == {"a", "c"}
 
+    def test_get_verified_excludes_minimal(self, ws):
+        """Minimal records (no coverage/endpoint) are not build inputs."""
+        minimal = {"cycle": 1, "regime": "x", "approach": "y",
+                    "tested": True, "works": True}
+        # Write directly to bypass full validation
+        import json
+        p = ws / WORKSPACE_DIR / "research_log.jsonl"
+        with p.open("a") as f:
+            f.write(json.dumps(minimal) + "\n")
+        assert get_verified_approaches(ws) == []
+
+    def test_get_verified_excludes_tool_test(self, ws):
+        append_research(ws, _make_tool_test(works=True))
+        assert get_verified_approaches(ws) == []
+
     def test_get_failed(self, ws):
-        append_research(ws, _make_record(works=True, approach="a"))
+        append_research(ws, _make_record(works=True, approach="a",
+                                          coverage=["x"], endpoint="https://x"))
         append_research(ws, _make_record(works=False, approach="b"))
         failed = get_failed_approaches(ws)
         assert len(failed) == 1

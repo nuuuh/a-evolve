@@ -23,8 +23,9 @@ ARCHITECTURE = "architecture.md"
 INSIGHTS = "insights.jsonl"
 
 REQUIRED_RESEARCH_FIELDS = {
-    "cycle", "regime", "approach", "tested", "works",
-    "endpoint", "sample_output", "credential_needed", "error",
+    "cycle", "regime", "approach", "endpoint", "tested", "works",
+    "latency_ms", "coverage", "does_not_cover", "complementary_to",
+    "sample_output", "credential_needed", "credential_env", "error", "notes",
 }
 REQUIRED_TOOL_TEST_FIELDS = {
     "cycle", "regime", "approach", "tested", "works", "type",
@@ -124,8 +125,22 @@ def validate_research_record(record: dict[str, Any]) -> bool:
 
 
 def get_verified_approaches(ws_root: Path) -> list[dict[str, Any]]:
-    """Return only records with works=True."""
-    return [r for r in load_research_log(ws_root) if r.get("works") is True]
+    """Return source records with works=True and full coverage metadata.
+
+    Excludes tool_test records and legacy/minimal records that lack the
+    coverage fields the builder needs for fallback-chain decisions.
+    """
+    results = []
+    for r in load_research_log(ws_root):
+        if r.get("works") is not True:
+            continue
+        if r.get("type") == "tool_test":
+            continue
+        if "coverage" not in r or "endpoint" not in r:
+            logger.debug("Skipping minimal record without coverage: %s", r.get("approach"))
+            continue
+        results.append(r)
+    return results
 
 
 def get_failed_approaches(ws_root: Path) -> list[dict[str, Any]]:

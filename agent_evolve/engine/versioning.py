@@ -91,9 +91,29 @@ class VersionControl:
 
         Unlike ``git reset --hard``, this preserves the rejected version
         in git history so it can be inspected or reused later.
+
+        Also removes files that were added after *ref* — ``git checkout
+        ref -- .`` restores modified files but does not remove new files.
         """
         logger.info("Rolling back workspace to %s", ref)
+        # Files at the target ref
+        try:
+            ref_files = set(
+                self._git("ls-tree", "-r", "--name-only", ref).splitlines()
+            )
+        except RuntimeError:
+            ref_files = set()
+        # Files currently tracked
+        current_files = set(
+            self._git("ls-files").splitlines()
+        )
+        # Restore content from ref
         self._git("checkout", ref, "--", ".")
+        # Remove files that didn't exist at ref
+        for extra in sorted(current_files - ref_files):
+            extra_path = self.root / extra
+            if extra_path.exists():
+                extra_path.unlink()
         self._git("add", "-A")
         try:
             self._git("commit", "-m", f"rollback to {ref}")

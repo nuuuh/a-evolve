@@ -104,6 +104,7 @@ class Template(EvolutionTemplate):
         hi = None
         if hitl_enabled:
             hi = create_interface(cfg.extra)
+            cfg.extra["human_in_the_loop"] = True
 
         ws_root = solver_workspace.root
         init_evolution_workspace(ws_root)
@@ -124,7 +125,7 @@ class Template(EvolutionTemplate):
 
         # ── HITL: handle credential-gated research records ──
         if hi:
-            self._hitl_credentials(ws_root, evo_number, hi, trajectory)
+            self._hitl_credentials(ws_root, evo_number, hi, hints, trajectory)
 
         # ── HITL: show task board to human before build ──
         if hi:
@@ -339,8 +340,12 @@ class Template(EvolutionTemplate):
     # HITL integration
     # ────────────────────────────────────────────────────────────────
 
-    def _hitl_credentials(self, ws_root, evo_number, hi, trajectory):
-        """Handle credential-gated research records via human interface."""
+    def _hitl_credentials(self, ws_root, evo_number, hi, hints, trajectory):
+        """Handle credential-gated research records via human interface.
+
+        After the human supplies a credential, reruns research for that
+        regime once and appends a real source-test record.
+        """
         records = load_research_log(ws_root)
         pending = [
             r for r in records
@@ -349,10 +354,12 @@ class Template(EvolutionTemplate):
         if not pending:
             return
 
+        retested = 0
         for rec in pending:
             env_var = rec.get("credential_env", "API_KEY")
             approach = rec.get("approach", "unknown")
             regime = rec.get("regime", "unknown")
+            endpoint = rec.get("endpoint", "")
             response = hi.handle(
                 f"Research found '{approach}' for regime '{regime}' but needs "
                 f"credentials. Provide {env_var} or type 'skip':",
@@ -361,25 +368,92 @@ class Template(EvolutionTemplate):
             if response.strip().lower() in ("skip", "(no response)", ""):
                 append_research(ws_root, {
                     "cycle": evo_number, "regime": regime,
-                    "approach": approach, "tested": False,
-                    "works": "blocked", "type": "tool_test",
-                    "error": "Human skipped credential",
+                    "approach": approach, "endpoint": endpoint,
+                    "tested": False, "works": False,
+                    "latency_ms": 0, "coverage": [], "does_not_cover": [],
+                    "complementary_to": [], "sample_output": "",
+                    "credential_needed": True, "credential_env": env_var,
+                    "error": "Human skipped credential", "notes": "",
                 })
             else:
                 import os
                 os.environ[env_var] = response.strip()
-                append_research(ws_root, {
-                    "cycle": evo_number, "regime": regime,
-                    "approach": approach, "tested": True,
-                    "works": "retest_needed", "type": "tool_test",
-                    "credential_env": env_var,
-                    "error": "",
-                })
+                # Rerun research for this specific regime+approach
+                retest_result = self._retest_credential_approach(
+                    ws_root, evo_number, regime, approach, endpoint,
+                    env_var, hints,
+                )
+                retested += 1
+                trajectory_note = retest_result
 
         trajectory.append({
             "step": "hitl_credentials",
             "pending": len(pending),
+            "retested": retested,
         })
+
+    def _retest_credential_approach(
+        self, ws_root, evo_number, regime, approach, endpoint, env_var, hints,
+    ) -> dict:
+        """Rerun research for a credential-gated approach after credential supplied."""
+        prompt = (
+            f"RETEST: The credential {env_var} has been supplied.\n"
+            f"Test the approach '{approach}' for regime '{regime}'.\n"
+            f"Endpoint: {endpoint}\n\n"
+            "Run the test in the sandbox and output ONE JSON record:\n"
+            f'{{"cycle": {evo_number}, "regime": "{regime}", '
+            f'"approach": "{approach}", "endpoint": "{endpoint}", '
+            '"tested": true, "works": true/false, "latency_ms": <ms>, '
+            '"coverage": [...], "does_not_cover": [...], '
+            '"complementary_to": [...], "sample_output": "...", '
+            f'"credential_needed": true, "credential_env": "{env_var}", '
+            '"error": "", "notes": "..."}\n'
+        )
+        if hints:
+            prompt += f"\nBENCHMARK HINTS:\n{hints}\n"
+
+        system = (
+            f"You are a research agent retesting '{approach}' for regime "
+            f"'{regime}' after credentials were supplied. Test with real "
+            "HTTP calls and report the result as a JSON record."
+        )
+
+        try:
+            result = self.engine._run_llm(prompt, ws_root, system_prompt=system)
+            parsed = _parse_json_blocks(result.get("content", ""))
+            if parsed:
+                rec = parsed[0]
+                rec.setdefault("cycle", evo_number)
+                rec.setdefault("regime", regime)
+                rec.setdefault("approach", approach)
+                rec.setdefault("tested", True)
+                rec.setdefault("credential_needed", True)
+                rec.setdefault("credential_env", env_var)
+                if validate_research_record(rec):
+                    append_research(ws_root, rec)
+                    return {"retested": True, "works": rec.get("works")}
+            # Fallback: no parseable record
+            append_research(ws_root, {
+                "cycle": evo_number, "regime": regime,
+                "approach": approach, "endpoint": endpoint,
+                "tested": True, "works": False,
+                "latency_ms": 0, "coverage": [], "does_not_cover": [],
+                "complementary_to": [], "sample_output": "",
+                "credential_needed": True, "credential_env": env_var,
+                "error": "Retest produced no parseable record", "notes": "",
+            })
+            return {"retested": True, "works": False}
+        except Exception as e:
+            append_research(ws_root, {
+                "cycle": evo_number, "regime": regime,
+                "approach": approach, "endpoint": endpoint,
+                "tested": True, "works": False,
+                "latency_ms": 0, "coverage": [], "does_not_cover": [],
+                "complementary_to": [], "sample_output": "",
+                "credential_needed": True, "credential_env": env_var,
+                "error": str(e), "notes": "",
+            })
+            return {"retested": True, "works": False, "error": str(e)}
 
     def _hitl_task_board(self, ws_root, hi, trajectory):
         """Show task board to human and accept edits before build."""
