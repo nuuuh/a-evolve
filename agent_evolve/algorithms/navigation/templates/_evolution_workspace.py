@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +55,34 @@ def init_evolution_workspace(ws_root: Path) -> None:
         p = ws / jsonl
         if not p.exists():
             p.touch()
+
+
+TASK_BOARD_REQUIRED_SECTIONS = {
+    "## Failure Patterns",
+    "## Verified Capabilities",
+    "## Unresolved",
+    "## Human Requests",
+}
+
+IGNORED_GAP_LABELS = {
+    "successes", "failures", "diagnosis", "summary", "analysis",
+    "verified", "unresolved", "human", "failure", "none", "no",
+    "the", "and", "for", "from", "patterns", "capabilities",
+    "requests", "cycle",
+}
+
+
+def validate_task_board(content: str) -> bool:
+    """Check that task board content has required sections and format."""
+    content_lower = content.lower()
+    for section in TASK_BOARD_REQUIRED_SECTIONS:
+        if section.lower() not in content_lower:
+            return False
+    has_priority = bool(re.search(
+        r"^[-*]\s*\w[\w_]*:.*PRIORITY:\s*(HIGH|MEDIUM|LOW)",
+        content, re.MULTILINE | re.IGNORECASE,
+    ))
+    return has_priority
 
 
 def load_task_board(ws_root: Path) -> str:

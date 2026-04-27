@@ -28,6 +28,7 @@ from ._evolution_workspace import (
     init_evolution_workspace,
     load_task_board,
     update_task_board,
+    validate_task_board,
     load_research_log,
     append_research,
     validate_research_record,
@@ -35,6 +36,7 @@ from ._evolution_workspace import (
     load_architecture,
     update_architecture,
     append_insight,
+    IGNORED_GAP_LABELS,
 )
 
 logger = logging.getLogger(__name__)
@@ -87,6 +89,31 @@ class Template(EvolutionTemplate):
     @property
     def name(self) -> str:
         return "structured_evolution"
+
+    def _call_llm_simple(self, prompt: str, system_prompt: str) -> str:
+        """Call the LLM with no tools, no sandbox, no network.
+
+        Used for the analyst phase which must be read-only. The prompt
+        contains all needed context (trajectories, task board, research
+        log) — the LLM just reasons and produces structured output.
+        """
+        cfg = self.engine.config
+        try:
+            from ....llm.bedrock import BedrockProvider
+            if isinstance(self.engine.llm, BedrockProvider):
+                response = self.engine.llm.converse_loop(
+                    system_prompt=system_prompt,
+                    user_message=prompt,
+                    tools=[],
+                    tool_executor={},
+                    max_tokens=cfg.evolver_max_tokens,
+                    temperature=0.0,
+                    verbose=bool(cfg.extra.get("verbose")),
+                )
+                return response.content or ""
+        except ImportError:
+            pass
+        return ""
 
     def execute(
         self,
@@ -189,36 +216,68 @@ class Template(EvolutionTemplate):
             f"RESEARCH LOG ({len(research_log)} records):\n"
             + "\n".join(json.dumps(r) for r in research_log[-20:])
             + "\n\n"
+            "OUTPUT FORMAT (you MUST use this exact structure):\n"
+            "## Failure Patterns (Cycle N)\n"
+            "- <regime_tag>: <count> tasks fail because <reason>. PRIORITY: HIGH|MEDIUM|LOW\n"
+            "(one bullet per regime)\n\n"
+            "## Verified Capabilities\n"
+            "- <approach>: <what it covers> (cycle N)\n\n"
+            "## Unresolved\n"
+            "- <regime>: <why stuck> (cycle N)\n\n"
+            "## Human Requests\n"
+            "- (none this cycle)\n\n"
             "INSTRUCTIONS:\n"
             "1. Identify failure patterns grouped by capability regime.\n"
             "2. Assign priority (HIGH/MEDIUM/LOW) based on task count.\n"
-            "3. Cross-reference with the research log — note which gaps "
-            "already have verified solutions.\n"
-            "4. Output the FULL updated task_board.md content.\n"
-            "5. Do NOT suggest solutions. Diagnosis only.\n"
+            "3. Cross-reference with the research log.\n"
+            "4. Output ONLY the task board content in the format above.\n"
+            "5. Do NOT include conversational text, explanations, or tables.\n"
+            "6. Do NOT suggest solutions. Diagnosis only.\n"
         )
         if hints:
             analyst_prompt += f"\nBENCHMARK HINTS:\n{hints}\n"
 
         system = (
-            "You are a failure analyst. Read batch trajectories and the "
-            "evolution workspace to identify what's failing and why. "
-            "Output the full updated task_board.md."
+            "You are a failure analyst. Output ONLY the task board in the "
+            "exact markdown format specified. No conversational text."
         )
 
-        logger.info("Phase 1: Analyzing batch failures...")
+        logger.info("Phase 1: Analyzing batch failures (no-tools)...")
         try:
-            result = self.engine._run_llm(
-                analyst_prompt, ws_root, system_prompt=system,
-            )
-            content = result.get("content", "")
-            if content.strip():
+            content = self._call_llm_simple(analyst_prompt, system)
+            if content.strip() and validate_task_board(content):
                 update_task_board(ws_root, content)
-            vc.commit(
-                message=f"evo-{evo_number}-analyze: update task board",
-                tag=f"evo-{evo_number}-analyze",
-            )
-            trajectory.append({"step": "analyze", "success": True})
+                vc.commit(
+                    message=f"evo-{evo_number}-analyze: update task board",
+                    tag=f"evo-{evo_number}-analyze",
+                )
+                trajectory.append({"step": "analyze", "success": True})
+            elif content.strip():
+                # Retry with repair prompt
+                repair_prompt = (
+                    "Your previous output was not in the correct format.\n"
+                    "Rewrite it using EXACTLY this structure:\n\n"
+                    "## Failure Patterns (Cycle N)\n"
+                    "- <regime_tag>: <count> tasks fail because <reason>. "
+                    "PRIORITY: HIGH|MEDIUM|LOW\n\n"
+                    "## Verified Capabilities\n\n"
+                    "## Unresolved\n\n"
+                    "## Human Requests\n\n"
+                    f"Here is what you wrote:\n{content[:2000]}\n"
+                )
+                repaired = self._call_llm_simple(repair_prompt, system)
+                if repaired.strip() and validate_task_board(repaired):
+                    update_task_board(ws_root, repaired)
+                    vc.commit(
+                        message=f"evo-{evo_number}-analyze: update task board (repaired)",
+                        tag=f"evo-{evo_number}-analyze",
+                    )
+                    trajectory.append({"step": "analyze", "success": True, "repaired": True})
+                else:
+                    logger.warning("Phase 1: analyst output failed validation after repair")
+                    trajectory.append({"step": "analyze", "success": False, "reason": "invalid_format"})
+            else:
+                trajectory.append({"step": "analyze", "success": False, "reason": "empty_output"})
         except Exception as e:
             logger.warning("Phase 1 (analyze) failed: %s", e)
             trajectory.append({"step": "analyze", "success": False, "error": str(e)})
@@ -315,26 +374,35 @@ class Template(EvolutionTemplate):
         })
 
     def _extract_gaps(self, task_board: str, k: int) -> list[str]:
-        """Extract top-K priority gaps from task board."""
+        """Extract top-K priority gaps from validated failure-pattern bullets.
+
+        Only parses lines matching the planned format:
+          - <regime_tag>: ... PRIORITY: HIGH|MEDIUM|LOW
+        Ignores table rows, generic labels, and conversational text.
+        """
+        in_failure_section = False
         gaps = []
         for line in task_board.splitlines():
-            line_lower = line.lower().strip()
-            if "priority:" in line_lower and ("high" in line_lower or "med" in line_lower):
-                match = re.match(r"[-*]\s*(\w[\w_]*)", line.strip())
-                if match:
-                    gaps.append(match.group(1))
-        return gaps[:k] if gaps else self._fallback_gaps(task_board, k)
-
-    def _fallback_gaps(self, task_board: str, k: int) -> list[str]:
-        """If no structured priorities, extract regime-like tags from board."""
-        regimes = set()
-        for line in task_board.splitlines():
-            match = re.match(r"[-*]\s*(\w[\w_]*):", line.strip())
+            stripped = line.strip()
+            if stripped.lower().startswith("## failure pattern"):
+                in_failure_section = True
+                continue
+            if stripped.startswith("## "):
+                in_failure_section = False
+                continue
+            if not in_failure_section:
+                continue
+            if "|" in stripped:
+                continue
+            match = re.match(
+                r"[-*]\s*(\w[\w_]*):\s*\d+.*PRIORITY:\s*(HIGH|MEDIUM|LOW)",
+                stripped, re.IGNORECASE,
+            )
             if match:
                 tag = match.group(1).lower()
-                if tag not in {"none", "no", "the", "and", "for", "from"}:
-                    regimes.add(tag)
-        return list(regimes)[:k]
+                if tag not in IGNORED_GAP_LABELS:
+                    gaps.append(tag)
+        return gaps[:k]
 
     # ────────────────────────────────────────────────────────────────
     # HITL integration

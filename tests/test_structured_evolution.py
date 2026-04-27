@@ -11,6 +11,7 @@ from agent_evolve.algorithms.navigation.templates._evolution_workspace import (
     load_task_board,
     load_research_log,
     append_research,
+    validate_task_board,
     WORKSPACE_DIR,
 )
 
@@ -92,17 +93,21 @@ class TestFourPhaseTrajectory:
     def test_all_phases_present(
         self, fake_engine, fake_workspace, fake_vc, fake_tree, batch_results,
     ):
+        valid_board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- finance: 2 tasks fail because no exact price data. "
+            "PRIORITY: HIGH\n\n"
+            "## Verified Capabilities\n\n"
+            "## Unresolved\n\n"
+            "## Human Requests\n"
+        )
+
+        def mock_call_simple(prompt, system_prompt):
+            return valid_board
+
         def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
             sp = (system_prompt or "").lower()
-            if "failure analyst" in sp:
-                return {"content": (
-                    "## Failure Patterns (Cycle 1)\n"
-                    "- finance: 2 tasks fail because no exact price data. "
-                    "PRIORITY: HIGH\n\n"
-                    "## Verified Capabilities\n\n"
-                    "## Unresolved\n"
-                )}
-            elif "research agent" in sp:
+            if "research agent" in sp or "retesting" in sp:
                 return {"content": json.dumps({
                     "cycle": 1, "regime": "finance",
                     "approach": "stooq", "endpoint": "https://stooq.com/",
@@ -121,6 +126,7 @@ class TestFourPhaseTrajectory:
         fake_engine._run_llm = MagicMock(side_effect=mock_run_llm)
 
         template = Template(fake_engine)
+        template._call_llm_simple = MagicMock(side_effect=mock_call_simple)
         result = template.execute(
             fake_vc, fake_workspace, batch_results,
             fake_tree, evo_number=1, routing_log_path=None,
@@ -134,6 +140,33 @@ class TestFourPhaseTrajectory:
         assert result["evo_number"] == 1
         assert isinstance(result["mutated"], bool)
         assert isinstance(result["trajectory"], list)
+        # Analyst used no-tools call, NOT engine._run_llm
+        template._call_llm_simple.assert_called()
+
+    def test_analyst_does_not_use_run_llm(
+        self, fake_engine, fake_workspace, fake_vc, fake_tree, batch_results,
+    ):
+        """Regression: _phase_analyze must NOT call engine._run_llm."""
+        valid_board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- general: 4 tasks fail because no search. PRIORITY: HIGH\n\n"
+            "## Verified Capabilities\n\n## Unresolved\n\n## Human Requests\n"
+        )
+        def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
+            sp = (system_prompt or "").lower()
+            if "failure analyst" in sp:
+                raise AssertionError("Analyst must NOT call engine._run_llm")
+            return {"content": ""}
+
+        fake_engine._run_llm = MagicMock(side_effect=mock_run_llm)
+
+        template = Template(fake_engine)
+        template._call_llm_simple = MagicMock(return_value=valid_board)
+        template._phase_analyze(
+            fake_vc, fake_workspace, batch_results, 1, "", [],
+        )
+        # If we reach here, _run_llm was not called for the analyst
+        template._call_llm_simple.assert_called()
 
     def test_template_name(self, fake_engine):
         t = Template(fake_engine)
@@ -161,9 +194,7 @@ class TestBuildVerifyLoop:
 
         def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
             sp = (system_prompt or "").lower()
-            if "failure analyst" in sp:
-                return {"content": "## Failure Patterns\n- finance: PRIORITY: HIGH\n"}
-            elif "research agent" in sp:
+            if "research agent" in sp:
                 return {"content": ""}
             elif "infrastructure builder" in sp:
                 return {"content": "Built tool."}
@@ -176,7 +207,15 @@ class TestBuildVerifyLoop:
 
         fake_engine._run_llm = MagicMock(side_effect=mock_run_llm)
 
+        valid_board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- finance: 2 tasks fail because no price data. PRIORITY: HIGH\n\n"
+            "## Verified Capabilities\n\n"
+            "## Unresolved\n\n"
+            "## Human Requests\n"
+        )
         template = Template(fake_engine)
+        template._call_llm_simple = MagicMock(return_value=valid_board)
         result = template.execute(
             fake_vc, fake_workspace, batch_results,
             fake_tree, evo_number=1, routing_log_path=None,
@@ -204,9 +243,7 @@ class TestBuildVerifyLoop:
 
         def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
             sp = (system_prompt or "").lower()
-            if "failure analyst" in sp:
-                return {"content": "## Failure Patterns\n- finance: PRIORITY: HIGH\n"}
-            elif "research agent" in sp:
+            if "research agent" in sp:
                 return {"content": ""}
             elif "infrastructure builder" in sp:
                 return {"content": "Built tool."}
@@ -217,7 +254,15 @@ class TestBuildVerifyLoop:
         fake_engine._run_llm = MagicMock(side_effect=mock_run_llm)
         fake_engine.config.extra["structured_evolution"]["build_verify_retries"] = 2
 
+        valid_board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- finance: 2 tasks fail because no price data. PRIORITY: HIGH\n\n"
+            "## Verified Capabilities\n\n"
+            "## Unresolved\n\n"
+            "## Human Requests\n"
+        )
         template = Template(fake_engine)
+        template._call_llm_simple = MagicMock(return_value=valid_board)
         result = template.execute(
             fake_vc, fake_workspace, batch_results,
             fake_tree, evo_number=1, routing_log_path=None,
@@ -243,9 +288,7 @@ class TestBuildVerifyLoop:
 
         def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
             sp = (system_prompt or "").lower()
-            if "failure analyst" in sp:
-                return {"content": "## Failure Patterns\n- finance: PRIORITY: HIGH\n"}
-            elif "research agent" in sp:
+            if "research agent" in sp:
                 return {"content": ""}
             elif "infrastructure builder" in sp:
                 return {"content": "Built tool."}
@@ -256,7 +299,15 @@ class TestBuildVerifyLoop:
         fake_engine._run_llm = MagicMock(side_effect=mock_run_llm)
         fake_engine.config.extra["structured_evolution"]["build_verify_retries"] = 1
 
+        valid_board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- finance: 2 tasks fail because no price data. PRIORITY: HIGH\n\n"
+            "## Verified Capabilities\n\n"
+            "## Unresolved\n\n"
+            "## Human Requests\n"
+        )
         template = Template(fake_engine)
+        template._call_llm_simple = MagicMock(return_value=valid_board)
         result = template.execute(
             fake_vc, fake_workspace, batch_results,
             fake_tree, evo_number=1, routing_log_path=None,
@@ -287,9 +338,7 @@ class TestBuildVerifyLoop:
 
         def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
             sp = (system_prompt or "").lower()
-            if "failure analyst" in sp:
-                return {"content": "## Failure Patterns\n- finance: PRIORITY: HIGH\n"}
-            elif "research agent" in sp:
+            if "research agent" in sp:
                 return {"content": ""}
             elif "infrastructure builder" in sp:
                 return {"content": "Built pipeline."}
@@ -299,7 +348,15 @@ class TestBuildVerifyLoop:
 
         fake_engine._run_llm = MagicMock(side_effect=mock_run_llm)
 
+        valid_board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- finance: 2 tasks fail because no price data. PRIORITY: HIGH\n\n"
+            "## Verified Capabilities\n\n"
+            "## Unresolved\n\n"
+            "## Human Requests\n"
+        )
         template = Template(fake_engine)
+        template._call_llm_simple = MagicMock(return_value=valid_board)
         result = template.execute(
             fake_vc, fake_workspace, batch_results,
             fake_tree, evo_number=1, routing_log_path=None,
@@ -369,13 +426,7 @@ class TestResearchLogAccumulation:
         def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
             call_idx[0] += 1
             n = call_idx[0]
-            if "analyst" in (system_prompt or "").lower() or "failure" in (system_prompt or "").lower():
-                return {"content": (
-                    "## Failure Patterns (Cycle 1)\n"
-                    "- finance: PRIORITY: HIGH\n"
-                    "## Verified Capabilities\n## Unresolved\n"
-                )}
-            elif "research" in (system_prompt or "").lower():
+            if "research" in (system_prompt or "").lower():
                 return {"content": json.dumps({
                     "cycle": 1, "regime": "finance",
                     "approach": f"source_{n}",
@@ -393,7 +444,15 @@ class TestResearchLogAccumulation:
 
         fake_engine._run_llm = MagicMock(side_effect=mock_run_llm)
 
+        valid_board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- finance: 2 tasks fail because no price data. PRIORITY: HIGH\n\n"
+            "## Verified Capabilities\n\n"
+            "## Unresolved\n\n"
+            "## Human Requests\n"
+        )
         template = Template(fake_engine)
+        template._call_llm_simple = MagicMock(return_value=valid_board)
 
         # Cycle 1
         template.execute(
@@ -426,7 +485,15 @@ class TestHITL:
 
         fake_engine._run_llm = MagicMock(side_effect=mock_run_llm)
 
+        valid_board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- finance: 2 tasks fail because no price data. PRIORITY: HIGH\n\n"
+            "## Verified Capabilities\n\n"
+            "## Unresolved\n\n"
+            "## Human Requests\n"
+        )
         template = Template(fake_engine)
+        template._call_llm_simple = MagicMock(return_value=valid_board)
         result = template.execute(
             fake_vc, fake_workspace, batch_results,
             fake_tree, evo_number=1, routing_log_path=None,
@@ -456,9 +523,7 @@ class TestHITL:
 
         def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
             sp = (system_prompt or "").lower()
-            if "failure analyst" in sp:
-                return {"content": "## Failure Patterns\n- chinese_search: PRIORITY: HIGH\n"}
-            elif "retesting" in sp:
+            if "retesting" in sp:
                 # Retest call after credential supplied
                 return {"content": json.dumps({
                     "cycle": 1, "regime": "chinese_search",
@@ -479,11 +544,19 @@ class TestHITL:
 
         fake_engine._run_llm = MagicMock(side_effect=mock_run_llm)
 
+        valid_board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- chinese_search: 2 tasks fail because no price data. PRIORITY: HIGH\n\n"
+            "## Verified Capabilities\n\n"
+            "## Unresolved\n\n"
+            "## Human Requests\n"
+        )
         with patch(
             "agent_evolve.algorithms.navigation.templates.structured_evolution.create_interface",
             return_value=mock_hi,
         ):
             template = Template(fake_engine)
+            template._call_llm_simple = MagicMock(return_value=valid_board)
             result = template.execute(
                 fake_vc, fake_workspace, batch_results,
                 fake_tree, evo_number=1, routing_log_path=None,
@@ -531,11 +604,19 @@ class TestHITL:
 
         fake_engine._run_llm = MagicMock(side_effect=mock_run_llm)
 
+        valid_board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- finance: 2 tasks fail because no price data. PRIORITY: HIGH\n\n"
+            "## Verified Capabilities\n\n"
+            "## Unresolved\n\n"
+            "## Human Requests\n"
+        )
         with patch(
             "agent_evolve.algorithms.navigation.templates.structured_evolution.create_interface",
             return_value=mock_hi,
         ):
             template = Template(fake_engine)
+            template._call_llm_simple = MagicMock(return_value=valid_board)
             result = template.execute(
                 fake_vc, fake_workspace, batch_results,
                 fake_tree, evo_number=1, routing_log_path=None,
@@ -555,18 +636,57 @@ class TestGapExtraction:
     def test_extracts_high_priority_gaps(self, fake_engine):
         template = Template(fake_engine)
         board = (
-            "## Failure Patterns\n"
-            "- finance_exact: 5 tasks fail. PRIORITY: HIGH\n"
-            "- sports_ranking: 3 tasks fail. PRIORITY: MEDIUM\n"
-            "- weather: 1 task. PRIORITY: LOW\n"
+            "## Failure Patterns (Cycle 1)\n"
+            "- finance_exact: 5 tasks fail because no price data. PRIORITY: HIGH\n"
+            "- sports_ranking: 3 tasks fail because no ranking API. PRIORITY: MEDIUM\n"
+            "- weather: 1 task fails. PRIORITY: LOW\n"
+            "\n## Verified Capabilities\n\n## Unresolved\n\n## Human Requests\n"
         )
         gaps = template._extract_gaps(board, k=2)
         assert "finance_exact" in gaps
         assert "sports_ranking" in gaps
-        assert "weather" not in gaps
+        assert "weather" not in gaps  # LOW excluded by k=2
 
-    def test_fallback_when_no_priorities(self, fake_engine):
+    def test_no_gaps_from_invalid_board(self, fake_engine):
         template = Template(fake_engine)
         board = "## Failure Patterns\n- crypto: no data\n- sports: partial\n"
         gaps = template._extract_gaps(board, k=3)
-        assert len(gaps) > 0
+        assert gaps == []
+
+    def test_ignores_table_rows(self, fake_engine):
+        template = Template(fake_engine)
+        board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "| regime | count | priority |\n"
+            "| finance | 5 | HIGH |\n"
+            "- finance: 5 tasks fail because no data. PRIORITY: HIGH\n"
+            "\n## Verified Capabilities\n\n## Unresolved\n\n## Human Requests\n"
+        )
+        gaps = template._extract_gaps(board, k=3)
+        assert gaps == ["finance"]
+
+    def test_ignores_generic_labels(self, fake_engine):
+        template = Template(fake_engine)
+        board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- failures: 10 tasks fail because various. PRIORITY: HIGH\n"
+            "- finance: 5 tasks fail because no price. PRIORITY: HIGH\n"
+            "\n## Verified Capabilities\n\n## Unresolved\n\n## Human Requests\n"
+        )
+        gaps = template._extract_gaps(board, k=3)
+        assert "failures" not in gaps  # generic label ignored
+        assert "finance" in gaps
+
+    def test_malformed_smoke_board_no_accidental_gaps(self, fake_engine):
+        """Regression: the malformed smoke board must produce 0 gaps."""
+        template = Template(fake_engine)
+        board = (
+            "I'll analyze the batch trajectories...\n"
+            "Now let me look at the failure patterns.\n\n"
+            "| Task | Domain | Result |\n"
+            "| 0001 | Finance | FAIL |\n"
+            "| 0002 | Sports | FAIL |\n"
+            "\n## Summary\nMost tasks failed due to lack of search.\n"
+        )
+        gaps = template._extract_gaps(board, k=5)
+        assert gaps == []
