@@ -1,0 +1,11 @@
+{
+  "template": "mosaic",
+  "total_tasks": 56,
+  "passed": 21,
+  "pass_rate": 37.5,
+  "complete": true,
+  "batch_1_pass": "4/10",
+  "batch_2plus_pass": "17/46",
+  "total_bash_calls": 380,
+  "trajectory_count": 5
+}
