@@ -305,3 +305,61 @@ def test_planner_prompt_includes_task_preview():
     )
     assert "Tornado Watch" in prompt
     assert "task_preview" in prompt or "Storm Prediction" in prompt
+
+
+# ── Discovery cache template ──
+
+
+def test_discovery_cache_trajectory(workspace, engine, vc, agent_workspace):
+    from agent_evolve.algorithms.navigation.templates.discovery_cache import Template
+    template = Template(engine)
+    result = template.execute(
+        vc, agent_workspace, _make_batch(4),
+        _StubTree(), evo_number=1, routing_log_path=None,
+    )
+    steps = [s["step"] for s in result["trajectory"]]
+    assert "cache_state" in steps
+    assert "tool_builder" in steps
+    assert "strategy_writer" in steps
+    assert "cache_growth" in steps
+    assert "guardrails" in steps
+    assert result["mutated"] is True
+
+    # Cache file created.
+    cache = workspace / "infra" / "discovery_cache.jsonl"
+    assert cache.exists()
+
+    # G2-G5 compliance.
+    prompt = (workspace / "prompts" / "system.md").read_text()
+    assert "2-4 searches" not in prompt
+    assert len(prompt) <= 10000
+    reg = yaml.safe_load((workspace / "tools" / "registry.yaml").read_text())
+    assert all(t["name"] != "broken" for t in reg.get("tools", []))
+
+
+# ── Population template ──
+
+
+def test_population_trajectory(workspace, engine, vc, agent_workspace):
+    from agent_evolve.algorithms.navigation.templates.population import Template
+    template = Template(engine)
+    result = template.execute(
+        vc, agent_workspace, _make_batch(4),
+        _StubTree(), evo_number=1, routing_log_path=None,
+    )
+    steps = [s["step"] for s in result["trajectory"]]
+
+    # Must have candidate steps + tournament + fusion + guardrails.
+    assert sum(1 for s in steps if s == "candidate") >= 2
+    assert "tournament" in steps
+    assert "fusion" in steps
+    assert "guardrails" in steps
+
+    # Tournament selected a winner.
+    tournament = next(s for s in result["trajectory"] if s["step"] == "tournament")
+    assert tournament["winner_index"] is not None
+
+    # G2-G5.
+    prompt = (workspace / "prompts" / "system.md").read_text()
+    assert "2-4 searches" not in prompt
+    assert len(prompt) <= 10000

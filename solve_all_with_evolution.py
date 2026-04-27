@@ -680,6 +680,15 @@ def main():
                 label = ("Navigation evolution"
                          if navigation_enabled else "Multi-agent evolution")
                 log.info("%s cycle %d...", label, evo_cycle)
+                # Enrich batch_results with task metadata so templates
+                # like orthogonal_pair can dispatch based on difficulty/domain.
+                _task_by_id = {t.id: t for t in batch_tasks}
+                for r in batch_results:
+                    t = _task_by_id.get(r.get("instance_id"))
+                    if t and t.metadata:
+                        r.setdefault("task_metadata", t.metadata)
+                        r.setdefault("difficulty_level", t.metadata.get("difficulty_level"))
+                        r.setdefault("domain", t.metadata.get("domain"))
                 try:
                     evo_result = evolver.evolve_with_navigation(
                         solver_workspace=agent.workspace,
