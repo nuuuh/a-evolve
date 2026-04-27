@@ -245,8 +245,11 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
         if tool_files:
             try:
                 sandbox_net = config_obj.extra.get("sandbox_network", "none") if config_obj else "none"
-                container_name = start_sandbox(task_id, tool_files, sandbox_network=sandbox_net)
-                log.info("Sandbox started: %s (%d tools)", container_name, len(tool_files))
+                container_name = start_sandbox(
+                    task_id, tool_files, sandbox_network=sandbox_net,
+                    cutoff_date=_date_end,
+                )
+                log.info("Sandbox started: %s (%d tools, cutoff=%s)", container_name, len(tool_files), _date_end)
             except Exception as e:
                 log.warning("Sandbox start failed (tools unavailable): %s", e)
 

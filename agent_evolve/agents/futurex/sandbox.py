@@ -63,7 +63,8 @@ _FORWARD_ENV_KEYS = [
 ]
 
 
-def start_sandbox(task_id: str, tool_files: dict, sandbox_network: str = "none") -> str:
+def start_sandbox(task_id: str, tool_files: dict, sandbox_network: str = "none",
+                   cutoff_date: str = "") -> str:
     """Start a per-task Docker sandbox and copy evolved tools into it."""
     _ensure_sandbox_image()
     ctr = f"fx-{task_id.replace('/', '_')}-{os.getpid()}"
@@ -74,6 +75,8 @@ def start_sandbox(task_id: str, tool_files: dict, sandbox_network: str = "none")
         val = os.environ.get(key)
         if val:
             cmd.extend(["-e", f"{key}={val}"])
+    if cutoff_date:
+        cmd.extend(["-e", f"FUTUREX_CUTOFF_DATE={cutoff_date}"])
     cmd.extend([SANDBOX_IMAGE, "sleep", "infinity"])
     r = subprocess.run(
         cmd,
