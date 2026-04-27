@@ -349,14 +349,19 @@ class Template(EvolutionTemplate):
                 )
                 records = _parse_json_blocks(result.get("content", ""))
                 saved = 0
+                mismatched = 0
                 for r in records:
                     r.setdefault("cycle", evo_number)
-                    r.setdefault("regime", gap)
                     r.setdefault("tested", True)
+                    if "regime" not in r:
+                        r["regime"] = gap
+                    elif r["regime"] != gap:
+                        mismatched += 1
+                        continue
                     if validate_research_record(r):
                         append_research(ws_root, r)
                         saved += 1
-                return {"gap": gap, "records": saved}
+                return {"gap": gap, "records": saved, "mismatched": mismatched}
             except Exception as e:
                 logger.warning("Research for %s failed: %s", gap, e)
                 return {"gap": gap, "records": 0, "error": str(e)}

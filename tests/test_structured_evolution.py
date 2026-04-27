@@ -715,3 +715,61 @@ class TestGapExtraction:
         )
         gaps = template._extract_gaps(board, k=5)
         assert gaps == []
+
+
+class TestRegimeIntegrity:
+    """Regression: research records must match the assigned regime."""
+
+    def test_mismatched_regime_rejected(
+        self, fake_engine, fake_workspace, fake_vc, fake_tree, batch_results,
+    ):
+        from agent_evolve.algorithms.navigation.templates._evolution_workspace import update_task_board
+        ws_root = fake_workspace.root
+        init_evolution_workspace(ws_root)
+
+        valid_board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- finance: 3 tasks fail because no API. PRIORITY: HIGH\n"
+            "- sports: 2 tasks fail because no data. PRIORITY: MEDIUM\n"
+            "\n## Verified Capabilities\n\n## Unresolved\n\n## Human Requests\n"
+        )
+        update_task_board(ws_root, valid_board)
+
+        def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
+            sp = (system_prompt or "").lower()
+            if "research agent" in sp:
+                # All records claim regime=finance regardless of assigned gap
+                return {"content": json.dumps({
+                    "cycle": 1, "regime": "finance",
+                    "approach": "yahoo", "endpoint": "https://yahoo.com",
+                    "tested": True, "works": True, "latency_ms": 200,
+                    "coverage": ["stocks"], "does_not_cover": [],
+                    "complementary_to": [], "sample_output": "data",
+                    "credential_needed": False, "credential_env": "",
+                    "error": "", "notes": "",
+                })}
+            return {"content": ""}
+
+        fake_engine._run_llm = MagicMock(side_effect=mock_run_llm)
+        fake_engine.config.extra["structured_evolution"]["research_parallel"] = 2
+
+        template = Template(fake_engine)
+        template._call_llm_simple = MagicMock(return_value=valid_board)
+
+        trajectory = []
+        template._phase_research(
+            fake_vc, fake_workspace, batch_results,
+            1, 2, "", trajectory,
+        )
+
+        research_step = trajectory[0]
+        results = research_step["results"]
+
+        # finance gap: records match, should be saved
+        finance_result = next(r for r in results if r["gap"] == "finance")
+        assert finance_result["records"] >= 1
+
+        # sports gap: records have regime=finance, should be rejected
+        sports_result = next(r for r in results if r["gap"] == "sports")
+        assert sports_result["records"] == 0
+        assert sports_result.get("mismatched", 0) >= 1

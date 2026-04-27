@@ -81,18 +81,23 @@ _MALFORMED_PRIORITY_RE = re.compile(
 
 
 def validate_task_board(content: str) -> bool:
-    """Check that task board has required sections and that ALL priority
-    bullets inside Failure Patterns use the parseable numeric format.
+    """Check that task board has required sections, no preamble before
+    ## Failure Patterns, and ALL priority bullets use numeric format.
 
-    Every bullet with PRIORITY: must match:
-      - <regime>: <number> ... PRIORITY: HIGH|MEDIUM|LOW
-    Bullets with PRIORITY: but no numeric count are rejected so the
-    validator and _extract_gaps agree on what's parseable.
+    The first non-empty line must be the ## Failure Patterns heading.
     """
     content_lower = content.lower()
     for section in TASK_BOARD_REQUIRED_SECTIONS:
         if section.lower() not in content_lower:
             return False
+    # First non-empty line must be ## Failure Patterns heading
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if not re.match(r"^##\s+Failure Patterns(?:\s*\(.*\))?\s*$", stripped, re.IGNORECASE):
+            return False
+        break
     in_failure = False
     valid_count = 0
     for line in content.splitlines():

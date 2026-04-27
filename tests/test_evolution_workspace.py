@@ -112,6 +112,32 @@ class TestTaskBoardValidation:
         board = "I'll analyze the failures...\nMost tasks failed."
         assert validate_task_board(board) is False
 
+    def test_preamble_before_heading_rejected(self):
+        """Regression: Round 7 board with conversational preamble."""
+        board = (
+            "I need to inspect the trajectories to understand failure patterns.\n\n"
+            "## Failure Patterns (Cycle 1)\n"
+            "- search_exhaustion: 6 tasks fail because cap. PRIORITY: HIGH\n\n"
+            "## Verified Capabilities\n\n## Unresolved\n\n## Human Requests\n"
+        )
+        assert validate_task_board(board) is False
+
+    def test_clean_board_first_line_accepted(self):
+        board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- finance: 5 tasks fail because no data. PRIORITY: HIGH\n\n"
+            "## Verified Capabilities\n\n## Unresolved\n\n## Human Requests\n"
+        )
+        assert validate_task_board(board) is True
+
+    def test_leading_blank_lines_then_heading_accepted(self):
+        board = (
+            "\n\n## Failure Patterns (Cycle 1)\n"
+            "- finance: 5 tasks fail because no data. PRIORITY: HIGH\n\n"
+            "## Verified Capabilities\n\n## Unresolved\n\n## Human Requests\n"
+        )
+        assert validate_task_board(board) is True
+
     def test_mixed_numeric_and_nonnumeric_bullets_rejected(self):
         """Regression: Round 6 board with some bullets missing numeric counts."""
         board = (
