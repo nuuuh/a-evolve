@@ -779,13 +779,25 @@ def main():
                     "cumulative_passed": sum(1 for x in results if x.get("success")),
                     "cumulative_total": len(results),
                 }, default=str) + "\n")
-            # Evolver trajectory
+            # Evolver trajectory — write to evolver workspace if it exists
+            # (structured_evolution uses a sibling directory), else to evo_dir
+            evo_traj_dir = evo_dir
+            try:
+                from agent_evolve.algorithms.navigation.templates._evolution_workspace import (
+                    get_evolver_workspace_path,
+                )
+                ew = get_evolver_workspace_path(ws_dir)
+                if ew.exists():
+                    (ew / "evolution").mkdir(parents=True, exist_ok=True)
+                    evo_traj_dir = ew / "evolution"
+            except ImportError:
+                pass
             if evo_conversation:
-                traj_path = evo_dir / f"evo_{evo_cycle}_trajectory.json"
+                traj_path = evo_traj_dir / f"evo_{evo_cycle}_trajectory.json"
                 with open(traj_path, "w") as f:
                     json.dump(evo_conversation, f, indent=2, default=str)
             if nav_trajectory:
-                traj_path = evo_dir / f"nav_evo_{evo_cycle}_trajectory.json"
+                traj_path = evo_traj_dir / f"nav_evo_{evo_cycle}_trajectory.json"
                 with open(traj_path, "w") as f:
                     json.dump(nav_trajectory, f, indent=2, default=str)
 

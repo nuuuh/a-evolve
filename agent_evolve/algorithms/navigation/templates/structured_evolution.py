@@ -357,6 +357,7 @@ class Template(EvolutionTemplate):
 
             system = (
                 f"You are a research agent investigating: {gap}\n"
+                "Your working directory is /evolver_workspace.\n"
                 "Test approaches with real HTTP calls in the sandbox. "
                 "Output structured JSON records, one per line."
             )
@@ -597,17 +598,21 @@ class Template(EvolutionTemplate):
 
         builder_system = (
             f"You are an infrastructure builder for evolution cycle {evo_number}.\n\n"
+            "WORKSPACE LAYOUT:\n"
+            "  /solver_workspace/ — solver files (write tools, infra, prompts here)\n"
+            "  /evolver_workspace/ — evolver state (task_board.md, research_log.jsonl,\n"
+            "    architecture.md — read these for context, update architecture.md)\n\n"
             f"RULES:\n"
             f"1. Only build from VERIFIED research results (works: true).\n"
             f"2. {no_throttle_rule()}\n"
-            "3. Build class-based pipelines under infra/<regime>_pipeline.py.\n"
+            "3. Build pipelines in /solver_workspace/infra/<regime>_pipeline.py.\n"
             "4. Each pipeline has execute(query, **context) -> str.\n"
             "5. Source chains ordered by coverage breadth + reliability.\n"
-            "6. Keep prompts/system.md under 10,000 characters.\n"
-            "7. Update architecture.md with what you built and why.\n"
+            "6. Keep /solver_workspace/prompts/system.md under 10,000 characters.\n"
+            "7. Update /evolver_workspace/architecture.md with what you built.\n"
             "8. Design for regime generalization, not specific instances.\n"
-            "9. Also write tools and update tools/registry.yaml.\n"
-            "10. Commit with: git add -A && git commit -m 'build: <summary>'\n"
+            "9. Write tools in /solver_workspace/tools/ and update registry.yaml.\n"
+            "10. Commit in /solver_workspace: git add -A && git commit -m 'build: <summary>'\n"
         )
         if hints:
             builder_system += f"\nBENCHMARK HINTS:\n{hints}\n"
@@ -708,7 +713,7 @@ class Template(EvolutionTemplate):
         sample_query = _extract_sample_query(batch_results)
 
         verifier_system = (
-            "You are a verification agent. Test each new tool and infra pipeline.\n\n"
+            "You are a verification agent. Test tools and infra in /solver_workspace.\n\n"
             "For each tool, run 3 tests:\n"
             "1. A realistic query from the batch tasks\n"
             "2. An edge case (very old date, unusual characters)\n"
