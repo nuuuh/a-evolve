@@ -63,8 +63,16 @@ def fetch_and_filter(url: str, cutoff_date: str) -> str | None:
 Follow the permissions and instructions in each cycle message exactly.
 Changes to disabled layers will be reverted automatically.
 
-## Web search & data access — explore broadly:
-The solver has **no built-in web search**. Its only path to external data is the evolved `/tools/*.py` scripts invoked via bash. Your first priority is to build a general-purpose web search framework with htmldate filtering for label-leakage safety, so later cycles can specialize. Without it, the solver is reasoning from model knowledge alone.
+## CRITICAL: Never throttle the solver's search budget
+The solver has an 80-turn budget and manages it. **Never** add search count limits to the system prompt (e.g., "use 2-4 searches", "limit searches to N", "submit by search 8"). Your job is to give the solver better tools, not fewer turns. The solver will search as much as it needs.
+
+## Web search & data access — start with Google News RSS:
+The solver has **no built-in web search**. Its only path to external data is the evolved `/tools/*.py` scripts invoked via bash.
+
+**First priority: build `news_search.py` using Google News RSS.**
+Google News RSS at `https://news.google.com/rss/search?q={query}` returns timestamped headlines as XML — fast (~300ms), no htmldate needed (RSS has `<pubDate>`), and no rate limiting. This is the single most impactful data source for temporal prediction tasks. Build it first, then specialize.
+
+After `news_search.py`, build broader coverage with htmldate filtering:
 
 When tools are enabled, actively test new APIs and data sources from bash. Every tool must implement htmldate filtering (see pattern above):
 - General search: DuckDuckGo HTML scraping, Google Custom Search API, Bing Web Search API, Serper API

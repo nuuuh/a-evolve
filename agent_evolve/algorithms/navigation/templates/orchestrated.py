@@ -241,6 +241,13 @@ def build_planner_prompt(
             "turns": r.get("turns", 0),
             "error": r.get("error", ""),
         }
+        # Task preview so the planner sees what the task actually asks,
+        # not just the ID. Fixes R2: prevents "FX prediction" hallucination.
+        task_input = r.get("task_input") or r.get("input") or ""
+        if isinstance(task_input, dict):
+            task_input = task_input.get("input", "")
+        if task_input:
+            entry["task_preview"] = str(task_input)[:200]
         # Liveness signal (not evaluation signal) for cancelled tasks.
         if r.get("status") == "cut_off":
             entry["status"] = "cut_off"
