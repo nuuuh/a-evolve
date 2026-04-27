@@ -40,6 +40,9 @@ class SnapshotWorkspace(Action):
         prompt = ws.read_prompt()
         memory = ws.read_all_memories(limit=9999)
         tools = ws.read_tool_registry()
+        infra = set(
+            f.name for f in (ws.root / "infra").iterdir()
+        ) if (ws.root / "infra").exists() else set()
         drafts = ws.list_drafts()
         return {
             "snapshot": {
@@ -47,6 +50,7 @@ class SnapshotWorkspace(Action):
                 "prompt": prompt,
                 "memory_len": len(memory),
                 "tools": tools,
+                "infra": infra,
             },
             "drafts": drafts,
         }
@@ -82,8 +86,13 @@ class DetectMutations(Action):
         memory_changed = len(ws.read_all_memories(limit=9999)) != snap["memory_len"]
         skills_changed = skills_after != snap["skills"]
         tools_changed = ws.read_tool_registry() != snap["tools"]
+        infra_after = set(
+            f.name for f in (ws.root / "infra").iterdir()
+        ) if (ws.root / "infra").exists() else set()
+        infra_changed = infra_after != snap.get("infra", set())
 
-        mutated = prompt_changed or memory_changed or skills_changed or tools_changed
+        mutated = (prompt_changed or memory_changed or skills_changed
+                   or tools_changed or infra_changed)
         changed = []
         if prompt_changed:
             changed.append("prompt")
@@ -93,6 +102,8 @@ class DetectMutations(Action):
             changed.append("memory")
         if tools_changed:
             changed.append("tools")
+        if infra_changed:
+            changed.append("infra")
         summary = ", ".join(changed) if changed else "no mutation"
 
         return {

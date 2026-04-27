@@ -845,7 +845,16 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
         evaluable = bool(expected_output)
 
         if evaluable and solution:
-            extracted = _extract_boxed_answer(solution)
+            # Try submit-tool JSON first (decision field), then \boxed{}.
+            extracted = None
+            if _submit_output and _submit_output[0]:
+                try:
+                    sub = json.loads(_submit_output[0]) if isinstance(_submit_output[0], str) else _submit_output[0]
+                    extracted = str(sub.get("decision", "")).strip() or None
+                except (json.JSONDecodeError, AttributeError, TypeError):
+                    pass
+            if not extracted:
+                extracted = _extract_boxed_answer(solution)
             if extracted:
                 norm = extracted.strip().upper()
                 expected_norm = [str(e).strip().upper() for e in expected_output]

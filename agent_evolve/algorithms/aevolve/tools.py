@@ -150,10 +150,18 @@ class EvolverSandbox:
         # only way for the evolver to reach observer data is via the
         # privacy-safe trajectories/ + patches tree.
         mounts += ["--tmpfs", "/solver_workspace/evolution/observations"]
+        # Also mask feedback_archive.jsonl which contains unrevealed
+        # labels when temporal_reveal is enabled.
+        archive = Path(self.workspace) / "evolution" / "feedback_archive.jsonl"
+        if archive.exists():
+            mounts += ["--tmpfs", "/solver_workspace/evolution/feedback_archive.jsonl"]
         if self.evolver_workspace:
             mounts += [
                 "--tmpfs", "/evolver_workspace/evolution/observations",
             ]
+            evo_archive = Path(self.evolver_workspace) / "evolution" / "feedback_archive.jsonl"
+            if evo_archive.exists():
+                mounts += ["--tmpfs", "/evolver_workspace/evolution/feedback_archive.jsonl"]
 
         # Read-only trajectories mount. Evolution ground truth
         # (success/score/feedback in batch_*.jsonl) is masked above and

@@ -235,6 +235,7 @@ class Observer:
                     record: dict[str, Any] = {
                         # Flat fields for backward compatibility
                         "task_id": obs.task.id,
+                        "batch": self._batch_id,
                         "task_input": obs.task.input,
                         "agent_output": obs.trajectory.output,
                         "steps": obs.trajectory.steps,

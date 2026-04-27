@@ -431,6 +431,7 @@ def main():
                     "output_dir": str(out_dir), "batch_num": batch_num,
                     "evo_cycle": evo_cycle, "exp_tag": env.get("exp_tag", ""),
                     "solver_temperature": args.solver_temp or 0.0,
+                    "workspace_root": str(agent.workspace.root),
                     **prompt_args,
                 }
 
