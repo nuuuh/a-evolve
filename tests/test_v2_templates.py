@@ -193,15 +193,16 @@ def test_deep_single_trajectory(workspace, engine, vc, agent_workspace):
     assert "guardrails" in steps
     assert result["mutated"] is True
 
-    # Verify guardrails applied: broken tool removed, search caps stripped.
+    # G2: search caps stripped from evolved prompt.
     reg = yaml.safe_load((workspace / "tools" / "registry.yaml").read_text())
     tool_names = [t["name"] for t in reg.get("tools", [])]
-    assert "broken" not in tool_names
-    assert "news_search" in tool_names
+    assert "broken" not in tool_names  # G4: broken tool removed
+    assert "news_search" in tool_names  # G4: working tool kept
 
     prompt = (workspace / "prompts" / "system.md").read_text()
-    assert "2-4 searches" not in prompt
-    assert "HARD SEARCH" not in prompt
+    assert "2-4 searches" not in prompt  # G2
+    assert "HARD SEARCH" not in prompt  # G2
+    assert len(prompt) <= 10000  # G5: prompt capped
 
 
 # ── Scout evolver template ──
@@ -220,11 +221,73 @@ def test_scout_evolver_trajectory(workspace, engine, vc, agent_workspace):
     assert "guardrails" in steps
     assert result["mutated"] is True
 
-    # Verify discoveries were written.
+    # Verify discoveries were written and consumed.
     disc = workspace / "infra" / "discoveries.jsonl"
     assert disc.exists()
     lines = [json.loads(l) for l in disc.read_text().splitlines() if l.strip()]
     assert any(d.get("source") == "google_news_rss" for d in lines)
+
+    # G2: search caps stripped.
+    prompt = (workspace / "prompts" / "system.md").read_text()
+    assert "2-4 searches" not in prompt
+    assert "HARD SEARCH" not in prompt
+
+    # G4: broken tool removed, working tool kept.
+    reg = yaml.safe_load((workspace / "tools" / "registry.yaml").read_text())
+    tool_names = [t["name"] for t in reg.get("tools", [])]
+    assert "broken" not in tool_names
+    assert "news_search" in tool_names
+
+    # G5: prompt capped.
+    assert len(prompt) <= 10000
+
+
+# ── Orthogonal pair template ──
+
+
+def test_orthogonal_pair_general_only(workspace, engine, vc, agent_workspace):
+    """No hard tasks → only general_tool_agent runs."""
+    from agent_evolve.algorithms.navigation.templates.orthogonal_pair import Template
+    template = Template(engine)
+    batch = _make_batch(4)  # no difficulty_level or domain fields
+    result = template.execute(
+        vc, agent_workspace, batch,
+        _StubTree(), evo_number=1, routing_log_path=None,
+    )
+    steps = [s["step"] for s in result["trajectory"]]
+    assert "dispatch" in steps
+    assert "general_tool_agent" in steps
+    assert "domain_expert" not in steps
+    assert "guardrails" in steps
+    assert result["mutated"] is True
+
+    # G2-G5 compliance.
+    prompt = (workspace / "prompts" / "system.md").read_text()
+    assert "2-4 searches" not in prompt
+    assert len(prompt) <= 10000
+    reg = yaml.safe_load((workspace / "tools" / "registry.yaml").read_text())
+    assert all(t["name"] != "broken" for t in reg.get("tools", []))
+
+
+def test_orthogonal_pair_with_hard_tasks(workspace, engine, vc, agent_workspace):
+    """Hard tasks → both general + domain expert run."""
+    from agent_evolve.algorithms.navigation.templates.orthogonal_pair import Template
+    template = Template(engine)
+    batch = _make_batch(4)
+    batch[0]["difficulty_level"] = 3
+    batch[1]["domain"] = "chinese"
+    result = template.execute(
+        vc, agent_workspace, batch,
+        _StubTree(), evo_number=1, routing_log_path=None,
+    )
+    steps = [s["step"] for s in result["trajectory"]]
+    assert "general_tool_agent" in steps
+    assert "domain_expert" in steps
+    assert "guardrails" in steps
+
+    dispatch = next(s for s in result["trajectory"] if s["step"] == "dispatch")
+    assert dispatch["n_hard_tasks"] == 2
+    assert dispatch["run_domain_expert"] is True
 
 
 # ── Planner task_preview ──

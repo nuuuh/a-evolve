@@ -1,4 +1,4 @@
-# FutureX V2 — scout_evolver template.
+# FutureX V2 — orthogonal_pair template.
 batch_size: 20
 max_cycles: 0
 holdout_ratio: 0.0
@@ -15,4 +15,4 @@ sort_by_timestamp: true
 builtin_search: "off"
 sandbox_network: bridge
 evolver_sandbox_network: bridge
-orchestrator: scout_evolver
+orchestrator: orthogonal_pair
