@@ -76,17 +76,41 @@ def load_cache(path: Path) -> list[dict]:
     return records
 
 
-def append_cache_record(path: Path, record: dict) -> None:
-    """Append a validated record to the cache."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a") as f:
-        f.write(json.dumps(record, default=str) + "\n")
+CACHE_SCHEMA_FIELDS = {"cycle", "type", "source", "works", "latency_ms", "sample", "error"}
+
+
+def normalize_cache_record(record: dict) -> dict:
+    """Ensure a record has all 7 required fields with correct defaults."""
+    return {
+        "cycle": record.get("cycle", 0),
+        "type": record.get("type", "unknown"),
+        "source": record.get("source") or record.get("tool") or "",
+        "works": record.get("works") if "works" in record else record.get("pass", False),
+        "latency_ms": record.get("latency_ms", 0),
+        "sample": record.get("sample", ""),
+        "error": record.get("error", ""),
+    }
 
 
 def validate_cache_record(record: dict) -> bool:
-    """Check a record has the required schema fields."""
-    required = {"cycle", "type"}
-    return required.issubset(record.keys())
+    """Check a record has all required schema fields with correct types."""
+    if not CACHE_SCHEMA_FIELDS.issubset(record.keys()):
+        return False
+    if not isinstance(record["cycle"], (int, float)):
+        return False
+    if not isinstance(record["type"], str):
+        return False
+    return True
+
+
+def append_cache_record(path: Path, record: dict) -> None:
+    """Normalize, validate, and append a record to the cache."""
+    normalized = normalize_cache_record(record)
+    if not validate_cache_record(normalized):
+        raise ValueError(f"Invalid cache record: {normalized}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a") as f:
+        f.write(json.dumps(normalized, default=str) + "\n")
 
 
 class Template(EvolutionTemplate):

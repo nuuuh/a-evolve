@@ -46,6 +46,40 @@ class Template(EvolutionTemplate):
     def name(self) -> str:
         return "population"
 
+    def _score_candidate(
+        self, candidate_dir: Path, batch_results: list[dict],
+    ) -> int:
+        """Score a candidate workspace by counting verified working tools.
+
+        Subclasses or tests can override this to implement sample-task
+        evaluation. The default uses tool verification as a deterministic
+        proxy: each tool that runs successfully scores 1 point.
+        """
+        reg_path = candidate_dir / "tools" / "registry.yaml"
+        if not reg_path.exists():
+            return 0
+        try:
+            data = yaml.safe_load(reg_path.read_text()) or {}
+        except Exception:
+            return 0
+        score = 0
+        for t in data.get("tools", []):
+            name = t.get("name", "")
+            script = candidate_dir / "tools" / f"{name}.py"
+            if not script.exists():
+                continue
+            try:
+                proc = subprocess.run(
+                    ["python3", str(script), "test query", "2026-01-15"],
+                    capture_output=True, text=True, timeout=15,
+                    cwd=str(candidate_dir),
+                )
+                if proc.returncode == 0 and proc.stdout.strip():
+                    score += 1
+            except Exception:
+                pass
+        return score
+
     def execute(
         self,
         vc, solver_workspace, batch_results,
@@ -134,17 +168,20 @@ class Template(EvolutionTemplate):
                 "trajectory": trajectory,
             }
 
-        # ── Phase 2: Tournament — pick candidate with most tools ──
-        winner = max(candidates, key=lambda c: c["n_tools"])
+        # ── Phase 2: Tournament — score + select winner ──
+        for c in candidates:
+            c["score"] = self._score_candidate(Path(c["dir"]), batch_results)
+        winner = max(candidates, key=lambda c: c["score"])
         runners_up = [c for c in candidates if c["index"] != winner["index"]]
         trajectory.append({
             "step": "tournament",
             "winner_index": winner["index"],
+            "winner_score": winner["score"],
             "winner_tools": winner["tool_names"],
-            "runners_up": [r["index"] for r in runners_up],
+            "scores": {c["index"]: c["score"] for c in candidates},
         })
-        logger.info("Tournament winner: candidate %d (%d tools)",
-                     winner["index"], winner["n_tools"])
+        logger.info("Tournament winner: candidate %d (score=%d, %d tools)",
+                     winner["index"], winner["score"], winner["n_tools"])
 
         # ── Phase 3: Copy winner back to solver workspace ──
         winner_dir = Path(winner["dir"])
@@ -155,28 +192,57 @@ class Template(EvolutionTemplate):
                 shutil.rmtree(dst, ignore_errors=True)
                 shutil.copytree(src, dst, dirs_exist_ok=True)
 
-        # ── Phase 4: Fuse non-overlapping tools from runners-up ──
+        # ── Phase 4: Fuse verified non-overlapping tools from runners-up ──
         winner_tool_names = set(winner.get("tool_names", []))
         fused_tools = []
         for runner in runners_up:
             runner_dir = Path(runner["dir"])
-            for tool_name in runner.get("tool_names", []):
-                if tool_name not in winner_tool_names:
-                    src_script = runner_dir / "tools" / f"{tool_name}.py"
-                    dst_script = solver_workspace.root / "tools" / f"{tool_name}.py"
-                    if src_script.exists() and not dst_script.exists():
-                        shutil.copy2(src_script, dst_script)
-                        fused_tools.append(tool_name)
-                        winner_tool_names.add(tool_name)
+            runner_reg_path = runner_dir / "tools" / "registry.yaml"
+            runner_entries = {}
+            if runner_reg_path.exists():
+                try:
+                    rd = yaml.safe_load(runner_reg_path.read_text()) or {}
+                    for t in rd.get("tools", []):
+                        runner_entries[t.get("name", "")] = t
+                except Exception:
+                    pass
+            for tool_name, entry in runner_entries.items():
+                if tool_name in winner_tool_names:
+                    continue
+                src_script = runner_dir / "tools" / f"{tool_name}.py"
+                dst_script = solver_workspace.root / "tools" / f"{tool_name}.py"
+                if not src_script.exists() or dst_script.exists():
+                    continue
+                # Verify tool works before fusing.
+                try:
+                    proc = subprocess.run(
+                        ["python3", str(src_script), "test query", "2026-01-15"],
+                        capture_output=True, text=True, timeout=15,
+                        cwd=str(runner_dir),
+                    )
+                    if proc.returncode != 0 or not proc.stdout.strip():
+                        continue
+                except Exception:
+                    continue
+                shutil.copy2(src_script, dst_script)
+                fused_tools.append(tool_name)
+                winner_tool_names.add(tool_name)
 
-        # Update registry with fused tools.
+        # Update registry with full entries from runners-up.
         if fused_tools:
             reg_path = solver_workspace.root / "tools" / "registry.yaml"
             try:
                 data = yaml.safe_load(reg_path.read_text()) or {}
                 existing = data.get("tools", [])
-                for name in fused_tools:
-                    existing.append({"name": name, "description": f"fused from runner-up"})
+                for runner in runners_up:
+                    runner_dir = Path(runner["dir"])
+                    runner_reg = runner_dir / "tools" / "registry.yaml"
+                    if not runner_reg.exists():
+                        continue
+                    rd = yaml.safe_load(runner_reg.read_text()) or {}
+                    for t in rd.get("tools", []):
+                        if t.get("name") in fused_tools:
+                            existing.append(t)
                 data["tools"] = existing
                 reg_path.write_text(yaml.dump(data, default_flow_style=False))
             except Exception:
