@@ -173,3 +173,6 @@ examples/run_skillbench_solve_all_ablate.sh
 examples/skillbench_evolve_one.py
 .humanize*
 docs/futurex/multi_agent_evolution_plan.md
+evaluations/analysis_futurex/debug/
+experiments/futurex/configs/debug_*
+experiments/futurex/seed_no_hedge/

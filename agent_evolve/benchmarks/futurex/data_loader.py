@@ -339,7 +339,7 @@ class FutureXDataLoader:
         self,
         split: str = "past",
         domain: Optional[str] = None,
-        difficulty: Optional[int] = None,
+        difficulty: Optional[int | list[int]] = None,
         limit: Optional[int] = None,
         sort_by_date: bool = True
     ) -> List[FutureXTask]:
@@ -354,7 +354,11 @@ class FutureXDataLoader:
             tasks = [t for t in tasks if t.domain.lower() == domain.lower()]
 
         if difficulty is not None:
-            tasks = [t for t in tasks if t.difficulty_level == difficulty]
+            if isinstance(difficulty, list):
+                allowed = set(difficulty)
+                tasks = [t for t in tasks if t.difficulty_level in allowed]
+            else:
+                tasks = [t for t in tasks if t.difficulty_level == difficulty]
 
         # Sort by date for temporal consistency
         if sort_by_date:
