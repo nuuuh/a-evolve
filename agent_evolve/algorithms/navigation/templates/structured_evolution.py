@@ -42,6 +42,19 @@ from ._evolution_workspace import (
 logger = logging.getLogger(__name__)
 
 
+def _strip_preamble(content: str) -> str:
+    """Strip conversational text before the ## Failure Patterns heading.
+
+    LLMs often emit reasoning text before the structured output.
+    We keep only the content starting from the heading.
+    """
+    lines = content.splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if re.match(r"^##\s+Failure Patterns", line.strip(), re.IGNORECASE):
+            return "".join(lines[i:])
+    return content
+
+
 def _extract_sample_query(batch_results: list[dict]) -> str:
     for r in batch_results[:3]:
         inp = r.get("task_input") or r.get("input") or ""
@@ -247,6 +260,7 @@ class Template(EvolutionTemplate):
         logger.info("Phase 1: Analyzing batch failures (no-tools)...")
         try:
             content = self._call_llm_simple(analyst_prompt, system)
+            content = _strip_preamble(content)
             if content.strip() and validate_task_board(content):
                 update_task_board(ws_root, content)
                 vc.commit(
@@ -272,7 +286,9 @@ class Template(EvolutionTemplate):
                     "## Human Requests\n\n"
                     f"Here is what you wrote:\n{content[:2000]}\n"
                 )
-                repaired = self._call_llm_simple(repair_prompt, system)
+                repaired = _strip_preamble(
+                    self._call_llm_simple(repair_prompt, system)
+                )
                 if repaired.strip() and validate_task_board(repaired):
                     update_task_board(ws_root, repaired)
                     vc.commit(
