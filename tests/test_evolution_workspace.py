@@ -81,6 +81,38 @@ class TestInit:
         assert load_task_board(ws) == "custom content"
 
 
+class TestTaskBoardValidation:
+    def test_valid_board(self):
+        board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- finance: 5 tasks fail because no data. PRIORITY: HIGH\n\n"
+            "## Verified Capabilities\n\n## Unresolved\n\n## Human Requests\n"
+        )
+        assert validate_task_board(board) is True
+
+    def test_missing_section(self):
+        board = (
+            "## Failure Patterns\n"
+            "- finance: 5 tasks fail. PRIORITY: HIGH\n\n"
+            "## Verified Capabilities\n"
+        )
+        assert validate_task_board(board) is False
+
+    def test_priority_outside_failure_section_rejected(self):
+        board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- finance: no data\n\n"
+            "## Verified Capabilities\n"
+            "- stooq: 5 tasks covered. PRIORITY: HIGH\n\n"
+            "## Unresolved\n\n## Human Requests\n"
+        )
+        assert validate_task_board(board) is False
+
+    def test_conversational_text_rejected(self):
+        board = "I'll analyze the failures...\nMost tasks failed."
+        assert validate_task_board(board) is False
+
+
 class TestTaskBoard:
     def test_load_default(self, ws):
         content = load_task_board(ws)
