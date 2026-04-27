@@ -69,18 +69,22 @@ class Template(EvolutionTemplate):
         pop_dir = Path(tempfile.mkdtemp(prefix="population-"))
         candidates: list[dict] = []
 
-        for i in range(min(POPULATION_SIZE, len(SEED_VARIATIONS))):
+        def _run_candidate(i):
             candidate_dir = pop_dir / f"candidate_{i}"
             shutil.copytree(solver_workspace.root, candidate_dir,
                             dirs_exist_ok=True)
-
             seed = SEED_VARIATIONS[i]
             try:
                 self.engine._run_llm(
                     base_prompt, candidate_dir,
                     system_prompt=seed,
                 )
-                # Score: count working tools in registry
+                # Apply guardrails inside candidate workspace.
+                from ._guardrails import verify_tools as _verify
+                sample_q = "Bitcoin price January 2026"
+                _verify(candidate_dir, sample_query=sample_q)
+
+                # Score: count VERIFIED working tools.
                 reg_path = candidate_dir / "tools" / "registry.yaml"
                 tools = []
                 if reg_path.exists():
@@ -91,32 +95,35 @@ class Template(EvolutionTemplate):
                         pass
                 n_tools = len(tools)
                 tool_names = [t.get("name", "") for t in tools]
-
-                candidates.append({
-                    "index": i,
-                    "dir": str(candidate_dir),
-                    "n_tools": n_tools,
-                    "tool_names": tool_names,
+                return {
+                    "index": i, "dir": str(candidate_dir),
+                    "n_tools": n_tools, "tool_names": tool_names,
                     "seed_hint": seed[:50],
-                })
-                trajectory.append({
-                    "step": "candidate",
-                    "index": i,
-                    "n_tools": n_tools,
-                    "tool_names": tool_names,
-                })
-                logger.info("Candidate %d: %d tools (%s)",
-                            i, n_tools, tool_names)
+                }
             except Exception as e:
                 logger.warning("Candidate %d failed: %s", i, e)
-                candidates.append({
+                return {
                     "index": i, "dir": str(candidate_dir),
                     "n_tools": 0, "tool_names": [], "error": str(e),
-                })
+                }
+
+        # Run candidates in parallel via ThreadPoolExecutor.
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        n = min(POPULATION_SIZE, len(SEED_VARIATIONS))
+        with ThreadPoolExecutor(max_workers=n, thread_name_prefix="pop") as pool:
+            futures = {pool.submit(_run_candidate, i): i for i in range(n)}
+            for fut in as_completed(futures):
+                result = fut.result()
+                candidates.append(result)
                 trajectory.append({
-                    "step": "candidate", "index": i,
-                    "n_tools": 0, "error": str(e),
+                    "step": "candidate",
+                    "index": result["index"],
+                    "n_tools": result["n_tools"],
+                    "tool_names": result.get("tool_names", []),
                 })
+                logger.info("Candidate %d: %d tools (%s)",
+                            result["index"], result["n_tools"],
+                            result.get("tool_names", []))
 
         if not candidates:
             trajectory.append({"step": "tournament", "winner": None})

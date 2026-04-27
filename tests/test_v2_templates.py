@@ -290,6 +290,23 @@ def test_orthogonal_pair_with_hard_tasks(workspace, engine, vc, agent_workspace)
     assert dispatch["run_domain_expert"] is True
 
 
+def test_orthogonal_pair_nested_metadata(workspace, engine, vc, agent_workspace):
+    """Hard tasks detected via nested task_metadata (production shape)."""
+    from agent_evolve.algorithms.navigation.templates.orthogonal_pair import Template
+    template = Template(engine)
+    batch = _make_batch(4)
+    # Only nested metadata — no top-level difficulty_level/domain.
+    batch[0]["task_metadata"] = {"difficulty_level": 4, "domain": "sports"}
+    batch[2]["task_metadata"] = {"difficulty_level": 2, "domain": "chinese"}
+    result = template.execute(
+        vc, agent_workspace, batch,
+        _StubTree(), evo_number=1, routing_log_path=None,
+    )
+    dispatch = next(s for s in result["trajectory"] if s["step"] == "dispatch")
+    assert dispatch["n_hard_tasks"] == 2
+    assert dispatch["run_domain_expert"] is True
+
+
 # ── Planner task_preview ──
 
 
@@ -325,9 +342,19 @@ def test_discovery_cache_trajectory(workspace, engine, vc, agent_workspace):
     assert "guardrails" in steps
     assert result["mutated"] is True
 
-    # Cache file created.
+    # Cache file created with valid records.
     cache = workspace / "infra" / "discovery_cache.jsonl"
     assert cache.exists()
+    records = [json.loads(l) for l in cache.read_text().splitlines() if l.strip()]
+    assert len(records) >= 2  # at least cycle_start + tool_test records
+    # Validate schema.
+    for r in records:
+        assert "cycle" in r
+        assert "type" in r
+
+    # Cache growth reported in trajectory.
+    growth = next(s for s in result["trajectory"] if s["step"] == "cache_growth")
+    assert growth["new_records"] >= 2
 
     # G2-G5 compliance.
     prompt = (workspace / "prompts" / "system.md").read_text()

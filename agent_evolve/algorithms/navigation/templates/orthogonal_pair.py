@@ -78,11 +78,22 @@ class Template(EvolutionTemplate):
         trajectory: list[dict] = []
 
         # Deterministic dispatch: check if batch has hard tasks.
-        n_hard = sum(
-            1 for r in batch_results
-            if (r.get("difficulty_level", 0) or 0) >= 3
-            or str(r.get("domain", "")).lower() == "chinese"
-        )
+        # Read difficulty/domain from top-level first, then nested task_metadata.
+        def _is_hard(r: dict) -> bool:
+            diff = r.get("difficulty_level")
+            domain = r.get("domain", "")
+            meta = r.get("task_metadata") or {}
+            if diff is None:
+                diff = meta.get("difficulty_level")
+            if not domain:
+                domain = meta.get("domain", "")
+            try:
+                diff = int(diff) if diff is not None else 0
+            except (TypeError, ValueError):
+                diff = 0
+            return diff >= 3 or str(domain).lower() == "chinese"
+
+        n_hard = sum(1 for r in batch_results if _is_hard(r))
         run_domain = n_hard > 0
 
         trajectory.append({

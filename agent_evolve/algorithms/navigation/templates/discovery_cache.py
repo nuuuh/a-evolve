@@ -61,6 +61,34 @@ Commit: `git add prompts/ skills/ && git commit -m "strategy: <summary>"`
 """
 
 
+def load_cache(path: Path) -> list[dict]:
+    """Load all records from the discovery cache."""
+    if not path.exists():
+        return []
+    records = []
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except Exception:
+            pass
+    return records
+
+
+def append_cache_record(path: Path, record: dict) -> None:
+    """Append a validated record to the cache."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a") as f:
+        f.write(json.dumps(record, default=str) + "\n")
+
+
+def validate_cache_record(record: dict) -> bool:
+    """Check a record has the required schema fields."""
+    required = {"cycle", "type"}
+    return required.issubset(record.keys())
+
+
 class Template(EvolutionTemplate):
     """Persistent discovery cache shared across agents and cycles."""
 
@@ -79,21 +107,33 @@ class Template(EvolutionTemplate):
         trajectory: list[dict] = []
         mutated = False
 
-        # Ensure cache file exists.
         cache_path = solver_workspace.root / "infra" / "discovery_cache.jsonl"
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        if not cache_path.exists():
-            cache_path.write_text("")
 
-        # Count existing cache entries.
-        cache_lines = [l for l in cache_path.read_text().splitlines() if l.strip()]
+        # Load existing cache.
+        existing = load_cache(cache_path)
+        append_cache_record(cache_path, {
+            "cycle": evo_number, "type": "cycle_start",
+            "existing_entries": len(existing),
+        })
         trajectory.append({
             "step": "cache_state",
-            "existing_entries": len(cache_lines),
+            "existing_entries": len(existing),
             "cycle": evo_number,
         })
 
-        # ── Tool builder (reads cache → builds tools → appends to cache) ──
+        # Build known-good/known-failed summary from cache for prompts.
+        good_sources = [r.get("source", "") for r in existing
+                        if r.get("type") == "api_test" and r.get("works")]
+        failed_sources = [r.get("source", "") for r in existing
+                         if r.get("type") == "api_test" and not r.get("works")]
+        cache_summary = ""
+        if good_sources:
+            cache_summary += f"Known-good sources: {', '.join(good_sources)}\n"
+        if failed_sources:
+            cache_summary += f"Known-failed sources: {', '.join(failed_sources)}\n"
+
+        # ── Tool builder ──
         from ....algorithms.aevolve.prompts import build_evolution_prompt
         cfg = self.engine.config
         base_prompt = build_evolution_prompt(
@@ -106,10 +146,14 @@ class Template(EvolutionTemplate):
             evolve_infra=cfg.evolve_infra,
         )
 
+        tool_builder_prompt = TOOL_BUILDER_SYSTEM
+        if cache_summary:
+            tool_builder_prompt += f"\n## Known Sources from Cache\n{cache_summary}"
+
         try:
             self.engine._run_llm(
                 base_prompt, solver_workspace.root,
-                system_prompt=TOOL_BUILDER_SYSTEM,
+                system_prompt=tool_builder_prompt,
             )
             committed = vc.commit(
                 message=f"evo-{evo_number}-tool-builder: cache-aware tools",
@@ -122,11 +166,61 @@ class Template(EvolutionTemplate):
             logger.warning("Tool builder failed: %s", e)
             trajectory.append({"step": "tool_builder", "mutated": False, "error": str(e)})
 
-        # ── Strategy writer (reads cache → updates prompts/skills) ──
+        # Programmatically test each tool and append results to cache.
+        from ._guardrails import verify_tools
+        sample_query = "Bitcoin price January 2026"
+        for r in batch_results[:3]:
+            inp = r.get("task_input") or r.get("input") or ""
+            if isinstance(inp, dict):
+                inp = inp.get("input", "")
+            if inp:
+                sample_query = str(inp)[:100]
+                break
+
+        import yaml as _yaml
+        reg_path = solver_workspace.root / "tools" / "registry.yaml"
+        if reg_path.exists():
+            try:
+                reg_data = _yaml.safe_load(reg_path.read_text()) or {}
+                for t in reg_data.get("tools", []):
+                    name = t.get("name", "")
+                    script = solver_workspace.root / "tools" / f"{name}.py"
+                    import subprocess
+                    passed = False
+                    error_msg = ""
+                    if script.exists():
+                        try:
+                            proc = subprocess.run(
+                                ["python3", str(script), sample_query, "2026-01-15"],
+                                capture_output=True, text=True, timeout=15,
+                                cwd=str(solver_workspace.root),
+                            )
+                            passed = proc.returncode == 0 and bool(proc.stdout.strip())
+                            if not passed:
+                                error_msg = (proc.stderr or "empty output")[:100]
+                        except subprocess.TimeoutExpired:
+                            error_msg = "timeout"
+                        except Exception as e:
+                            error_msg = str(e)[:100]
+                    else:
+                        error_msg = "script missing"
+                    append_cache_record(cache_path, {
+                        "cycle": evo_number, "type": "tool_test",
+                        "tool": name, "pass": passed,
+                        "error": error_msg if not passed else "",
+                    })
+            except Exception:
+                pass
+
+        # ── Strategy writer ──
+        strategy_prompt = STRATEGY_WRITER_SYSTEM
+        if cache_summary:
+            strategy_prompt += f"\n## Known Sources from Cache\n{cache_summary}"
+
         try:
             self.engine._run_llm(
                 base_prompt, solver_workspace.root,
-                system_prompt=STRATEGY_WRITER_SYSTEM,
+                system_prompt=strategy_prompt,
             )
             committed = vc.commit(
                 message=f"evo-{evo_number}-strategy: cache-aware prompt",
@@ -140,11 +234,12 @@ class Template(EvolutionTemplate):
             trajectory.append({"step": "strategy_writer", "mutated": False, "error": str(e)})
 
         # Count cache growth.
-        new_lines = [l for l in cache_path.read_text().splitlines() if l.strip()]
+        final_cache = load_cache(cache_path)
         trajectory.append({
             "step": "cache_growth",
-            "entries_before": len(cache_lines),
-            "entries_after": len(new_lines),
+            "entries_before": len(existing),
+            "entries_after": len(final_cache),
+            "new_records": len(final_cache) - len(existing),
         })
 
         # ── Guardrails G2-G5 ──
