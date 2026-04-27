@@ -82,6 +82,7 @@ swe_results*/
 # V2 engine. Un-ignore it explicitly.
 !agent_evolve/algorithms/aevolve/
 !agent_evolve/algorithms/aevolve/**
+agent_evolve/algorithms/aevolve/__pycache__/
 
 # Local research/program artifacts
 program.md
