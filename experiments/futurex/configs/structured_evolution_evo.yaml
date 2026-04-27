@@ -17,7 +17,7 @@ sandbox_network: bridge
 evolver_sandbox_network: bridge
 orchestrator: structured_evolution
 structured_evolution:
-  benchmark_hints: experiments/futurex/evolver_hints.md
+  prompts_dir: experiments/futurex/evolver_prompts
   research_parallel: 3
   build_verify_retries: 3
   hitl_enabled: false

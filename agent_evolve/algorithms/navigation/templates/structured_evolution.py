@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import EvolutionTemplate
-from ._guardrails import apply_all_guardrails, no_throttle_rule
+from ._guardrails import apply_all_guardrails
 from ....engine.human_interface import create_interface
 from ._evolution_workspace import (
     get_evolver_workspace_path,
@@ -66,16 +66,13 @@ def _extract_sample_query(batch_results: list[dict]) -> str:
     return "latest news headlines 2026"
 
 
-def _load_hints(engine) -> str:
-    """Load benchmark-specific hints from config."""
-    hints_path = engine.config.extra.get("structured_evolution", {}).get(
-        "benchmark_hints", ""
-    )
-    if hints_path:
-        p = Path(hints_path)
+def _load_prompt(prompts_dir: Path | None, name: str, fallback: str = "") -> str:
+    """Load a prompt file from the prompts directory, or return fallback."""
+    if prompts_dir:
+        p = prompts_dir / name
         if p.exists():
             return p.read_text()
-    return ""
+    return fallback
 
 
 def _parse_json_blocks(text: str) -> list[dict]:
@@ -139,7 +136,8 @@ class Template(EvolutionTemplate):
         research_k = se_config.get("research_parallel", 3)
         max_retries = se_config.get("build_verify_retries", 3)
         hitl_enabled = se_config.get("hitl_enabled", False)
-        hints = _load_hints(self.engine)
+        prompts_dir_str = se_config.get("prompts_dir", "")
+        prompts_dir = Path(prompts_dir_str) if prompts_dir_str else None
 
         # Create human interface when HITL is enabled
         hi = None
@@ -156,18 +154,18 @@ class Template(EvolutionTemplate):
         # ── Phase 1: ANALYZE ──
         self._phase_analyze(
             vc, solver_workspace, batch_results,
-            evo_number, hints, trajectory, evo_ws,
+            evo_number, prompts_dir, trajectory, evo_ws,
         )
 
         # ── Phase 2: RESEARCH ──
         self._phase_research(
             vc, solver_workspace, batch_results,
-            evo_number, research_k, hints, trajectory, evo_ws,
+            evo_number, research_k, prompts_dir, trajectory, evo_ws,
         )
 
         # ── HITL: handle credential-gated research records ──
         if hi:
-            self._hitl_credentials(evo_ws, ws_root, evo_number, hi, hints, trajectory)
+            self._hitl_credentials(evo_ws, ws_root, evo_number, hi, prompts_dir, trajectory)
 
         # ── HITL: show task board to human before build ──
         if hi:
@@ -176,7 +174,7 @@ class Template(EvolutionTemplate):
         # ── Phase 3+4: BUILD + VERIFY loop ──
         mutated = self._phase_build_verify(
             vc, solver_workspace, batch_results,
-            evo_number, max_retries, hints, trajectory, evo_ws,
+            evo_number, max_retries, prompts_dir, trajectory, evo_ws,
         )
 
         # ── Guardrails G2-G5 ──
@@ -205,7 +203,7 @@ class Template(EvolutionTemplate):
 
     def _phase_analyze(
         self, vc, solver_workspace, batch_results,
-        evo_number, hints, trajectory, evo_ws,
+        evo_number, prompts_dir, trajectory, evo_ws,
     ):
         from ....algorithms.aevolve.prompts import build_evolution_prompt
         cfg = self.engine.config
@@ -223,39 +221,21 @@ class Template(EvolutionTemplate):
             evolve_infra=cfg.evolve_infra,
         )
 
-        analyst_prompt = (
-            f"ROLE: You are a failure analyst for evolution cycle {evo_number}.\n\n"
-            f"BATCH TRAJECTORIES:\n{base_prompt}\n\n"
-            f"CURRENT TASK BOARD:\n{task_board}\n\n"
-            f"RESEARCH LOG ({len(research_log)} records):\n"
-            + "\n".join(json.dumps(r) for r in research_log[-20:])
-            + "\n\n"
-            "OUTPUT FORMAT (you MUST use this EXACT structure):\n"
-            "## Failure Patterns (Cycle N)\n"
-            "- <regime_tag>: <NUMBER> tasks fail because <reason>. PRIORITY: HIGH|MEDIUM|LOW\n"
-            "- <regime_tag>: <NUMBER> tasks fail because <reason>. PRIORITY: HIGH|MEDIUM|LOW\n"
-            "(one bullet per regime — EVERY bullet MUST start with a numeric count)\n\n"
-            "## Verified Capabilities\n"
-            "- <approach>: <what it covers> (cycle N)\n\n"
-            "## Unresolved\n"
-            "- <regime>: <why stuck> (cycle N)\n\n"
-            "## Human Requests\n"
-            "- (none this cycle)\n\n"
-            "CRITICAL RULES:\n"
-            "1. EVERY failure bullet MUST have a numeric count: '- tag: N tasks fail ...'\n"
-            "   WRONG: '- tag: All tasks fail ...' or '- tag: Tasks fail ...'\n"
-            "   RIGHT: '- tag: 6 tasks fail ...' or '- tag: 3 tasks fail ...'\n"
-            "2. Assign PRIORITY: HIGH, MEDIUM, or LOW based on count.\n"
-            "3. Cross-reference with the research log.\n"
-            "4. Output ONLY the task board — no conversational text, no tables.\n"
-            "5. Do NOT suggest solutions. Diagnosis only.\n"
-        )
-        if hints:
-            analyst_prompt += f"\nBENCHMARK HINTS:\n{hints}\n"
-
-        system = (
+        research_summary = "\n".join(json.dumps(r) for r in research_log[-20:])
+        template_vars = {
+            "evo_number": str(evo_number),
+            "batch_prompt": base_prompt,
+            "task_board": task_board,
+            "research_count": str(len(research_log)),
+            "research_log": research_summary,
+        }
+        analyst_prompt = _load_prompt(
+            prompts_dir, "analyst.md", "Analyze failures.",
+        ).format_map(template_vars)
+        system = _load_prompt(
+            prompts_dir, "analyst_system.md",
             "You are a failure analyst. Output ONLY the task board in the "
-            "exact markdown format specified. No conversational text."
+            "exact markdown format specified. No conversational text.",
         )
 
         logger.info("Phase 1: Analyzing batch failures (no-tools)...")
@@ -271,22 +251,12 @@ class Template(EvolutionTemplate):
                 trajectory.append({"step": "analyze", "success": True})
             elif content.strip():
                 # Retry with repair prompt
-                repair_prompt = (
-                    "Your previous output was REJECTED because it did not "
-                    "follow the required format. Common mistakes:\n"
-                    "- Missing numeric count (WRONG: 'All tasks fail', "
-                    "RIGHT: '6 tasks fail')\n"
-                    "- Conversational text instead of structured bullets\n\n"
-                    "Rewrite using EXACTLY this structure:\n\n"
-                    "## Failure Patterns (Cycle N)\n"
-                    "- <regime>: <NUMBER> tasks fail because <reason>. "
-                    "PRIORITY: HIGH|MEDIUM|LOW\n"
-                    "(EVERY bullet MUST start with a number)\n\n"
-                    "## Verified Capabilities\n\n"
-                    "## Unresolved\n\n"
-                    "## Human Requests\n\n"
-                    f"Here is what you wrote:\n{content[:2000]}\n"
-                )
+                repair_prompt = _load_prompt(
+                    prompts_dir, "analyst_repair.md",
+                    "Your previous output was REJECTED. Rewrite using the "
+                    "exact markdown structure. Cycle {evo_number}.\n\n"
+                    "Here is what you wrote:\n{previous_output}\n",
+                ).format(evo_number=evo_number, previous_output=content[:2000])
                 repaired = _strip_preamble(
                     self._call_llm_simple(repair_prompt, system)
                 )
@@ -312,7 +282,7 @@ class Template(EvolutionTemplate):
 
     def _phase_research(
         self, vc, solver_workspace, batch_results,
-        evo_number, research_k, hints, trajectory, evo_ws,
+        evo_number, research_k, prompts_dir, trajectory, evo_ws,
     ):
         ws_root = solver_workspace.root
         task_board = load_task_board(evo_ws)
@@ -331,36 +301,17 @@ class Template(EvolutionTemplate):
         )
 
         def _research_one(gap: str) -> dict:
-            prompt = (
-                f"REGIME TO INVESTIGATE: {gap}\n\n"
-                f"ALREADY TESTED (from research_log):\n{known_summary}\n\n"
-                "INSTRUCTIONS:\n"
-                "1. Test MULTIPLE approaches for this regime in the sandbox.\n"
-                "2. For each, make a real HTTP request or test command.\n"
-                "3. Record EXACTLY what you called, what came back, "
-                "whether it's usable.\n"
-                "4. Output ONE JSON record per line for each test with ALL fields:\n"
-                '{"cycle": ' + str(evo_number) + ', "regime": "' + gap + '", '
-                '"approach": "<name>", "endpoint": "<url or command>", '
-                '"tested": true, "works": true/false, '
-                '"latency_ms": <number>, '
-                '"coverage": ["<subtypes handled>"], '
-                '"does_not_cover": ["<subtypes it fails on>"], '
-                '"complementary_to": ["<other approach>"], '
-                '"sample_output": "<first lines of output>", '
-                '"credential_needed": false, "credential_env": "", '
-                '"error": "", "notes": "<usage tips>"}\n'
-                "5. Test at least 2-3 different approaches per regime.\n"
-            )
-            if hints:
-                prompt += f"\nBENCHMARK HINTS:\n{hints}\n"
-
-            system = (
-                f"You are a research agent investigating: {gap}\n"
-                "Your working directory is /evolver_workspace.\n"
-                "Test approaches with real HTTP calls in the sandbox. "
-                "Output structured JSON records, one per line."
-            )
+            template_vars = {
+                "regime": gap,
+                "evo_number": str(evo_number),
+                "known_results": known_summary,
+            }
+            prompt = _load_prompt(
+                prompts_dir, "research.md", "Investigate regime.",
+            ).format_map(template_vars)
+            system = _load_prompt(
+                prompts_dir, "research_system.md", "Research agent.",
+            ).format(regime=gap)
             try:
                 result = self.engine._run_llm(
                     prompt, ws_root,
@@ -440,7 +391,7 @@ class Template(EvolutionTemplate):
     # HITL integration
     # ────────────────────────────────────────────────────────────────
 
-    def _hitl_credentials(self, evo_ws, solver_root, evo_number, hi, hints, trajectory):
+    def _hitl_credentials(self, evo_ws, solver_root, evo_number, hi, prompts_dir, trajectory):
         """Handle credential-gated research records via human interface.
 
         After the human supplies a credential, reruns research for that
@@ -481,7 +432,7 @@ class Template(EvolutionTemplate):
                 # Rerun research for this specific regime+approach
                 retest_result = self._retest_credential_approach(
                     evo_ws, evo_number, regime, approach, endpoint,
-                    env_var, hints, solver_root=solver_root,
+                    env_var, prompts_dir, solver_root=solver_root,
                 )
                 retested += 1
                 trajectory_note = retest_result
@@ -493,32 +444,27 @@ class Template(EvolutionTemplate):
         })
 
     def _retest_credential_approach(
-        self, evo_ws, evo_number, regime, approach, endpoint, env_var, hints,
+        self, evo_ws, evo_number, regime, approach, endpoint, env_var, prompts_dir,
         solver_root=None,
     ) -> dict:
         """Rerun research for a credential-gated approach after credential supplied."""
         ws_root = solver_root
-        prompt = (
-            f"RETEST: The credential {env_var} has been supplied.\n"
-            f"Test the approach '{approach}' for regime '{regime}'.\n"
-            f"Endpoint: {endpoint}\n\n"
-            "Run the test in the sandbox and output ONE JSON record:\n"
-            f'{{"cycle": {evo_number}, "regime": "{regime}", '
-            f'"approach": "{approach}", "endpoint": "{endpoint}", '
-            '"tested": true, "works": true/false, "latency_ms": <ms>, '
-            '"coverage": [...], "does_not_cover": [...], '
-            '"complementary_to": [...], "sample_output": "...", '
-            f'"credential_needed": true, "credential_env": "{env_var}", '
-            '"error": "", "notes": "..."}\n'
+        prompt = _load_prompt(
+            prompts_dir, "retest_credential.md",
+            "RETEST: The credential {env_var} has been supplied.\n"
+            "Test the approach '{approach}' for regime '{regime}'.\n"
+            "Endpoint: {endpoint}\n",
+        ).format(
+            env_var=env_var, approach=approach, regime=regime,
+            endpoint=endpoint, evo_number=evo_number,
         )
-        if hints:
-            prompt += f"\nBENCHMARK HINTS:\n{hints}\n"
 
-        system = (
-            f"You are a research agent retesting '{approach}' for regime "
-            f"'{regime}' after credentials were supplied. Test with real "
-            "HTTP calls and report the result as a JSON record."
-        )
+        system = _load_prompt(
+            prompts_dir, "retest_credential_system.md",
+            "You are a research agent retesting '{approach}' for regime "
+            "'{regime}' after credentials were supplied. Test with real "
+            "HTTP calls and report the result as a JSON record.",
+        ).format(approach=approach, regime=regime)
 
         try:
             result = self.engine._run_llm(
@@ -580,7 +526,7 @@ class Template(EvolutionTemplate):
 
     def _phase_build_verify(
         self, vc, solver_workspace, batch_results,
-        evo_number, max_retries, hints, trajectory, evo_ws,
+        evo_number, max_retries, prompts_dir, trajectory, evo_ws,
     ) -> bool:
         ws_root = solver_workspace.root
         verified = get_verified_approaches(evo_ws)
@@ -596,33 +542,15 @@ class Template(EvolutionTemplate):
             json.dumps(r) for r in verified[-30:]
         )
 
-        builder_system = (
-            f"You are an infrastructure builder for evolution cycle {evo_number}.\n\n"
-            "WORKSPACE LAYOUT:\n"
-            "  /solver_workspace/ — solver files (write tools, infra, prompts here)\n"
-            "  /evolver_workspace/ — evolver state (task_board.md, research_log.jsonl,\n"
-            "    architecture.md — read these for context, update architecture.md)\n\n"
-            f"RULES:\n"
-            f"1. Only build from VERIFIED research results (works: true).\n"
-            f"2. {no_throttle_rule()}\n"
-            "3. Build pipelines in /solver_workspace/infra/<regime>_pipeline.py.\n"
-            "4. Each pipeline has execute(query, **context) -> str.\n"
-            "5. Source chains ordered by coverage breadth + reliability.\n"
-            "6. Keep /solver_workspace/prompts/system.md under 10,000 characters.\n"
-            "7. Update /evolver_workspace/architecture.md with what you built.\n"
-            "8. Design for regime generalization, not specific instances.\n"
-            "9. Write tools in /solver_workspace/tools/ and update registry.yaml.\n"
-            "10. Commit in /solver_workspace: git add -A && git commit -m 'build: <summary>'\n"
-        )
-        if hints:
-            builder_system += f"\nBENCHMARK HINTS:\n{hints}\n"
-
-        builder_prompt = (
-            f"VERIFIED RESEARCH RESULTS:\n{verified_summary}\n\n"
-            f"TASK BOARD:\n{task_board}\n\n"
-            f"CURRENT ARCHITECTURE:\n{architecture}\n\n"
-            "Build infra pipelines and tools from the verified research. "
-            "Update prompts/system.md to teach the solver how to use them."
+        builder_system = _load_prompt(
+            prompts_dir, "builder_system.md", "Builder.",
+        ).format(evo_number=evo_number)
+        builder_prompt = _load_prompt(
+            prompts_dir, "builder.md", "Build from research.",
+        ).format(
+            verified_summary=verified_summary,
+            task_board=task_board,
+            architecture=architecture,
         )
 
         # Tag the pre-build state so we can roll back on failure
@@ -661,7 +589,7 @@ class Template(EvolutionTemplate):
             # VERIFY
             verify_result = self._verify(
                 vc, solver_workspace, batch_results, evo_number, attempt,
-                evo_ws=evo_ws,
+                evo_ws=evo_ws, prompts_dir=prompts_dir,
             )
             trajectory.append({
                 "step": "verify", "attempt": attempt, **verify_result,
@@ -681,11 +609,15 @@ class Template(EvolutionTemplate):
             vc.rollback_to_tag(pre_build_tag)
 
             if attempt < max_retries:
-                builder_prompt = (
-                    f"PREVIOUS BUILD FAILED VERIFICATION (attempt {attempt}).\n\n"
-                    f"VERIFICATION REPORT:\n{verify_result.get('report', 'unknown')}\n\n"
-                    f"VERIFIED RESEARCH:\n{verified_summary}\n\n"
-                    "Fix the issues and rebuild. Focus on what the verifier reported."
+                builder_prompt = _load_prompt(
+                    prompts_dir, "builder_retry.md",
+                    "PREVIOUS BUILD FAILED (attempt {attempt}). "
+                    "Report: {verify_report}\nResearch: {verified_summary}\n"
+                    "Fix the issues and rebuild.",
+                ).format(
+                    attempt=attempt,
+                    verify_report=verify_result.get("report", "unknown"),
+                    verified_summary=verified_summary,
                 )
 
         if not mutated:
@@ -706,32 +638,18 @@ class Template(EvolutionTemplate):
 
     def _verify(
         self, vc, solver_workspace, batch_results,
-        evo_number, attempt, evo_ws=None,
+        evo_number, attempt, evo_ws=None, prompts_dir=None,
     ) -> dict[str, Any]:
         """Run verifier agent on the current workspace."""
         ws_root = solver_workspace.root
         sample_query = _extract_sample_query(batch_results)
 
-        verifier_system = (
-            "You are a verification agent. Test tools and infra in /solver_workspace.\n\n"
-            "For each tool, run 3 tests:\n"
-            "1. A realistic query from the batch tasks\n"
-            "2. An edge case (very old date, unusual characters)\n"
-            "3. An error case (empty query, invalid input)\n\n"
-            "For each test, evaluate:\n"
-            "- Does it return data? (not just 'No results')\n"
-            "- Is the data plausible?\n"
-            "- Does date filtering work?\n\n"
-            "Output a verification report:\n"
-            "VERDICT: PASS or FAIL\n"
-            "Then list each tool/pipeline tested with its result.\n"
+        verifier_system = _load_prompt(
+            prompts_dir, "verifier_system.md", "Verification agent.",
         )
-
-        verifier_prompt = (
-            f"Test the tools and infra pipelines in this workspace.\n"
-            f"Sample query to use: {sample_query}\n"
-            f"Sample cutoff date: 2026-01-15\n"
-        )
+        verifier_prompt = _load_prompt(
+            prompts_dir, "verifier.md", "Test tools.",
+        ).format(sample_query=sample_query, cutoff_date="2026-01-15")
 
         try:
             result = self.engine._run_llm(
