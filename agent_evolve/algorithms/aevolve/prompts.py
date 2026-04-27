@@ -89,10 +89,19 @@ def build_evolution_prompt(
     The prompt builder itself is a passthrough: it includes whatever
     fields survived the upstream reveal decision.
 
-    ``include_patches`` and ``trajectory_only`` are kept for API
-    compatibility but are no-ops.
+    ``include_patches`` is a no-op. ``trajectory_only`` is honored as a
+    fallback: when True, labels are stripped from logs that the upstream
+    caller did not pre-filter (e.g. the standard EvolutionLoop path).
     """
-    del include_patches, trajectory_only
+    del include_patches
+    # When trajectory_only is set and upstream didn't pre-filter,
+    # strip labels here as a safety net.
+    if trajectory_only:
+        logs = [
+            {k: v for k, v in log.items()
+             if k not in ("success", "score", "feedback", "feedback_detail")}
+            for log in logs
+        ]
 
     # Order logs newest-to-oldest by batch id so the evolver can reason
     # about temporal ordering without being handed raw timestamps.

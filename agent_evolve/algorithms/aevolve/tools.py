@@ -152,7 +152,7 @@ class EvolverSandbox:
         mounts += ["--tmpfs", "/solver_workspace/evolution/observations"]
         # Also mask feedback_archive.jsonl which contains unrevealed
         # labels when temporal_reveal is enabled.
-        archive = Path(self.workspace) / "evolution" / "feedback_archive.jsonl"
+        archive = Path(self.workspace_root) / "evolution" / "feedback_archive.jsonl"
         if archive.exists():
             mounts += ["--tmpfs", "/solver_workspace/evolution/feedback_archive.jsonl"]
         if self.evolver_workspace:

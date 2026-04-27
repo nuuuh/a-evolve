@@ -424,6 +424,11 @@ def main():
                 prompt_args = backend.build_prompts(agent, branch_tasks)
                 task_dicts = [{"id": t.id, "input": t.input, "metadata": t.metadata}
                               for t in branch_tasks]
+                # Capture workspace_root while still on the branch so
+                # infra/ files are readable. For non-branching runs this
+                # is the same as agent.workspace.root; for branching runs
+                # the main checkout happens after all futures are submitted.
+                ws_root_for_solver = str(agent.workspace.root)
                 args_dict = {
                     "model_id": args.model_id, "region": args.region,
                     "max_tokens": args.max_tokens, "max_turns": args.max_turns,
@@ -431,7 +436,7 @@ def main():
                     "output_dir": str(out_dir), "batch_num": batch_num,
                     "evo_cycle": evo_cycle, "exp_tag": env.get("exp_tag", ""),
                     "solver_temperature": args.solver_temp or 0.0,
-                    "workspace_root": str(agent.workspace.root),
+                    "workspace_root": ws_root_for_solver,
                     **prompt_args,
                 }
 
