@@ -25,6 +25,7 @@ from .base import EvolutionTemplate
 from ._guardrails import apply_all_guardrails, no_throttle_rule
 from ....engine.human_interface import create_interface
 from ._evolution_workspace import (
+    get_evolver_workspace_path,
     init_evolution_workspace,
     load_task_board,
     update_task_board,
@@ -147,34 +148,35 @@ class Template(EvolutionTemplate):
             cfg.extra["human_in_the_loop"] = True
 
         ws_root = solver_workspace.root
-        init_evolution_workspace(ws_root)
+        evo_ws = get_evolver_workspace_path(ws_root)
+        init_evolution_workspace(evo_ws)
 
         trajectory: list[dict] = []
 
         # ── Phase 1: ANALYZE ──
         self._phase_analyze(
             vc, solver_workspace, batch_results,
-            evo_number, hints, trajectory,
+            evo_number, hints, trajectory, evo_ws,
         )
 
         # ── Phase 2: RESEARCH ──
         self._phase_research(
             vc, solver_workspace, batch_results,
-            evo_number, research_k, hints, trajectory,
+            evo_number, research_k, hints, trajectory, evo_ws,
         )
 
         # ── HITL: handle credential-gated research records ──
         if hi:
-            self._hitl_credentials(ws_root, evo_number, hi, hints, trajectory)
+            self._hitl_credentials(evo_ws, ws_root, evo_number, hi, hints, trajectory)
 
         # ── HITL: show task board to human before build ──
         if hi:
-            self._hitl_task_board(ws_root, hi, trajectory)
+            self._hitl_task_board(evo_ws, hi, trajectory)
 
         # ── Phase 3+4: BUILD + VERIFY loop ──
         mutated = self._phase_build_verify(
             vc, solver_workspace, batch_results,
-            evo_number, max_retries, hints, trajectory,
+            evo_number, max_retries, hints, trajectory, evo_ws,
         )
 
         # ── Guardrails G2-G5 ──
@@ -203,14 +205,13 @@ class Template(EvolutionTemplate):
 
     def _phase_analyze(
         self, vc, solver_workspace, batch_results,
-        evo_number, hints, trajectory,
+        evo_number, hints, trajectory, evo_ws,
     ):
         from ....algorithms.aevolve.prompts import build_evolution_prompt
         cfg = self.engine.config
-        ws_root = solver_workspace.root
 
-        task_board = load_task_board(ws_root)
-        research_log = load_research_log(ws_root)
+        task_board = load_task_board(evo_ws)
+        research_log = load_research_log(evo_ws)
 
         base_prompt = build_evolution_prompt(
             solver_workspace, batch_results, drafts=[],
@@ -262,7 +263,7 @@ class Template(EvolutionTemplate):
             content = self._call_llm_simple(analyst_prompt, system)
             content = _strip_preamble(content)
             if content.strip() and validate_task_board(content):
-                update_task_board(ws_root, content)
+                update_task_board(evo_ws, content)
                 vc.commit(
                     message=f"evo-{evo_number}-analyze: update task board",
                     tag=f"evo-{evo_number}-analyze",
@@ -290,7 +291,7 @@ class Template(EvolutionTemplate):
                     self._call_llm_simple(repair_prompt, system)
                 )
                 if repaired.strip() and validate_task_board(repaired):
-                    update_task_board(ws_root, repaired)
+                    update_task_board(evo_ws, repaired)
                     vc.commit(
                         message=f"evo-{evo_number}-analyze: update task board (repaired)",
                         tag=f"evo-{evo_number}-analyze",
@@ -311,10 +312,10 @@ class Template(EvolutionTemplate):
 
     def _phase_research(
         self, vc, solver_workspace, batch_results,
-        evo_number, research_k, hints, trajectory,
+        evo_number, research_k, hints, trajectory, evo_ws,
     ):
         ws_root = solver_workspace.root
-        task_board = load_task_board(ws_root)
+        task_board = load_task_board(evo_ws)
 
         gaps = self._extract_gaps(task_board, research_k)
         if not gaps:
@@ -324,7 +325,7 @@ class Template(EvolutionTemplate):
 
         logger.info("Phase 2: Researching %d gaps...", len(gaps))
 
-        known = load_research_log(ws_root)
+        known = load_research_log(evo_ws)
         known_summary = "\n".join(
             f"- {r['approach']}: works={r['works']}" for r in known[-30:]
         )
@@ -361,7 +362,9 @@ class Template(EvolutionTemplate):
             )
             try:
                 result = self.engine._run_llm(
-                    prompt, ws_root, system_prompt=system,
+                    prompt, ws_root,
+                    system_prompt=system,
+                    evolver_workspace=evo_ws,
                 )
                 records = _parse_json_blocks(result.get("content", ""))
                 saved = 0
@@ -375,7 +378,7 @@ class Template(EvolutionTemplate):
                         mismatched += 1
                         continue
                     if validate_research_record(r):
-                        append_research(ws_root, r)
+                        append_research(evo_ws, r)
                         saved += 1
                 return {"gap": gap, "records": saved, "mismatched": mismatched}
             except Exception as e:
@@ -436,13 +439,13 @@ class Template(EvolutionTemplate):
     # HITL integration
     # ────────────────────────────────────────────────────────────────
 
-    def _hitl_credentials(self, ws_root, evo_number, hi, hints, trajectory):
+    def _hitl_credentials(self, evo_ws, solver_root, evo_number, hi, hints, trajectory):
         """Handle credential-gated research records via human interface.
 
         After the human supplies a credential, reruns research for that
         regime once and appends a real source-test record.
         """
-        records = load_research_log(ws_root)
+        records = load_research_log(evo_ws)
         pending = [
             r for r in records
             if r.get("credential_needed") and r.get("works") in ("unknown", "blocked")
@@ -462,7 +465,7 @@ class Template(EvolutionTemplate):
                 action_type="credential_request",
             )
             if response.strip().lower() in ("skip", "(no response)", ""):
-                append_research(ws_root, {
+                append_research(evo_ws, {
                     "cycle": evo_number, "regime": regime,
                     "approach": approach, "endpoint": endpoint,
                     "tested": False, "works": False,
@@ -476,8 +479,8 @@ class Template(EvolutionTemplate):
                 os.environ[env_var] = response.strip()
                 # Rerun research for this specific regime+approach
                 retest_result = self._retest_credential_approach(
-                    ws_root, evo_number, regime, approach, endpoint,
-                    env_var, hints,
+                    evo_ws, evo_number, regime, approach, endpoint,
+                    env_var, hints, solver_root=solver_root,
                 )
                 retested += 1
                 trajectory_note = retest_result
@@ -489,9 +492,11 @@ class Template(EvolutionTemplate):
         })
 
     def _retest_credential_approach(
-        self, ws_root, evo_number, regime, approach, endpoint, env_var, hints,
+        self, evo_ws, evo_number, regime, approach, endpoint, env_var, hints,
+        solver_root=None,
     ) -> dict:
         """Rerun research for a credential-gated approach after credential supplied."""
+        ws_root = solver_root
         prompt = (
             f"RETEST: The credential {env_var} has been supplied.\n"
             f"Test the approach '{approach}' for regime '{regime}'.\n"
@@ -515,7 +520,9 @@ class Template(EvolutionTemplate):
         )
 
         try:
-            result = self.engine._run_llm(prompt, ws_root, system_prompt=system)
+            result = self.engine._run_llm(
+                prompt, ws_root, system_prompt=system, evolver_workspace=evo_ws,
+            )
             parsed = _parse_json_blocks(result.get("content", ""))
             if parsed:
                 rec = parsed[0]
@@ -526,10 +533,10 @@ class Template(EvolutionTemplate):
                 rec.setdefault("credential_needed", True)
                 rec.setdefault("credential_env", env_var)
                 if validate_research_record(rec):
-                    append_research(ws_root, rec)
+                    append_research(evo_ws, rec)
                     return {"retested": True, "works": rec.get("works")}
             # Fallback: no parseable record
-            append_research(ws_root, {
+            append_research(evo_ws, {
                 "cycle": evo_number, "regime": regime,
                 "approach": approach, "endpoint": endpoint,
                 "tested": True, "works": False,
@@ -540,7 +547,7 @@ class Template(EvolutionTemplate):
             })
             return {"retested": True, "works": False}
         except Exception as e:
-            append_research(ws_root, {
+            append_research(evo_ws, {
                 "cycle": evo_number, "regime": regime,
                 "approach": approach, "endpoint": endpoint,
                 "tested": True, "works": False,
@@ -551,9 +558,9 @@ class Template(EvolutionTemplate):
             })
             return {"retested": True, "works": False, "error": str(e)}
 
-    def _hitl_task_board(self, ws_root, hi, trajectory):
+    def _hitl_task_board(self, evo_ws, hi, trajectory):
         """Show task board to human and accept edits before build."""
-        board = load_task_board(ws_root)
+        board = load_task_board(evo_ws)
         response = hi.handle(
             f"Current task board before build phase:\n\n{board}\n\n"
             "Add requests or adjustments (or press Enter to skip):",
@@ -561,7 +568,7 @@ class Template(EvolutionTemplate):
         )
         if response.strip() and response.strip() not in ("(no response)", "skip"):
             board += f"\n\n## Human Requests\n- {response.strip()}\n"
-            update_task_board(ws_root, board)
+            update_task_board(evo_ws, board)
             trajectory.append({"step": "hitl_task_board", "updated": True})
         else:
             trajectory.append({"step": "hitl_task_board", "updated": False})
@@ -572,17 +579,17 @@ class Template(EvolutionTemplate):
 
     def _phase_build_verify(
         self, vc, solver_workspace, batch_results,
-        evo_number, max_retries, hints, trajectory,
+        evo_number, max_retries, hints, trajectory, evo_ws,
     ) -> bool:
         ws_root = solver_workspace.root
-        verified = get_verified_approaches(ws_root)
+        verified = get_verified_approaches(evo_ws)
         if not verified:
             logger.info("Phase 3: No verified approaches to build from.")
             trajectory.append({"step": "build", "mutated": False, "reason": "no_verified"})
             return False
 
-        architecture = load_architecture(ws_root)
-        task_board = load_task_board(ws_root)
+        architecture = load_architecture(evo_ws)
+        task_board = load_task_board(evo_ws)
 
         verified_summary = "\n".join(
             json.dumps(r) for r in verified[-30:]
@@ -624,7 +631,9 @@ class Template(EvolutionTemplate):
             # BUILD
             try:
                 self.engine._run_llm(
-                    builder_prompt, ws_root, system_prompt=builder_system,
+                    builder_prompt, ws_root,
+                    system_prompt=builder_system,
+                    evolver_workspace=evo_ws,
                 )
                 committed = vc.commit(
                     message=f"evo-{evo_number}-build-attempt-{attempt}",
@@ -647,13 +656,14 @@ class Template(EvolutionTemplate):
             # VERIFY
             verify_result = self._verify(
                 vc, solver_workspace, batch_results, evo_number, attempt,
+                evo_ws=evo_ws,
             )
             trajectory.append({
                 "step": "verify", "attempt": attempt, **verify_result,
             })
 
             if verify_result.get("passed", False):
-                append_research(ws_root, {
+                append_research(evo_ws, {
                     "cycle": evo_number, "regime": "all",
                     "approach": "build_output", "tested": True,
                     "works": True, "type": "tool_test",
@@ -676,7 +686,7 @@ class Template(EvolutionTemplate):
         if not mutated:
             # Ensure workspace is clean — roll back to pre-build
             vc.rollback_to_tag(pre_build_tag)
-            append_research(ws_root, {
+            append_research(evo_ws, {
                 "cycle": evo_number, "regime": "all",
                 "approach": "build_output", "tested": True,
                 "works": False, "type": "tool_test",
@@ -691,7 +701,7 @@ class Template(EvolutionTemplate):
 
     def _verify(
         self, vc, solver_workspace, batch_results,
-        evo_number, attempt,
+        evo_number, attempt, evo_ws=None,
     ) -> dict[str, Any]:
         """Run verifier agent on the current workspace."""
         ws_root = solver_workspace.root
@@ -720,7 +730,9 @@ class Template(EvolutionTemplate):
 
         try:
             result = self.engine._run_llm(
-                verifier_prompt, ws_root, system_prompt=verifier_system,
+                verifier_prompt, ws_root,
+                system_prompt=verifier_system,
+                evolver_workspace=evo_ws,
             )
             content = result.get("content", "")
             passed = "VERDICT: PASS" in content.upper() or "PASS" in content.upper().split("\n")[0] if content else False

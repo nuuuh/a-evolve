@@ -17,7 +17,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-WORKSPACE_DIR = "evolver_workspace"
+WORKSPACE_DIR = "evolver_workspace"  # sibling directory name
 TASK_BOARD = "task_board.md"
 RESEARCH_LOG = "research_log.jsonl"
 ARCHITECTURE = "architecture.md"
@@ -34,13 +34,19 @@ REQUIRED_TOOL_TEST_FIELDS = {
 MINIMAL_RESEARCH_FIELDS = {"cycle", "regime", "approach", "tested", "works"}
 
 
-def _ws_path(ws_root: Path) -> Path:
-    return ws_root / WORKSPACE_DIR
+def get_evolver_workspace_path(solver_root: Path) -> Path:
+    """Return the evolver workspace path as a sibling of the solver workspace."""
+    return solver_root.parent / WORKSPACE_DIR
 
 
-def init_evolution_workspace(ws_root: Path) -> None:
+def _ws_path(evo_root: Path) -> Path:
+    """Identity — evo_root IS the evolver workspace directory."""
+    return evo_root
+
+
+def init_evolution_workspace(evo_root: Path) -> None:
     """Create evolver workspace structure if missing."""
-    ws = _ws_path(ws_root)
+    ws = _ws_path(evo_root)
     ws.mkdir(parents=True, exist_ok=True)
     tb = ws / TASK_BOARD
     if not tb.exists():

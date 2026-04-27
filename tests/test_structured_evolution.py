@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 from agent_evolve.algorithms.navigation.templates.structured_evolution import Template
 from agent_evolve.algorithms.navigation.templates._evolution_workspace import (
+    get_evolver_workspace_path,
     init_evolution_workspace,
     load_task_board,
     load_research_log,
@@ -162,8 +163,10 @@ class TestFourPhaseTrajectory:
 
         template = Template(fake_engine)
         template._call_llm_simple = MagicMock(return_value=valid_board)
+        evo_ws = get_evolver_workspace_path(fake_workspace.root)
+        init_evolution_workspace(evo_ws)
         template._phase_analyze(
-            fake_vc, fake_workspace, batch_results, 1, "", [],
+            fake_vc, fake_workspace, batch_results, 1, "", [], evo_ws,
         )
         # If we reach here, _run_llm was not called for the analyst
         template._call_llm_simple.assert_called()
@@ -180,8 +183,9 @@ class TestBuildVerifyLoop:
         self, fake_engine, fake_workspace, fake_vc, fake_tree, batch_results,
     ):
         ws_root = fake_workspace.root
-        init_evolution_workspace(ws_root)
-        append_research(ws_root, {
+        evo_ws = get_evolver_workspace_path(ws_root)
+        init_evolution_workspace(evo_ws)
+        append_research(evo_ws, {
             "cycle": 1, "regime": "finance", "approach": "api1",
             "endpoint": "https://api1.example.com", "tested": True, "works": True,
             "latency_ms": 200, "coverage": ["us_stocks"],
@@ -231,8 +235,9 @@ class TestBuildVerifyLoop:
         self, fake_engine, fake_workspace, fake_vc, fake_tree, batch_results,
     ):
         ws_root = fake_workspace.root
-        init_evolution_workspace(ws_root)
-        append_research(ws_root, {
+        evo_ws = get_evolver_workspace_path(ws_root)
+        init_evolution_workspace(evo_ws)
+        append_research(evo_ws, {
             "cycle": 1, "regime": "finance", "approach": "api1",
             "endpoint": "https://api1.example.com", "tested": True, "works": True,
             "latency_ms": 200, "coverage": ["us_stocks"],
@@ -276,8 +281,9 @@ class TestBuildVerifyLoop:
         self, fake_engine, fake_workspace, fake_vc, fake_tree, batch_results,
     ):
         ws_root = fake_workspace.root
-        init_evolution_workspace(ws_root)
-        append_research(ws_root, {
+        evo_ws = get_evolver_workspace_path(ws_root)
+        init_evolution_workspace(evo_ws)
+        append_research(evo_ws, {
             "cycle": 1, "regime": "finance", "approach": "api1",
             "endpoint": "https://api1.example.com", "tested": True, "works": True,
             "latency_ms": 200, "coverage": ["us_stocks"],
@@ -317,7 +323,7 @@ class TestBuildVerifyLoop:
         # rollback_to_tag was called to clean up
         fake_vc.rollback_to_tag.assert_called()
         # tool_test failure record was logged
-        records = load_research_log(ws_root)
+        records = load_research_log(evo_ws)
         tool_tests = [r for r in records if r.get("type") == "tool_test"]
         assert len(tool_tests) >= 1
         assert tool_tests[-1]["works"] is False
@@ -326,8 +332,9 @@ class TestBuildVerifyLoop:
         self, fake_engine, fake_workspace, fake_vc, fake_tree, batch_results,
     ):
         ws_root = fake_workspace.root
-        init_evolution_workspace(ws_root)
-        append_research(ws_root, {
+        evo_ws = get_evolver_workspace_path(ws_root)
+        init_evolution_workspace(evo_ws)
+        append_research(evo_ws, {
             "cycle": 1, "regime": "finance", "approach": "api1",
             "endpoint": "https://api1.example.com", "tested": True, "works": True,
             "latency_ms": 200, "coverage": ["us_stocks"],
@@ -363,7 +370,7 @@ class TestBuildVerifyLoop:
         )
 
         assert result["mutated"] is True
-        records = load_research_log(ws_root)
+        records = load_research_log(evo_ws)
         tool_tests = [r for r in records if r.get("type") == "tool_test"]
         assert len(tool_tests) >= 1
         assert tool_tests[-1]["works"] is True
@@ -453,13 +460,14 @@ class TestResearchLogAccumulation:
         )
         template = Template(fake_engine)
         template._call_llm_simple = MagicMock(return_value=valid_board)
+        evo_ws = get_evolver_workspace_path(fake_workspace.root)
 
         # Cycle 1
         template.execute(
             fake_vc, fake_workspace, batch_results,
             fake_tree, evo_number=1, routing_log_path=None,
         )
-        records_after_1 = load_research_log(ws_root)
+        records_after_1 = load_research_log(evo_ws)
 
         # Cycle 2
         call_idx[0] = 0
@@ -467,7 +475,7 @@ class TestResearchLogAccumulation:
             fake_vc, fake_workspace, batch_results,
             fake_tree, evo_number=2, routing_log_path=None,
         )
-        records_after_2 = load_research_log(ws_root)
+        records_after_2 = load_research_log(evo_ws)
 
         assert len(records_after_2) >= len(records_after_1)
 
@@ -504,9 +512,10 @@ class TestHITL:
         self, fake_engine, fake_workspace, fake_vc, fake_tree, batch_results,
     ):
         ws_root = fake_workspace.root
-        init_evolution_workspace(ws_root)
+        evo_ws = get_evolver_workspace_path(ws_root)
+        init_evolution_workspace(evo_ws)
         # Seed a credential-needed record
-        append_research(ws_root, {
+        append_research(evo_ws, {
             "cycle": 1, "regime": "chinese_search", "approach": "serper_api",
             "tested": False, "works": "unknown",
             "endpoint": "https://serper.dev/search", "latency_ms": 0,
@@ -577,7 +586,7 @@ class TestHITL:
         assert hitl_steps[0]["retested"] >= 1
 
         # A real source-test record was appended (not tool_test)
-        records = load_research_log(ws_root)
+        records = load_research_log(evo_ws)
         retest_records = [
             r for r in records
             if r.get("approach") == "serper_api" and r.get("tested") is True
@@ -590,7 +599,8 @@ class TestHITL:
         self, fake_engine, fake_workspace, fake_vc, fake_tree, batch_results,
     ):
         ws_root = fake_workspace.root
-        init_evolution_workspace(ws_root)
+        evo_ws = get_evolver_workspace_path(ws_root)
+        init_evolution_workspace(evo_ws)
 
         fake_engine.config.extra["structured_evolution"]["hitl_enabled"] = True
         fake_engine.config.extra["human_interface"] = "stdin"
@@ -623,7 +633,7 @@ class TestHITL:
             )
 
         # Task board was updated with human request
-        board = load_task_board(ws_root)
+        board = load_task_board(evo_ws)
         assert "GitHub trending" in board
 
         # hitl_task_board step in trajectory
@@ -725,7 +735,8 @@ class TestRegimeIntegrity:
     ):
         from agent_evolve.algorithms.navigation.templates._evolution_workspace import update_task_board
         ws_root = fake_workspace.root
-        init_evolution_workspace(ws_root)
+        evo_ws = get_evolver_workspace_path(ws_root)
+        init_evolution_workspace(evo_ws)
 
         valid_board = (
             "## Failure Patterns (Cycle 1)\n"
@@ -733,7 +744,7 @@ class TestRegimeIntegrity:
             "- sports: 2 tasks fail because no data. PRIORITY: MEDIUM\n"
             "\n## Verified Capabilities\n\n## Unresolved\n\n## Human Requests\n"
         )
-        update_task_board(ws_root, valid_board)
+        update_task_board(evo_ws, valid_board)
 
         def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
             sp = (system_prompt or "").lower()
@@ -759,7 +770,7 @@ class TestRegimeIntegrity:
         trajectory = []
         template._phase_research(
             fake_vc, fake_workspace, batch_results,
-            1, 2, "", trajectory,
+            1, 2, "", trajectory, evo_ws,
         )
 
         research_step = trajectory[0]

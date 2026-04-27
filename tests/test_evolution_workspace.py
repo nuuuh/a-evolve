@@ -68,7 +68,7 @@ def _make_tool_test(**overrides):
 class TestInit:
     def test_creates_directory_and_files(self, tmp_path):
         init_evolution_workspace(tmp_path)
-        ws_dir = tmp_path / WORKSPACE_DIR
+        ws_dir = tmp_path
         assert ws_dir.is_dir()
         assert (ws_dir / "task_board.md").exists()
         assert (ws_dir / "architecture.md").exists()
@@ -204,7 +204,7 @@ class TestResearchLog:
         assert load_research_log(ws) == []
 
     def test_load_skips_malformed_lines(self, ws):
-        p = ws / WORKSPACE_DIR / "research_log.jsonl"
+        p = ws / "research_log.jsonl"
         p.write_text('{"cycle":1,"regime":"x","approach":"y","tested":true,"works":true}\nnot json\n')
         records = load_research_log(ws)
         assert len(records) == 1
@@ -254,7 +254,7 @@ class TestFiltering:
                     "tested": True, "works": True}
         # Write directly to bypass full validation
         import json
-        p = ws / WORKSPACE_DIR / "research_log.jsonl"
+        p = ws / "research_log.jsonl"
         with p.open("a") as f:
             f.write(json.dumps(minimal) + "\n")
         assert get_verified_approaches(ws) == []
