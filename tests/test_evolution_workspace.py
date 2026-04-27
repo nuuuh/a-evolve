@@ -8,6 +8,7 @@ from agent_evolve.algorithms.navigation.templates._evolution_workspace import (
     init_evolution_workspace,
     load_task_board,
     update_task_board,
+    validate_task_board,
     load_research_log,
     append_research,
     validate_research_record,

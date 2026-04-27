@@ -73,16 +73,27 @@ IGNORED_GAP_LABELS = {
 
 
 def validate_task_board(content: str) -> bool:
-    """Check that task board content has required sections and format."""
+    """Check that task board has required sections and a PRIORITY bullet
+    inside the Failure Patterns section (not just anywhere)."""
     content_lower = content.lower()
     for section in TASK_BOARD_REQUIRED_SECTIONS:
         if section.lower() not in content_lower:
             return False
-    has_priority = bool(re.search(
-        r"^[-*]\s*\w[\w_]*:.*PRIORITY:\s*(HIGH|MEDIUM|LOW)",
-        content, re.MULTILINE | re.IGNORECASE,
-    ))
-    return has_priority
+    in_failure = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("## failure pattern"):
+            in_failure = True
+            continue
+        if stripped.startswith("## "):
+            in_failure = False
+            continue
+        if in_failure and re.match(
+            r"[-*]\s*\w[\w_]*:\s*\d+.*PRIORITY:\s*(HIGH|MEDIUM|LOW)",
+            stripped, re.IGNORECASE,
+        ):
+            return True
+    return False
 
 
 def load_task_board(ws_root: Path) -> str:
