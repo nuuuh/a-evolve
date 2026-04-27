@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 class FutureXTask(BaseModel):
     """Single FutureX task with metadata."""
     task_id: str
+    hf_id: str = ""
     title: str
     prompt: str
     ground_truth: List[str]
@@ -213,9 +214,11 @@ class FutureXDataLoader:
 
         # Generate task ID
         task_id = f"futurex_{split}_{idx:04d}_{creation_date.strftime('%Y%m%d')}"
+        hf_id = str(row.get("id", ""))
 
         return FutureXTask(
             task_id=task_id,
+            hf_id=hf_id,
             title=title,
             prompt=prompt,
             ground_truth=ground_truth,

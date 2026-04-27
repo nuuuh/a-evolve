@@ -108,6 +108,8 @@ class FutureXBenchmark(BenchmarkAdapter):
         if config_limit is not None:
             limit = min(limit, config_limit)
 
+        task_ids = self.config.extra.get("futurex_task_ids")
+
         logger.info(f"Loading FutureX tasks: split={futurex_split}, domain={domain}, difficulty={difficulty}, limit={limit}")
 
         # Load tasks from data loader
@@ -115,9 +117,24 @@ class FutureXBenchmark(BenchmarkAdapter):
             split=futurex_split,
             domain=domain,
             difficulty=difficulty,
-            limit=limit,
+            limit=None if task_ids else limit,
             sort_by_date=True  # Critical for temporal consistency
         )
+
+        if task_ids:
+            allowed = set(task_ids)
+            # Each HF ID may have multiple weekly instances. Pick the latest
+            # instance per ID (highest end_time) to match the live submission.
+            by_hf: dict[str, list] = {}
+            for t in futurex_tasks:
+                if t.hf_id in allowed:
+                    by_hf.setdefault(t.hf_id, []).append(t)
+            futurex_tasks = [
+                max(group, key=lambda t: t.resolution_date)
+                for group in by_hf.values()
+            ]
+            futurex_tasks.sort(key=lambda t: t.creation_date)
+            logger.info(f"Filtered to {len(futurex_tasks)} tasks by futurex_task_ids")
 
         # Convert to Task objects
         tasks = []

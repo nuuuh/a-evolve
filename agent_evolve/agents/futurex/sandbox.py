@@ -57,14 +57,26 @@ _DDGS_THROTTLE = 1.0
 from ...algorithms.aevolve.tools import SANDBOX_IMAGE, _ensure_sandbox_image  # noqa: E402
 
 
+_FORWARD_ENV_KEYS = [
+    "SERPER_API_KEY", "JINA_API_KEY", "JINA_BASE_URL",
+    "EXA_API_KEY",
+]
+
+
 def start_sandbox(task_id: str, tool_files: dict, sandbox_network: str = "none") -> str:
     """Start a per-task Docker sandbox and copy evolved tools into it."""
     _ensure_sandbox_image()
     ctr = f"fx-{task_id.replace('/', '_')}-{os.getpid()}"
     subprocess.run(["docker", "rm", "-f", ctr], capture_output=True)
+    cmd = ["docker", "run", "-d", "--name", ctr,
+           "--network", sandbox_network]
+    for key in _FORWARD_ENV_KEYS:
+        val = os.environ.get(key)
+        if val:
+            cmd.extend(["-e", f"{key}={val}"])
+    cmd.extend([SANDBOX_IMAGE, "sleep", "infinity"])
     r = subprocess.run(
-        ["docker", "run", "-d", "--name", ctr,
-         "--network", sandbox_network, SANDBOX_IMAGE, "sleep", "infinity"],
+        cmd,
         capture_output=True, text=True, timeout=30,
     )
     if r.returncode != 0:

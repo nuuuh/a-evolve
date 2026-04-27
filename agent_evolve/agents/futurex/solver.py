@@ -177,6 +177,7 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
     task_timeout = args_dict.get("task_timeout", 600)
     out_dir = Path(args_dict.get("output_dir", "results"))
     tool_files = args_dict.get("tool_files", {})
+    log.info("solve_one: tool_files=%d keys=%s", len(tool_files), list(tool_files.keys())[:5])
 
     result = {
         "instance_id": task_id, "success": False, "score": 0.0, "detail": "",
