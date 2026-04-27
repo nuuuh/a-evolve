@@ -420,15 +420,24 @@ def main():
                     except Exception:
                         pass
 
-                # Build prompts from this branch's workspace state
+                # Build prompts from this branch's workspace state.
+                # Capture everything now while on the branch — the main
+                # checkout happens after all futures are submitted, so
+                # solvers must not depend on live workspace state.
                 prompt_args = backend.build_prompts(agent, branch_tasks)
                 task_dicts = [{"id": t.id, "input": t.input, "metadata": t.metadata}
                               for t in branch_tasks]
-                # Capture workspace_root while still on the branch so
-                # infra/ files are readable. For non-branching runs this
-                # is the same as agent.workspace.root; for branching runs
-                # the main checkout happens after all futures are submitted.
-                ws_root_for_solver = str(agent.workspace.root)
+                # Serialize infra files at build time so solvers don't
+                # read from disk after the checkout changes.
+                infra_dir = agent.workspace.root / "infra"
+                infra_files = {}
+                if infra_dir.exists():
+                    for f in infra_dir.iterdir():
+                        if f.is_file():
+                            try:
+                                infra_files[f.name] = f.read_text()
+                            except Exception:
+                                pass
                 args_dict = {
                     "model_id": args.model_id, "region": args.region,
                     "max_tokens": args.max_tokens, "max_turns": args.max_turns,
@@ -436,7 +445,8 @@ def main():
                     "output_dir": str(out_dir), "batch_num": batch_num,
                     "evo_cycle": evo_cycle, "exp_tag": env.get("exp_tag", ""),
                     "solver_temperature": args.solver_temp or 0.0,
-                    "workspace_root": ws_root_for_solver,
+                    "workspace_root": str(agent.workspace.root),
+                    "infra_files": infra_files,
                     **prompt_args,
                 }
 

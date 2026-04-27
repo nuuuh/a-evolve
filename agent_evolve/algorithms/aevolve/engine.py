@@ -59,6 +59,9 @@ class AEvolveEngine(EvolutionEngine):
         prompt_before = workspace.read_prompt()
         memory_before = workspace.read_all_memories(limit=9999)
         tools_before = workspace.read_tool_registry()
+        infra_before = set(
+            f.name for f in (workspace.root / "infra").iterdir()
+        ) if (workspace.root / "infra").exists() else set()
         drafts = workspace.list_drafts()
 
         prompt = build_evolution_prompt(
@@ -93,7 +96,12 @@ class AEvolveEngine(EvolutionEngine):
         memory_changed = len(workspace.read_all_memories(limit=9999)) != len(memory_before)
         skills_changed = skills_after != skills_before
         tools_changed = workspace.read_tool_registry() != tools_before
-        mutated = prompt_changed or memory_changed or skills_changed or tools_changed
+        infra_after = set(
+            f.name for f in (workspace.root / "infra").iterdir()
+        ) if (workspace.root / "infra").exists() else set()
+        infra_changed = infra_after != infra_before
+        mutated = (prompt_changed or memory_changed or skills_changed
+                   or tools_changed or infra_changed)
 
         changes = []
         if prompt_changed:

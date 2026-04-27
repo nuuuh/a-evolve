@@ -333,17 +333,16 @@ class Observer:
     def is_revealed(self, task_id: str) -> bool:
         """Whether the evolver may see ground-truth labels for ``task_id``.
 
-        - ``trajectory_only=True`` → never reveal.
-        - ``temporal_reveal=False`` → always reveal (legacy behaviour).
-        - ``temporal_reveal=True`` → reveal iff the task is already in
-          ``self._revealed_ids`` (either in-batch resolved or surfaced
-          by a prior ``update_reveal_state``).
+        - ``temporal_reveal=True`` overrides ``trajectory_only`` per-task:
+          reveal iff the task is in ``_revealed_ids``.
+        - ``trajectory_only=True`` without ``temporal_reveal`` → never.
+        - Both off → always reveal (legacy behaviour).
         """
+        if self.temporal_reveal:
+            return task_id in self._revealed_ids
         if self.trajectory_only:
             return False
-        if not self.temporal_reveal:
-            return True
-        return task_id in self._revealed_ids
+        return True
 
     def filter_batch_for_evolver(
         self, batch_results: list[dict[str, Any]],

@@ -219,12 +219,11 @@ class Template(EvolutionTemplate):
                     full_prompt, solver_workspace.root,
                     system_prompt=system_prompt,
                 )
-                vc.commit(
+                committed = vc.commit(
                     message=f"evo-{evo_number}-{role_name}: adaptive evolution",
                     tag=f"evo-{evo_number}-{role_name}",
                 )
-                # Detect mutation from actual diff, not just our commit.
-                step_mutated = bool(vc.get_diff_stat("HEAD~1", "HEAD").strip())
+                step_mutated = committed
             except Exception as e:
                 logger.warning("Adaptive %s failed: %s", role_name, e)
                 step_mutated = False
