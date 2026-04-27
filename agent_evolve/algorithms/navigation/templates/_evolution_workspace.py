@@ -82,7 +82,7 @@ def validate_task_board(content: str) -> bool:
     in_failure = False
     for line in content.splitlines():
         stripped = line.strip()
-        if stripped.lower().startswith("## failure pattern"):
+        if re.match(r"^##\s+Failure Patterns(?:\s*\(.*\))?\s*$", stripped, re.IGNORECASE):
             in_failure = True
             continue
         if stripped.startswith("## "):

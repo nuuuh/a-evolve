@@ -112,6 +112,16 @@ class TestTaskBoardValidation:
         board = "I'll analyze the failures...\nMost tasks failed."
         assert validate_task_board(board) is False
 
+    def test_failure_pattern_analysis_heading_rejected(self):
+        """Regression: ## Failure Pattern Analysis is NOT the planned heading."""
+        board = (
+            "## Failure Pattern Analysis\n"
+            "- finance: 5 tasks fail because no data. PRIORITY: HIGH\n\n"
+            "## Failure Patterns\n\n"
+            "## Verified Capabilities\n\n## Unresolved\n\n## Human Requests\n"
+        )
+        assert validate_task_board(board) is False
+
 
 class TestTaskBoard:
     def test_load_default(self, ws):

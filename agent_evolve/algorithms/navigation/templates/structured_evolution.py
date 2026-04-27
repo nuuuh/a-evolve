@@ -384,7 +384,7 @@ class Template(EvolutionTemplate):
         gaps = []
         for line in task_board.splitlines():
             stripped = line.strip()
-            if stripped.lower().startswith("## failure pattern"):
+            if re.match(r"^##\s+Failure Patterns(?:\s*\(.*\))?\s*$", stripped, re.IGNORECASE):
                 in_failure_section = True
                 continue
             if stripped.startswith("## "):
