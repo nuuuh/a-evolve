@@ -72,14 +72,29 @@ IGNORED_GAP_LABELS = {
 }
 
 
+_PRIORITY_BULLET_RE = re.compile(
+    r"[-*]\s*\w[\w_]*:\s*\d+.*PRIORITY:\s*(HIGH|MEDIUM|LOW)", re.IGNORECASE,
+)
+_MALFORMED_PRIORITY_RE = re.compile(
+    r"[-*]\s*\w[\w_]*:.*PRIORITY:\s*(HIGH|MEDIUM|LOW)", re.IGNORECASE,
+)
+
+
 def validate_task_board(content: str) -> bool:
-    """Check that task board has required sections and a PRIORITY bullet
-    inside the Failure Patterns section (not just anywhere)."""
+    """Check that task board has required sections and that ALL priority
+    bullets inside Failure Patterns use the parseable numeric format.
+
+    Every bullet with PRIORITY: must match:
+      - <regime>: <number> ... PRIORITY: HIGH|MEDIUM|LOW
+    Bullets with PRIORITY: but no numeric count are rejected so the
+    validator and _extract_gaps agree on what's parseable.
+    """
     content_lower = content.lower()
     for section in TASK_BOARD_REQUIRED_SECTIONS:
         if section.lower() not in content_lower:
             return False
     in_failure = False
+    valid_count = 0
     for line in content.splitlines():
         stripped = line.strip()
         if re.match(r"^##\s+Failure Patterns(?:\s*\(.*\))?\s*$", stripped, re.IGNORECASE):
@@ -88,12 +103,13 @@ def validate_task_board(content: str) -> bool:
         if stripped.startswith("## "):
             in_failure = False
             continue
-        if in_failure and re.match(
-            r"[-*]\s*\w[\w_]*:\s*\d+.*PRIORITY:\s*(HIGH|MEDIUM|LOW)",
-            stripped, re.IGNORECASE,
-        ):
-            return True
-    return False
+        if not in_failure:
+            continue
+        if _MALFORMED_PRIORITY_RE.match(stripped):
+            if not _PRIORITY_BULLET_RE.match(stripped):
+                return False
+            valid_count += 1
+    return valid_count > 0
 
 
 def load_task_board(ws_root: Path) -> str:

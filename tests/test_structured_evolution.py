@@ -647,6 +647,31 @@ class TestGapExtraction:
         assert "sports_ranking" in gaps
         assert "weather" not in gaps  # LOW excluded by k=2
 
+    def test_extracts_all_three_numeric_regimes(self, fake_engine):
+        template = Template(fake_engine)
+        board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- search_exhaustion: 6 tasks fail because cap. PRIORITY: HIGH\n"
+            "- news_gap: 4 tasks fail because no tool. PRIORITY: HIGH\n"
+            "- finance: 3 tasks fail because no API. PRIORITY: MEDIUM\n"
+            "\n## Verified Capabilities\n\n## Unresolved\n\n## Human Requests\n"
+        )
+        gaps = template._extract_gaps(board, k=3)
+        assert gaps == ["search_exhaustion", "news_gap", "finance"]
+
+    def test_round6_board_yields_only_numeric_gaps(self, fake_engine):
+        """Regression: Round 6 board with non-numeric bullets yields only parseable ones."""
+        template = Template(fake_engine)
+        board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- search_exhaustion: 6 tasks fail because they hit the cap. PRIORITY: HIGH\n"
+            "- no_tools_deployed: All tasks fail to leverage APIs. PRIORITY: HIGH\n"
+            "- news_search_gap: Sports tasks fail because no tool. PRIORITY: HIGH\n"
+            "\n## Verified Capabilities\n\n## Unresolved\n\n## Human Requests\n"
+        )
+        gaps = template._extract_gaps(board, k=10)
+        assert gaps == ["search_exhaustion"]
+
     def test_no_gaps_from_invalid_board(self, fake_engine):
         template = Template(fake_engine)
         board = "## Failure Patterns\n- crypto: no data\n- sports: partial\n"

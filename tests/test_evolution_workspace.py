@@ -112,6 +112,27 @@ class TestTaskBoardValidation:
         board = "I'll analyze the failures...\nMost tasks failed."
         assert validate_task_board(board) is False
 
+    def test_mixed_numeric_and_nonnumeric_bullets_rejected(self):
+        """Regression: Round 6 board with some bullets missing numeric counts."""
+        board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- search_exhaustion: 6 tasks fail because they hit the cap. PRIORITY: HIGH\n"
+            "- no_tools_deployed: All tasks fail to leverage APIs. PRIORITY: HIGH\n"
+            "- news_search_gap: Sports tasks fail because no tool. PRIORITY: HIGH\n"
+            "\n## Verified Capabilities\n\n## Unresolved\n\n## Human Requests\n"
+        )
+        assert validate_task_board(board) is False
+
+    def test_all_numeric_bullets_accepted(self):
+        board = (
+            "## Failure Patterns (Cycle 1)\n"
+            "- search_exhaustion: 6 tasks fail because cap. PRIORITY: HIGH\n"
+            "- news_search_gap: 4 tasks fail because no tool. PRIORITY: HIGH\n"
+            "- finance: 3 tasks fail because no API. PRIORITY: MEDIUM\n"
+            "\n## Verified Capabilities\n\n## Unresolved\n\n## Human Requests\n"
+        )
+        assert validate_task_board(board) is True
+
     def test_failure_pattern_analysis_heading_rejected(self):
         """Regression: ## Failure Pattern Analysis is NOT the planned heading."""
         board = (
