@@ -22,7 +22,9 @@ from .navigation import NavigationEngine
 
 try:
     from .mas_adaptive_skill import MasAdaptiveSkillEngine
-except ImportError:
+except (ImportError, ModuleNotFoundError):
+    # MAS engine depends on adaptive_skill (removed in this fork).
+    # Silently unavailable — callers check for None before use.
     MasAdaptiveSkillEngine = None
 
 try:

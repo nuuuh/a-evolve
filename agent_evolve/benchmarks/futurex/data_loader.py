@@ -133,6 +133,9 @@ class FutureXDataLoader:
 
     def _parse_ground_truth_simple(self, ground_truth: Any) -> List[str]:
         """Simple ground truth parsing that handles various formats."""
+        # Handle list/tuple before scalar pd.isna (which raises ValueError on arrays).
+        if isinstance(ground_truth, (list, tuple)):
+            return [str(item).strip() for item in ground_truth if pd.notna(item)]
         if pd.isna(ground_truth):
             return []
 

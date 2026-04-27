@@ -457,7 +457,18 @@ def main():
                         iid = futures[fut]
                         completed_ids.add(iid)
                         try:
-                            r = fut.result(timeout=args.task_timeout)
+                            r = fut.result(timeout=0)
+                            # Flag tasks that exceeded the per-task budget
+                            # even though they completed before the batch
+                            # deadline.  Thread workers can't be killed
+                            # mid-flight, so the batch deadline is the
+                            # real safety net; this logs the overshoot.
+                            elapsed = r.get("elapsed", 0)
+                            if elapsed > args.task_timeout:
+                                log.warning(
+                                    "SLOW %s: %.0fs > %ds budget",
+                                    iid, elapsed, args.task_timeout,
+                                )
                         except TimeoutError:
                             log.error("TIMEOUT %s (>%ds)", iid, args.task_timeout)
                             r = {"instance_id": iid, "success": False, "score": 0.0,
@@ -518,7 +529,9 @@ def main():
                             pass
                     pool.shutdown(wait=False, cancel_futures=True)
                 elif executor_type == "thread":
-                    pool.shutdown(wait=True, cancel_futures=True)
+                    # Don't block on hung threads — a stuck model/tool
+                    # call would prevent the run from ever advancing.
+                    pool.shutdown(wait=not _hung_ids, cancel_futures=True)
                 else:
                     pool.shutdown(wait=not _hung_ids, cancel_futures=True)
 
