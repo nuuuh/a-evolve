@@ -23,6 +23,7 @@ from typing import Any
 
 from .base import EvolutionTemplate
 from ._guardrails import apply_all_guardrails, no_throttle_rule
+from ....engine.human_interface import create_interface
 from ._evolution_workspace import (
     init_evolution_workspace,
     load_task_board,
@@ -96,7 +97,13 @@ class Template(EvolutionTemplate):
         se_config = cfg.extra.get("structured_evolution", {})
         research_k = se_config.get("research_parallel", 3)
         max_retries = se_config.get("build_verify_retries", 3)
+        hitl_enabled = se_config.get("hitl_enabled", False)
         hints = _load_hints(self.engine)
+
+        # Create human interface when HITL is enabled
+        hi = None
+        if hitl_enabled:
+            hi = create_interface(cfg.extra)
 
         ws_root = solver_workspace.root
         init_evolution_workspace(ws_root)
@@ -114,6 +121,14 @@ class Template(EvolutionTemplate):
             vc, solver_workspace, batch_results,
             evo_number, research_k, hints, trajectory,
         )
+
+        # ── HITL: handle credential-gated research records ──
+        if hi:
+            self._hitl_credentials(ws_root, evo_number, hi, trajectory)
+
+        # ── HITL: show task board to human before build ──
+        if hi:
+            self._hitl_task_board(ws_root, hi, trajectory)
 
         # ── Phase 3+4: BUILD + VERIFY loop ──
         mutated = self._phase_build_verify(
@@ -240,11 +255,18 @@ class Template(EvolutionTemplate):
                 "2. For each, make a real HTTP request or test command.\n"
                 "3. Record EXACTLY what you called, what came back, "
                 "whether it's usable.\n"
-                "4. Output ONE JSON record per line for each test:\n"
+                "4. Output ONE JSON record per line for each test with ALL fields:\n"
                 '{"cycle": ' + str(evo_number) + ', "regime": "' + gap + '", '
-                '"approach": "...", "endpoint": "...", '
+                '"approach": "<name>", "endpoint": "<url or command>", '
                 '"tested": true, "works": true/false, '
-                '"sample_output": "...", "error": ""}\n'
+                '"latency_ms": <number>, '
+                '"coverage": ["<subtypes handled>"], '
+                '"does_not_cover": ["<subtypes it fails on>"], '
+                '"complementary_to": ["<other approach>"], '
+                '"sample_output": "<first lines of output>", '
+                '"credential_needed": false, "credential_env": "", '
+                '"error": "", "notes": "<usage tips>"}\n'
+                "5. Test at least 2-3 different approaches per regime.\n"
             )
             if hints:
                 prompt += f"\nBENCHMARK HINTS:\n{hints}\n"
@@ -314,6 +336,67 @@ class Template(EvolutionTemplate):
         return list(regimes)[:k]
 
     # ────────────────────────────────────────────────────────────────
+    # HITL integration
+    # ────────────────────────────────────────────────────────────────
+
+    def _hitl_credentials(self, ws_root, evo_number, hi, trajectory):
+        """Handle credential-gated research records via human interface."""
+        records = load_research_log(ws_root)
+        pending = [
+            r for r in records
+            if r.get("credential_needed") and r.get("works") in ("unknown", "blocked")
+        ]
+        if not pending:
+            return
+
+        for rec in pending:
+            env_var = rec.get("credential_env", "API_KEY")
+            approach = rec.get("approach", "unknown")
+            regime = rec.get("regime", "unknown")
+            response = hi.handle(
+                f"Research found '{approach}' for regime '{regime}' but needs "
+                f"credentials. Provide {env_var} or type 'skip':",
+                action_type="credential_request",
+            )
+            if response.strip().lower() in ("skip", "(no response)", ""):
+                append_research(ws_root, {
+                    "cycle": evo_number, "regime": regime,
+                    "approach": approach, "tested": False,
+                    "works": "blocked", "type": "tool_test",
+                    "error": "Human skipped credential",
+                })
+            else:
+                import os
+                os.environ[env_var] = response.strip()
+                append_research(ws_root, {
+                    "cycle": evo_number, "regime": regime,
+                    "approach": approach, "tested": True,
+                    "works": "retest_needed", "type": "tool_test",
+                    "credential_env": env_var,
+                    "error": "",
+                })
+
+        trajectory.append({
+            "step": "hitl_credentials",
+            "pending": len(pending),
+        })
+
+    def _hitl_task_board(self, ws_root, hi, trajectory):
+        """Show task board to human and accept edits before build."""
+        board = load_task_board(ws_root)
+        response = hi.handle(
+            f"Current task board before build phase:\n\n{board}\n\n"
+            "Add requests or adjustments (or press Enter to skip):",
+            action_type="task_board_review",
+        )
+        if response.strip() and response.strip() not in ("(no response)", "skip"):
+            board += f"\n\n## Human Requests\n- {response.strip()}\n"
+            update_task_board(ws_root, board)
+            trajectory.append({"step": "hitl_task_board", "updated": True})
+        else:
+            trajectory.append({"step": "hitl_task_board", "updated": False})
+
+    # ────────────────────────────────────────────────────────────────
     # Phase 3+4: Build + Verify loop
     # ────────────────────────────────────────────────────────────────
 
@@ -360,6 +443,10 @@ class Template(EvolutionTemplate):
             "Update prompts/system.md to teach the solver how to use them."
         )
 
+        # Tag the pre-build state so we can roll back on failure
+        pre_build_tag = f"evo-{evo_number}-pre-build"
+        vc.commit(message="pre-build checkpoint", tag=pre_build_tag)
+
         mutated = False
         for attempt in range(1, max_retries + 1):
             logger.info("Phase 3-4: Build attempt %d/%d", attempt, max_retries)
@@ -396,21 +483,38 @@ class Template(EvolutionTemplate):
             })
 
             if verify_result.get("passed", False):
+                append_research(ws_root, {
+                    "cycle": evo_number, "regime": "all",
+                    "approach": "build_output", "tested": True,
+                    "works": True, "type": "tool_test",
+                    "evidence": verify_result.get("report", "")[:300],
+                })
                 mutated = True
                 break
 
-            # Feed failure back to builder for retry
-            builder_prompt = (
-                f"PREVIOUS BUILD FAILED VERIFICATION (attempt {attempt}).\n\n"
-                f"VERIFICATION REPORT:\n{verify_result.get('report', 'unknown')}\n\n"
-                f"VERIFIED RESEARCH:\n{verified_summary}\n\n"
-                "Fix the issues and rebuild. Focus on what the verifier reported."
-            )
+            # Roll back to pre-build state before retry
+            vc.rollback_to_tag(pre_build_tag)
+
+            if attempt < max_retries:
+                builder_prompt = (
+                    f"PREVIOUS BUILD FAILED VERIFICATION (attempt {attempt}).\n\n"
+                    f"VERIFICATION REPORT:\n{verify_result.get('report', 'unknown')}\n\n"
+                    f"VERIFIED RESEARCH:\n{verified_summary}\n\n"
+                    "Fix the issues and rebuild. Focus on what the verifier reported."
+                )
 
         if not mutated:
+            # Ensure workspace is clean — roll back to pre-build
+            vc.rollback_to_tag(pre_build_tag)
+            append_research(ws_root, {
+                "cycle": evo_number, "regime": "all",
+                "approach": "build_output", "tested": True,
+                "works": False, "type": "tool_test",
+                "error": "All build-verify attempts exhausted",
+            })
             trajectory.append({
                 "step": "build_verify_exhausted",
-                "attempts": min(attempt, max_retries),
+                "attempts": max_retries,
             })
 
         return mutated

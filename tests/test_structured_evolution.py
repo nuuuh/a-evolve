@@ -207,6 +207,82 @@ class TestBuildVerifyLoop:
         exhausted = [t for t in result["trajectory"] if t["step"] == "build_verify_exhausted"]
         assert len(exhausted) == 1
 
+    def test_exhausted_rolls_back_and_logs_failure(
+        self, fake_engine, fake_workspace, fake_vc, fake_tree, batch_results,
+    ):
+        ws_root = fake_workspace.root
+        init_evolution_workspace(ws_root)
+        append_research(ws_root, {
+            "cycle": 1, "regime": "finance", "approach": "api1",
+            "tested": True, "works": True,
+        })
+
+        def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
+            sp = (system_prompt or "").lower()
+            if "failure analyst" in sp:
+                return {"content": "## Failure Patterns\n- finance: PRIORITY: HIGH\n"}
+            elif "research agent" in sp:
+                return {"content": ""}
+            elif "infrastructure builder" in sp:
+                return {"content": "Built tool."}
+            elif "verification agent" in sp:
+                return {"content": "VERDICT: FAIL\nBroken."}
+            return {"content": ""}
+
+        fake_engine._run_llm = MagicMock(side_effect=mock_run_llm)
+        fake_engine.config.extra["structured_evolution"]["build_verify_retries"] = 1
+
+        template = Template(fake_engine)
+        result = template.execute(
+            fake_vc, fake_workspace, batch_results,
+            fake_tree, evo_number=1, routing_log_path=None,
+        )
+
+        assert result["mutated"] is False
+        # rollback_to_tag was called to clean up
+        fake_vc.rollback_to_tag.assert_called()
+        # tool_test failure record was logged
+        records = load_research_log(ws_root)
+        tool_tests = [r for r in records if r.get("type") == "tool_test"]
+        assert len(tool_tests) >= 1
+        assert tool_tests[-1]["works"] is False
+
+    def test_pass_logs_success_record(
+        self, fake_engine, fake_workspace, fake_vc, fake_tree, batch_results,
+    ):
+        ws_root = fake_workspace.root
+        init_evolution_workspace(ws_root)
+        append_research(ws_root, {
+            "cycle": 1, "regime": "finance", "approach": "api1",
+            "tested": True, "works": True,
+        })
+
+        def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
+            sp = (system_prompt or "").lower()
+            if "failure analyst" in sp:
+                return {"content": "## Failure Patterns\n- finance: PRIORITY: HIGH\n"}
+            elif "research agent" in sp:
+                return {"content": ""}
+            elif "infrastructure builder" in sp:
+                return {"content": "Built pipeline."}
+            elif "verification agent" in sp:
+                return {"content": "VERDICT: PASS\nAll good."}
+            return {"content": ""}
+
+        fake_engine._run_llm = MagicMock(side_effect=mock_run_llm)
+
+        template = Template(fake_engine)
+        result = template.execute(
+            fake_vc, fake_workspace, batch_results,
+            fake_tree, evo_number=1, routing_log_path=None,
+        )
+
+        assert result["mutated"] is True
+        records = load_research_log(ws_root)
+        tool_tests = [r for r in records if r.get("type") == "tool_test"]
+        assert len(tool_tests) >= 1
+        assert tool_tests[-1]["works"] is True
+
 
 class TestResearchLogAccumulation:
     """AC2: Research records accumulate across cycles."""
@@ -279,6 +355,100 @@ class TestHITL:
             fake_tree, evo_number=1, routing_log_path=None,
         )
         assert isinstance(result, dict)
+
+    def test_hitl_credential_prompt_fires(
+        self, fake_engine, fake_workspace, fake_vc, fake_tree, batch_results,
+    ):
+        ws_root = fake_workspace.root
+        init_evolution_workspace(ws_root)
+        # Seed a credential-needed record
+        append_research(ws_root, {
+            "cycle": 1, "regime": "chinese_search", "approach": "serper_api",
+            "tested": False, "works": "unknown",
+            "endpoint": "", "sample_output": "", "credential_needed": True,
+            "credential_env": "SERPER_API_KEY", "error": "",
+        })
+
+        fake_engine.config.extra["structured_evolution"]["hitl_enabled"] = True
+        fake_engine.config.extra["human_interface"] = "stdin"
+
+        mock_hi = MagicMock()
+        mock_hi.handle.return_value = "sk-test-key-123"
+
+        def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
+            sp = (system_prompt or "").lower()
+            if "failure analyst" in sp:
+                return {"content": "## Failure Patterns\n- chinese_search: PRIORITY: HIGH\n"}
+            elif "research agent" in sp:
+                return {"content": ""}
+            elif "infrastructure builder" in sp:
+                return {"content": "Built."}
+            elif "verification agent" in sp:
+                return {"content": "VERDICT: PASS"}
+            return {"content": ""}
+
+        fake_engine._run_llm = MagicMock(side_effect=mock_run_llm)
+
+        with patch(
+            "agent_evolve.algorithms.navigation.templates.structured_evolution.create_interface",
+            return_value=mock_hi,
+        ):
+            # Need to import create_interface in the template's namespace
+            template = Template(fake_engine)
+            result = template.execute(
+                fake_vc, fake_workspace, batch_results,
+                fake_tree, evo_number=1, routing_log_path=None,
+            )
+
+        # Credential prompt was called
+        mock_hi.handle.assert_called()
+        cred_calls = [
+            c for c in mock_hi.handle.call_args_list
+            if "credential" in str(c).lower()
+        ]
+        assert len(cred_calls) >= 1
+
+        # hitl_credentials step in trajectory
+        hitl_steps = [t for t in result["trajectory"] if t["step"] == "hitl_credentials"]
+        assert len(hitl_steps) == 1
+        assert hitl_steps[0]["pending"] >= 1
+
+    def test_hitl_task_board_updated(
+        self, fake_engine, fake_workspace, fake_vc, fake_tree, batch_results,
+    ):
+        ws_root = fake_workspace.root
+        init_evolution_workspace(ws_root)
+
+        fake_engine.config.extra["structured_evolution"]["hitl_enabled"] = True
+        fake_engine.config.extra["human_interface"] = "stdin"
+
+        mock_hi = MagicMock()
+        # First call = credential check (none pending), second = task board
+        mock_hi.handle.return_value = "Also build a GitHub trending tool"
+
+        def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
+            return {"content": "## Failure Patterns\n"}
+
+        fake_engine._run_llm = MagicMock(side_effect=mock_run_llm)
+
+        with patch(
+            "agent_evolve.algorithms.navigation.templates.structured_evolution.create_interface",
+            return_value=mock_hi,
+        ):
+            template = Template(fake_engine)
+            result = template.execute(
+                fake_vc, fake_workspace, batch_results,
+                fake_tree, evo_number=1, routing_log_path=None,
+            )
+
+        # Task board was updated with human request
+        board = load_task_board(ws_root)
+        assert "GitHub trending" in board
+
+        # hitl_task_board step in trajectory
+        hitl_board = [t for t in result["trajectory"] if t["step"] == "hitl_task_board"]
+        assert len(hitl_board) == 1
+        assert hitl_board[0]["updated"] is True
 
 
 class TestGapExtraction:

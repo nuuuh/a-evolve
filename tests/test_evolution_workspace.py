@@ -28,12 +28,31 @@ def ws(tmp_path):
 
 
 def _make_record(**overrides):
+    """Full-schema research record."""
     base = {
         "cycle": 1,
         "regime": "finance",
         "approach": "stooq",
+        "endpoint": "https://stooq.com/q/d/l/",
         "tested": True,
         "works": True,
+        "sample_output": "Date,Open,High,Low,Close",
+        "credential_needed": False,
+        "error": "",
+    }
+    base.update(overrides)
+    return base
+
+
+def _make_tool_test(**overrides):
+    """tool_test record."""
+    base = {
+        "cycle": 1,
+        "regime": "finance",
+        "approach": "finance_pipeline",
+        "tested": True,
+        "works": True,
+        "type": "tool_test",
     }
     base.update(overrides)
     return base
@@ -96,14 +115,30 @@ class TestResearchLog:
 
 
 class TestValidation:
-    def test_valid_record(self):
+    def test_valid_full_record(self):
         assert validate_research_record(_make_record()) is True
 
-    def test_missing_field(self):
+    def test_missing_all_fields(self):
         assert validate_research_record({"cycle": 1, "regime": "x"}) is False
+
+    def test_minimal_record_accepted_with_warning(self):
+        minimal = {"cycle": 1, "regime": "x", "approach": "y", "tested": True, "works": True}
+        assert validate_research_record(minimal) is True
 
     def test_extra_fields_ok(self):
         r = _make_record(latency_ms=200, notes="fast")
+        assert validate_research_record(r) is True
+
+    def test_tool_test_record_valid(self):
+        assert validate_research_record(_make_tool_test()) is True
+
+    def test_tool_test_missing_type(self):
+        r = _make_tool_test()
+        del r["type"]
+        assert validate_research_record(r) is True  # falls to minimal
+
+    def test_tool_test_with_extra(self):
+        r = _make_tool_test(evidence="PASS on 3 queries", files=["finance_pipeline.py"])
         assert validate_research_record(r) is True
 
 

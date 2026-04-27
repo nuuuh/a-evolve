@@ -22,7 +22,14 @@ RESEARCH_LOG = "research_log.jsonl"
 ARCHITECTURE = "architecture.md"
 INSIGHTS = "insights.jsonl"
 
-REQUIRED_RESEARCH_FIELDS = {"cycle", "regime", "approach", "tested", "works"}
+REQUIRED_RESEARCH_FIELDS = {
+    "cycle", "regime", "approach", "tested", "works",
+    "endpoint", "sample_output", "credential_needed", "error",
+}
+REQUIRED_TOOL_TEST_FIELDS = {
+    "cycle", "regime", "approach", "tested", "works", "type",
+}
+MINIMAL_RESEARCH_FIELDS = {"cycle", "regime", "approach", "tested", "works"}
 
 
 def _ws_path(ws_root: Path) -> Path:
@@ -94,8 +101,26 @@ def append_research(ws_root: Path, record: dict[str, Any]) -> None:
 
 
 def validate_research_record(record: dict[str, Any]) -> bool:
-    """Check required fields: cycle, regime, approach, tested, works."""
-    return REQUIRED_RESEARCH_FIELDS.issubset(record.keys())
+    """Validate a research or tool_test record.
+
+    tool_test records (type="tool_test") require: cycle, regime, approach,
+    tested, works, type.
+    Source-test records require the full schema: cycle, regime, approach,
+    tested, works, endpoint, sample_output, credential_needed, error.
+    Records missing the full schema but having the minimal 5 fields are
+    accepted with a warning for backward compatibility.
+    """
+    if record.get("type") == "tool_test":
+        return REQUIRED_TOOL_TEST_FIELDS.issubset(record.keys())
+    if REQUIRED_RESEARCH_FIELDS.issubset(record.keys()):
+        return True
+    if MINIMAL_RESEARCH_FIELDS.issubset(record.keys()):
+        logger.warning(
+            "Research record has minimal fields only (missing: %s)",
+            REQUIRED_RESEARCH_FIELDS - set(record.keys()),
+        )
+        return True
+    return False
 
 
 def get_verified_approaches(ws_root: Path) -> list[dict[str, Any]]:
