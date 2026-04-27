@@ -564,14 +564,23 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
 
         _seen_titles = set()  # Dedup across searches within a task
 
-        # Check for evolved search pipeline (infra/ layer)
+        # Check for evolved search pipeline (infra/ layer).
+        # Prefer serialized infra_files (branch-safe) over live disk path.
         _infra_search = None
-        _ws_root = args_dict.get("workspace_root")
-        if _ws_root:
-            _infra_path = Path(_ws_root) / "infra" / "search_pipeline.py"
-            if _infra_path.exists():
-                log.info("Loading evolved search pipeline: %s", _infra_path)
-                _infra_search = _infra_path
+        _infra_files = args_dict.get("infra_files") or {}
+        if "search_pipeline.py" in _infra_files:
+            import tempfile as _tf
+            _infra_tmp = Path(_tf.mktemp(suffix="_search_pipeline.py"))
+            _infra_tmp.write_text(_infra_files["search_pipeline.py"])
+            _infra_search = _infra_tmp
+            log.info("Using serialized search pipeline from infra_files")
+        else:
+            _ws_root = args_dict.get("workspace_root")
+            if _ws_root:
+                _infra_path = Path(_ws_root) / "infra" / "search_pipeline.py"
+                if _infra_path.exists():
+                    log.info("Loading evolved search pipeline: %s", _infra_path)
+                    _infra_search = _infra_path
 
         def _strict_search(query):
             """Multi-source pre-cutoff search — guaranteed zero label leakage.

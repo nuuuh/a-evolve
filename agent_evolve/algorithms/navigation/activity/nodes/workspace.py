@@ -36,13 +36,27 @@ class SnapshotWorkspace(Action):
 
     def execute(self, inputs: dict[str, Any], ctx) -> dict[str, Any]:
         ws = inputs["workspace"]
+        import hashlib
+
+        def _hash_dir(d):
+            """Hash filenames + contents for change detection."""
+            h = hashlib.md5()
+            if d.exists():
+                for f in sorted(d.iterdir()):
+                    if f.is_file():
+                        h.update(f.name.encode())
+                        try:
+                            h.update(f.read_bytes())
+                        except Exception:
+                            pass
+            return h.hexdigest()
+
         skills = {s.name for s in ws.list_skills()}
         prompt = ws.read_prompt()
         memory = ws.read_all_memories(limit=9999)
         tools = ws.read_tool_registry()
-        infra = set(
-            f.name for f in (ws.root / "infra").iterdir()
-        ) if (ws.root / "infra").exists() else set()
+        tools_hash = _hash_dir(ws.root / "tools")
+        infra_hash = _hash_dir(ws.root / "infra")
         drafts = ws.list_drafts()
         return {
             "snapshot": {
@@ -50,7 +64,8 @@ class SnapshotWorkspace(Action):
                 "prompt": prompt,
                 "memory_len": len(memory),
                 "tools": tools,
-                "infra": infra,
+                "tools_hash": tools_hash,
+                "infra_hash": infra_hash,
             },
             "drafts": drafts,
         }
@@ -78,18 +93,29 @@ class DetectMutations(Action):
         return [OutputPin(name="report", type=Type.MUTATION_REPORT)]
 
     def execute(self, inputs: dict[str, Any], ctx) -> dict[str, Any]:
+        import hashlib
         ws = inputs["workspace"]
         snap = inputs["snapshot"]
+
+        def _hash_dir(d):
+            h = hashlib.md5()
+            if d.exists():
+                for f in sorted(d.iterdir()):
+                    if f.is_file():
+                        h.update(f.name.encode())
+                        try:
+                            h.update(f.read_bytes())
+                        except Exception:
+                            pass
+            return h.hexdigest()
 
         skills_after = {s.name for s in ws.list_skills()}
         prompt_changed = ws.read_prompt() != snap["prompt"]
         memory_changed = len(ws.read_all_memories(limit=9999)) != snap["memory_len"]
         skills_changed = skills_after != snap["skills"]
-        tools_changed = ws.read_tool_registry() != snap["tools"]
-        infra_after = set(
-            f.name for f in (ws.root / "infra").iterdir()
-        ) if (ws.root / "infra").exists() else set()
-        infra_changed = infra_after != snap.get("infra", set())
+        tools_changed = (ws.read_tool_registry() != snap["tools"]
+                         or _hash_dir(ws.root / "tools") != snap.get("tools_hash", ""))
+        infra_changed = _hash_dir(ws.root / "infra") != snap.get("infra_hash", "")
 
         mutated = (prompt_changed or memory_changed or skills_changed
                    or tools_changed or infra_changed)

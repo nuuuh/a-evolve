@@ -32,14 +32,23 @@ class VersionControl:
             self._git("config", "user.email", "evolver@agent-evolve")
             self._git("config", "user.name", "Agent Evolve")
 
-        self._git("add", "-A")
+        # Only create the initial commit + evo-0 tag once. Repeated
+        # calls to init() (from harness + navigation engine) must not
+        # create extra empty commits or move the evo-0 tag.
         try:
-            # --allow-empty handles workspaces with no files yet
-            self._git("commit", "--allow-empty", "-m", "Initial workspace state")
-            self._git("tag", "-f", "evo-0")
-            logger.info("Created initial commit with tag evo-0")
+            self._git("rev-parse", "evo-0")
+            # Tag exists — repo already initialized, just stage any
+            # new files without creating a new commit.
+            self._git("add", "-A")
         except RuntimeError:
-            pass  # already committed
+            # First init — create the initial commit and tag.
+            self._git("add", "-A")
+            try:
+                self._git("commit", "--allow-empty", "-m", "Initial workspace state")
+                self._git("tag", "evo-0")
+                logger.info("Created initial commit with tag evo-0")
+            except RuntimeError:
+                pass
 
         # Ensure we're on 'main' (older git defaults to 'master' even when
         # ``-b main`` is unsupported — rename if so).

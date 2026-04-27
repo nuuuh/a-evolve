@@ -162,7 +162,8 @@ class StrategyTree:
                 {"name": b.name, "created_at_cycle": b.created_at_cycle,
                  "last_routed_cycle": b.last_routed_cycle,
                  "total_tasks": b.total_tasks, "total_passed": b.total_passed,
-                 "description": b.description}
+                 "description": b.description,
+                 "failed_checkouts": getattr(b, "failed_checkouts", 0)}
                 for b in self.branches
             ],
         }
