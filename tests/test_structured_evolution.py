@@ -130,6 +130,7 @@ class TestFourPhaseTrajectory:
         assert "analyze" in steps
         assert "research" in steps
         assert "build" in steps or "build_verify_exhausted" in steps
+        assert "verify" in steps
         assert result["evo_number"] == 1
         assert isinstance(result["mutated"], bool)
         assert isinstance(result["trajectory"], list)
@@ -150,8 +151,10 @@ class TestBuildVerifyLoop:
         append_research(ws_root, {
             "cycle": 1, "regime": "finance", "approach": "api1",
             "endpoint": "https://api1.example.com", "tested": True, "works": True,
-            "coverage": ["us_stocks"], "sample_output": "data",
-            "credential_needed": False, "error": "",
+            "latency_ms": 200, "coverage": ["us_stocks"],
+            "does_not_cover": [], "complementary_to": [],
+            "sample_output": "data", "credential_needed": False,
+            "credential_env": "", "error": "", "notes": "",
         })
 
         verify_count = [0]
@@ -193,8 +196,10 @@ class TestBuildVerifyLoop:
         append_research(ws_root, {
             "cycle": 1, "regime": "finance", "approach": "api1",
             "endpoint": "https://api1.example.com", "tested": True, "works": True,
-            "coverage": ["us_stocks"], "sample_output": "data",
-            "credential_needed": False, "error": "",
+            "latency_ms": 200, "coverage": ["us_stocks"],
+            "does_not_cover": [], "complementary_to": [],
+            "sample_output": "data", "credential_needed": False,
+            "credential_env": "", "error": "", "notes": "",
         })
 
         def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
@@ -230,8 +235,10 @@ class TestBuildVerifyLoop:
         append_research(ws_root, {
             "cycle": 1, "regime": "finance", "approach": "api1",
             "endpoint": "https://api1.example.com", "tested": True, "works": True,
-            "coverage": ["us_stocks"], "sample_output": "data",
-            "credential_needed": False, "error": "",
+            "latency_ms": 200, "coverage": ["us_stocks"],
+            "does_not_cover": [], "complementary_to": [],
+            "sample_output": "data", "credential_needed": False,
+            "credential_env": "", "error": "", "notes": "",
         })
 
         def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
@@ -272,8 +279,10 @@ class TestBuildVerifyLoop:
         append_research(ws_root, {
             "cycle": 1, "regime": "finance", "approach": "api1",
             "endpoint": "https://api1.example.com", "tested": True, "works": True,
-            "coverage": ["us_stocks"], "sample_output": "data",
-            "credential_needed": False, "error": "",
+            "latency_ms": 200, "coverage": ["us_stocks"],
+            "does_not_cover": [], "complementary_to": [],
+            "sample_output": "data", "credential_needed": False,
+            "credential_env": "", "error": "", "notes": "",
         })
 
         def mock_run_llm(prompt, ws_root, system_prompt=None, **kw):
@@ -433,8 +442,10 @@ class TestHITL:
         append_research(ws_root, {
             "cycle": 1, "regime": "chinese_search", "approach": "serper_api",
             "tested": False, "works": "unknown",
-            "endpoint": "", "sample_output": "", "credential_needed": True,
-            "credential_env": "SERPER_API_KEY", "error": "",
+            "endpoint": "https://serper.dev/search", "latency_ms": 0,
+            "coverage": [], "does_not_cover": [], "complementary_to": [],
+            "sample_output": "", "credential_needed": True,
+            "credential_env": "SERPER_API_KEY", "error": "", "notes": "",
         })
 
         fake_engine.config.extra["structured_evolution"]["hitl_enabled"] = True

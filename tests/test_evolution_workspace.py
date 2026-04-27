@@ -28,7 +28,7 @@ def ws(tmp_path):
 
 
 def _make_record(**overrides):
-    """Full-schema research record."""
+    """Full 15-field research record."""
     base = {
         "cycle": 1,
         "regime": "finance",
@@ -36,9 +36,15 @@ def _make_record(**overrides):
         "endpoint": "https://stooq.com/q/d/l/",
         "tested": True,
         "works": True,
+        "latency_ms": 300,
+        "coverage": ["us_stocks", "us_indices"],
+        "does_not_cover": ["cn_a_shares"],
+        "complementary_to": ["sina_finance"],
         "sample_output": "Date,Open,High,Low,Close",
         "credential_needed": False,
+        "credential_env": "",
         "error": "",
+        "notes": "CSV OHLC data",
     }
     base.update(overrides)
     return base
@@ -121,9 +127,9 @@ class TestValidation:
     def test_missing_all_fields(self):
         assert validate_research_record({"cycle": 1, "regime": "x"}) is False
 
-    def test_minimal_record_accepted_with_warning(self):
+    def test_minimal_record_rejected(self):
         minimal = {"cycle": 1, "regime": "x", "approach": "y", "tested": True, "works": True}
-        assert validate_research_record(minimal) is True
+        assert validate_research_record(minimal) is False
 
     def test_extra_fields_ok(self):
         r = _make_record(latency_ms=200, notes="fast")
@@ -132,10 +138,11 @@ class TestValidation:
     def test_tool_test_record_valid(self):
         assert validate_research_record(_make_tool_test()) is True
 
-    def test_tool_test_missing_type(self):
+    def test_tool_test_missing_type_rejected_as_source(self):
         r = _make_tool_test()
         del r["type"]
-        assert validate_research_record(r) is True  # falls to minimal
+        # Without type, it's treated as a source record — missing full fields
+        assert validate_research_record(r) is False
 
     def test_tool_test_with_extra(self):
         r = _make_tool_test(evidence="PASS on 3 queries", files=["finance_pipeline.py"])
@@ -144,11 +151,9 @@ class TestValidation:
 
 class TestFiltering:
     def test_get_verified_full_records(self, ws):
-        append_research(ws, _make_record(works=True, approach="a",
-                                          coverage=["us_stocks"], endpoint="https://x"))
+        append_research(ws, _make_record(works=True, approach="a"))
         append_research(ws, _make_record(works=False, approach="b"))
-        append_research(ws, _make_record(works=True, approach="c",
-                                          coverage=["cn_stocks"], endpoint="https://y"))
+        append_research(ws, _make_record(works=True, approach="c"))
         verified = get_verified_approaches(ws)
         assert len(verified) == 2
         assert {r["approach"] for r in verified} == {"a", "c"}
@@ -169,8 +174,7 @@ class TestFiltering:
         assert get_verified_approaches(ws) == []
 
     def test_get_failed(self, ws):
-        append_research(ws, _make_record(works=True, approach="a",
-                                          coverage=["x"], endpoint="https://x"))
+        append_research(ws, _make_record(works=True, approach="a"))
         append_research(ws, _make_record(works=False, approach="b"))
         failed = get_failed_approaches(ws)
         assert len(failed) == 1

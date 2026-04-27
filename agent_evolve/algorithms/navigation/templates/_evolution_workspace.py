@@ -106,29 +106,27 @@ def validate_research_record(record: dict[str, Any]) -> bool:
 
     tool_test records (type="tool_test") require: cycle, regime, approach,
     tested, works, type.
-    Source-test records require the full schema: cycle, regime, approach,
-    tested, works, endpoint, sample_output, credential_needed, error.
-    Records missing the full schema but having the minimal 5 fields are
-    accepted with a warning for backward compatibility.
+    Source-test records require all 15 planned fields.
     """
     if record.get("type") == "tool_test":
         return REQUIRED_TOOL_TEST_FIELDS.issubset(record.keys())
-    if REQUIRED_RESEARCH_FIELDS.issubset(record.keys()):
-        return True
-    if MINIMAL_RESEARCH_FIELDS.issubset(record.keys()):
-        logger.warning(
-            "Research record has minimal fields only (missing: %s)",
-            REQUIRED_RESEARCH_FIELDS - set(record.keys()),
-        )
-        return True
-    return False
+    return REQUIRED_RESEARCH_FIELDS.issubset(record.keys())
+
+
+def is_legacy_record(record: dict[str, Any]) -> bool:
+    """Check if a record has only the minimal 5 fields (legacy format)."""
+    return (
+        MINIMAL_RESEARCH_FIELDS.issubset(record.keys())
+        and not REQUIRED_RESEARCH_FIELDS.issubset(record.keys())
+        and record.get("type") != "tool_test"
+    )
 
 
 def get_verified_approaches(ws_root: Path) -> list[dict[str, Any]]:
-    """Return source records with works=True and full coverage metadata.
+    """Return source records with works=True and the full 15-field schema.
 
     Excludes tool_test records and legacy/minimal records that lack the
-    coverage fields the builder needs for fallback-chain decisions.
+    fields the builder needs for fallback-chain decisions.
     """
     results = []
     for r in load_research_log(ws_root):
@@ -136,8 +134,8 @@ def get_verified_approaches(ws_root: Path) -> list[dict[str, Any]]:
             continue
         if r.get("type") == "tool_test":
             continue
-        if "coverage" not in r or "endpoint" not in r:
-            logger.debug("Skipping minimal record without coverage: %s", r.get("approach"))
+        if not REQUIRED_RESEARCH_FIELDS.issubset(r.keys()):
+            logger.debug("Skipping record missing full schema: %s", r.get("approach"))
             continue
         results.append(r)
     return results
