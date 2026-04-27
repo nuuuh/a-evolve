@@ -18,5 +18,6 @@ model_name: us.anthropic.claude-sonnet-4-6
 sort_by_timestamp: true
 builtin_search: strict
 sandbox_network: bridge
+evolver_sandbox_network: bridge
 
 futurex_difficulty: [3, 4]

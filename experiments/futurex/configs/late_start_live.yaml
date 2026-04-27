@@ -21,3 +21,5 @@ evo_start_after_pct: 80
 model_name: us.anthropic.claude-sonnet-4-6
 sort_by_timestamp: true
 search_mode: live
+sandbox_network: bridge
+evolver_sandbox_network: bridge

@@ -22,3 +22,5 @@ evo_freeze_after_pct: 40
 model_name: us.anthropic.claude-sonnet-4-6
 sort_by_timestamp: true
 search_mode: strict
+sandbox_network: bridge
+evolver_sandbox_network: bridge
