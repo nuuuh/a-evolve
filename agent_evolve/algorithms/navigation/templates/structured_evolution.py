@@ -128,31 +128,6 @@ class Template(EvolutionTemplate):
     def name(self) -> str:
         return "structured_evolution"
 
-    def _call_llm_simple(self, prompt: str, system_prompt: str) -> str:
-        """Call the LLM with no tools, no sandbox, no network.
-
-        Used for the analyst phase which must be read-only. The prompt
-        contains all needed context (trajectories, task board, research
-        log) — the LLM just reasons and produces structured output.
-        """
-        cfg = self.engine.config
-        try:
-            from ....llm.bedrock import BedrockProvider
-            if isinstance(self.engine.llm, BedrockProvider):
-                response = self.engine.llm.converse_loop(
-                    system_prompt=system_prompt,
-                    user_message=prompt,
-                    tools=[],
-                    tool_executor={},
-                    max_tokens=cfg.evolver_max_tokens,
-                    temperature=0.0,
-                    verbose=bool(cfg.extra.get("verbose")),
-                )
-                return response.content or ""
-        except ImportError:
-            pass
-        return ""
-
     def execute(
         self,
         vc, solver_workspace, batch_results,
@@ -284,10 +259,14 @@ class Template(EvolutionTemplate):
             "exact markdown format specified. No conversational text.",
         )
 
-        logger.info("Phase 1: Analyzing batch failures (no-tools)...")
+        logger.info("Phase 1: Analyzing batch failures...")
         try:
-            content = self._call_llm_simple(analyst_prompt, system)
-            content = _strip_preamble(content)
+            result = self.engine._run_llm(
+                analyst_prompt, solver_workspace.root,
+                system_prompt=system,
+                evolver_workspace=evo_ws,
+            )
+            content = _strip_preamble(result.get("content", ""))
             if content.strip() and validate_task_board(content):
                 update_task_board(evo_ws, content)
                 vc.commit(
@@ -296,16 +275,18 @@ class Template(EvolutionTemplate):
                 )
                 trajectory.append({"step": "analyze", "success": True})
             elif content.strip():
-                # Retry with repair prompt
                 repair_prompt = _load_prompt(
                     prompts_dir, "analyst_repair.md",
                     "Your previous output was REJECTED. Rewrite using the "
                     "exact markdown structure. Cycle {evo_number}.\n\n"
                     "Here is what you wrote:\n{previous_output}\n",
                 ).format(evo_number=evo_number, previous_output=content[:2000])
-                repaired = _strip_preamble(
-                    self._call_llm_simple(repair_prompt, system)
+                repair_result = self.engine._run_llm(
+                    repair_prompt, solver_workspace.root,
+                    system_prompt=system,
+                    evolver_workspace=evo_ws,
                 )
+                repaired = _strip_preamble(repair_result.get("content", ""))
                 if repaired.strip() and validate_task_board(repaired):
                     update_task_board(evo_ws, repaired)
                     vc.commit(
