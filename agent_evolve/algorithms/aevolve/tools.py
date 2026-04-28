@@ -144,19 +144,16 @@ class EvolverSandbox:
         if self.evolver_workspace:
             mounts += ["-v", f"{self.evolver_workspace}:/evolver_workspace"]
 
-        # Mask ground-truth observations and feedback_archive in whichever
-        # workspace contains them. When evolver_workspace exists, the
-        # Observer writes to evolver_workspace/evolution/; otherwise to
-        # solver_workspace/evolution/.
+        # Mask feedback_archive.jsonl — it contains ALL tasks' labels
+        # regardless of reveal status. observations/batch_*.jsonl is SAFE
+        # because the Observer already strips labels from unrevealed tasks
+        # at write time (via _label_revealed / filter_batch_for_evolver).
         for mount_prefix, host_root in [
             ("/solver_workspace", self.workspace_root),
             ("/evolver_workspace", self.evolver_workspace),
         ]:
             if host_root is None:
                 continue
-            obs_dir = Path(host_root) / "evolution" / "observations"
-            if obs_dir.exists():
-                mounts += ["--tmpfs", f"{mount_prefix}/evolution/observations"]
             archive = Path(host_root) / "evolution" / "feedback_archive.jsonl"
             if archive.exists():
                 mounts += ["-v", f"/dev/null:{mount_prefix}/evolution/feedback_archive.jsonl:ro"]
