@@ -136,12 +136,13 @@ class EvolverSandbox:
         import os
         uid_gid = f"{os.getuid()}:{os.getgid()}"
 
-        # Build mount list: solver workspace always, evolver workspace optional
+        # Build mount list: solver workspace always, evolver workspace optional.
+        # Working dir is always /solver_workspace — agents that need to write
+        # to /evolver_workspace use absolute paths in their prompts.
         mounts = ["-v", f"{self.workspace_root}:/solver_workspace"]
         work_dir = "/solver_workspace"
         if self.evolver_workspace:
             mounts += ["-v", f"{self.evolver_workspace}:/evolver_workspace"]
-            work_dir = "/evolver_workspace"
 
         # Mask ground-truth observations and feedback_archive in whichever
         # workspace contains them. When evolver_workspace exists, the
