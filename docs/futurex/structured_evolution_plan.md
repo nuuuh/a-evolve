@@ -399,10 +399,12 @@ def append_research(ws_root: Path, record: dict) -> None:
     """Validate and append a research record."""
 
 def validate_research_record(record: dict) -> bool:
-    """Check required fields: cycle, gap, approach, tested, works."""
+    """Check required fields (15-field schema for source records,
+    6-field schema for tool_test records)."""
 
 def get_verified_approaches(ws_root: Path) -> list[dict]:
-    """Return only records with works=True."""
+    """Return full-schema source records with works=True.
+    Excludes tool_test and minimal/legacy records."""
 
 def get_failed_approaches(ws_root: Path) -> list[dict]:
     """Return records with works=False (avoid retesting)."""
@@ -417,74 +419,38 @@ def append_insight(ws_root: Path, record: dict) -> None:
     """Append cross-cycle insight."""
 ```
 
-## Agent system prompts
+## Agent prompt system
 
-### Analyst
-```
-You are a failure analyst. Read the batch trajectories and the
-evolution workspace to identify what's failing and why.
+Prompts are split into two layers:
 
-Update task_board.md with:
-1. New failure patterns (grouped by data source regime)
-2. Priority assessment (HIGH/MEDIUM/LOW based on task count)
-3. Cross-reference with research_log — note which gaps already
-   have verified solutions vs which need new research
+**General prompts** (`templates/prompts/`): contain structure,
+variables (`{evo_number}`, `{task_board}`, etc.), format rules,
+and a `{benchmark_context}` placeholder. These are benchmark-
+agnostic and ship with the template.
 
-Do NOT suggest solutions. Your job is diagnosis only.
-```
+**Benchmark context** (`experiments/<benchmark>/evolver_prompts/`):
+provide only the domain-specific context to append. Each file
+matches a general prompt by name — `_load_prompt()` loads the
+general prompt, then substitutes `{benchmark_context}` with the
+benchmark file content.
 
-### Research Agent
-```
-You are a research agent investigating: {gap_description}
+Prompt files per phase:
 
-Already tested (from research_log): {known_results}
+| General prompt | Benchmark context | Phase |
+|---|---|---|
+| `analyst.md` | `analyst.md` | Analyze |
+| `analyst_system.md` | — | Analyze |
+| `analyst_repair.md` | — | Analyze (repair) |
+| `research.md` | `research.md` | Research |
+| `research_system.md` | — | Research |
+| `builder_system.md` | `builder_system.md` | Build |
+| `builder.md` | — | Build |
+| `builder_retry.md` | — | Build (retry) |
+| `verifier_system.md` | — | Verify |
+| `verifier.md` | `verifier.md` | Verify |
 
-Your job: find a working data source for this gap.
-1. Test the approach in your sandbox with real HTTP calls
-2. Record EXACTLY what endpoint you called, what came back,
-   and whether it's usable
-3. If the API needs a key, record that — don't fake results
-
-Write your findings as JSON to stdout (one record per test):
-{"cycle": N, "gap": "...", "approach": "...", "tested": true,
- "works": true/false, "endpoint": "...", "sample_output": "...",
- "api_key_needed": false, "error": ""}
-```
-
-### Builder
-```
-You are an infrastructure builder. Read the research log and
-task board, then build infra pipelines for the solver workspace.
-
-RULES:
-1. Only build from VERIFIED research results (works: true)
-2. Never limit the solver's tool call count in the system prompt
-3. Build class-based pipelines under infra/<regime>_pipeline.py
-4. Each pipeline has execute(query, **context) -> str
-5. Source chains ordered by coverage breadth + reliability
-6. Keep prompts/system.md under 10K characters
-7. Update architecture.md with what you built and why
-8. Design for regime generalization, not specific instances
-
-{benchmark_builder_hints}
-```
-
-### Verifier
-```
-You are a verification agent. Test each new tool thoroughly.
-
-For each tool, run 3 tests:
-1. A realistic query from the batch tasks
-2. An edge case (very old date, unusual characters)
-3. An error case (empty query, invalid date)
-
-For each test, evaluate:
-- Does it return data? (not just "No results")
-- Is the data plausible? (right order of magnitude, right format)
-- Does date filtering work? (no future data leaking in)
-
-Report: PASS or FAIL with specific evidence.
-```
+Phases without a benchmark context file get an empty
+`{benchmark_context}` — the general prompt is self-sufficient.
 
 ## Implementation guidelines
 
@@ -548,7 +514,7 @@ remain untouched.
 | # | Task | Tag | AC | Notes |
 |---|---|---|---|---|
 | 3a | Create `structured_evolution_evo.yaml` config | coding | AC5 | `orchestrator: structured_evolution` + FutureX hints |
-| 3b | Create `experiments/futurex/evolver_hints.md` | coding | AC5 | FutureX-specific regime/research/builder hints |
+| 3b | Create `experiments/futurex/evolver_prompts/` | coding | AC5 | FutureX-specific benchmark context files |
 | 3c | Run 84-task FutureX smoke | coding | AC5 | nohup, wait for completion |
 | 3d | Verify evolution workspace artifacts | coding | AC6 | task_board, research_log, architecture exist with content |
 | 3e | Collect metrics | coding | AC5 | Pass rate, bash calls/task, regime coverage |
@@ -571,7 +537,7 @@ builtin_search: strict
 sandbox_network: bridge
 evolver_sandbox_network: bridge
 structured_evolution:
-  benchmark_hints: experiments/futurex/evolver_hints.md
+  prompts_dir: experiments/futurex/evolver_prompts
   research_parallel: 3        # top-K gaps from task board
   build_verify_retries: 3     # max retries per pipeline
   hitl_enabled: false         # set true for human-in-the-loop
@@ -626,59 +592,46 @@ echo "Started structured_evolution (PID $!)"
 ```
 agent_evolve/algorithms/navigation/templates/structured_evolution.py
 agent_evolve/algorithms/navigation/templates/_evolution_workspace.py
+agent_evolve/algorithms/navigation/templates/prompts/   # general prompts (10 files)
 experiments/futurex/configs/structured_evolution_evo.yaml
-experiments/futurex/evolver_hints.md
+experiments/futurex/evolver_prompts/                    # benchmark context (4 files)
 tests/test_structured_evolution.py
 tests/test_evolution_workspace.py
 ```
 
-## Benchmark-specific hints
+## Benchmark-specific prompts
 
-The template is benchmark-agnostic. Each benchmark provides hints
-that customize agent prompts without changing the template logic.
+The template is benchmark-agnostic. Each benchmark provides context
+files under `experiments/<benchmark>/evolver_prompts/` that are
+appended to the general prompts via `{benchmark_context}`.
 
-Hints are passed via `{benchmark_*_hints}` placeholders in agent
-system prompts. The experiment config specifies the hint file:
+The config specifies the directory:
 
 ```yaml
 structured_evolution:
-  benchmark_hints: experiments/<benchmark>/evolver_hints.md
+  prompts_dir: experiments/<benchmark>/evolver_prompts
 ```
 
-Example hint files per benchmark:
+Only files that need benchmark-specific context exist in the
+directory. Files not present get an empty `{benchmark_context}`.
 
-**FutureX** (`experiments/futurex/evolver_hints.md`):
-- Analyst: "Regimes may include finance, sports, chinese_content,
-  politics, technology. Tasks require web search with date cutoff."
-- Research: "Test APIs with real HTTP requests. Check date
-  filtering. Common sources: financial data APIs, Chinese search
-  engines, sports statistics APIs, news aggregators."
-- Builder: "Pipelines take `cutoff_date` in context. The solver
-  calls `web_search(query)` which routes through infra."
+**FutureX** provides context for 4 phases:
+- `analyst.md`: regime discovery guidance, failure mode taxonomy
+- `research.md`: source evaluation criteria, scraping viability
+- `builder_system.md`: pipeline design principles, output format
+- `verifier.md`: verification criteria for temporal prediction
 
-**PolyBench** (`experiments/polybench/evolver_hints.md`):
-- Analyst: "Regimes may include algorithm_design, data_processing,
-  mathematical_reasoning. Tasks require code generation."
-- Research: "Test code patterns and library APIs in sandbox.
-  Evaluate correctness, edge cases, and performance."
-- Builder: "Pipelines provide utility functions and templates.
-  The solver calls `bash` to run code."
-
-**CTF-Dojo** (`experiments/ctf_dojo/evolver_hints.md`):
-- Analyst: "Regimes may include binary_exploitation, web_security,
-  cryptography, reverse_engineering."
-- Research: "Test exploitation techniques and tools in sandbox.
-  Evaluate reliability and automation potential."
-- Builder: "Pipelines provide analysis tools and technique
-  templates. The solver calls `bash` to execute."
+**Other benchmarks** would provide their own 1-4 context files
+with domain-specific guidance. The general prompts handle all
+the structural rules, variable substitution, and format enforcement.
 
 ## Risk assessment
 
 | Risk | Mitigation |
 |---|---|
-| Research agents discover nothing new | Seed the research prompt with regime categories (not specific approaches) — benchmark hints guide what to explore |
+| Research agents discover nothing new | Benchmark context guides exploration directions without prescribing specific sources |
 | Build-verify loop never converges | Max 3 retries + fallback to removing the pipeline |
 | Evolution workspace grows too large | Cap task_board at 5K chars, research_log at 200 records per cycle |
 | HITL blocks automated runs | HITL is optional — disabled by default, research agents log `credential_needed` and move on |
 | Parallel research agents conflict | Each writes to research_log.jsonl (append-only, no conflicts); they read shared state but write independent records |
-| Template too generic to be useful | Benchmark hints provide domain knowledge without hardcoding it in the template |
+| Template too generic to be useful | Benchmark context files provide domain knowledge without hardcoding it in the template |
