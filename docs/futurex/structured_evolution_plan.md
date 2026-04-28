@@ -79,6 +79,66 @@ approach, gets output back, and immediately writes a tool —
 without checking if the output is correct, if the approach is
 reliable, or if it handles edge cases.
 
+## Temporal-reveal feedback model
+
+FutureX runs in **temporal-reveal mode**: the evolver only sees
+ground-truth labels (success/score/feedback) for tasks whose
+resolution date has passed. This prevents the evolver from learning
+from future information.
+
+### Data written per batch
+
+When the solver finishes a batch, the Observer writes:
+
+| File | Contents | Evolver access |
+|---|---|---|
+| `evolution/observations/batch_NNNN.jsonl` | Full batch results. Revealed tasks include feedback fields; unrevealed tasks have feedback stripped. | **Masked** (tmpfs in Docker) |
+| `evolution/feedback_archive.jsonl` | ALL tasks' feedback + resolution_date, regardless of reveal status. Used by framework between cycles. | **Masked** (/dev/null bind mount) |
+| `evolution/trajectories/batch_NNNN/` | Per-task conversation JSON + output patches. No scores or feedback. | **Read-only** mount at `/trajectories` |
+| `evolution/observations/revealed_supplement.jsonl` | Newly revealed tasks from prior batches whose resolution_date crossed the watermark. | **Masked** (inside observations/) |
+
+### Reveal gate
+
+Between evolution cycles, `Observer.update_reveal_state(cycle, watermark)`
+scans the feedback archive for tasks where `resolution_date ≤ watermark`
+and appends them to the revealed supplement. The watermark advances as
+batches are processed in chronological order.
+
+When batch results are passed to the evolver (via `build_evolution_prompt`),
+`filter_batch_for_evolver()` strips label fields (`success`, `score`,
+`detail`, `feedback`, `feedback_detail`) from any task not yet in the
+revealed set. The evolver sees behavior (turns, conversation, tool usage)
+but not outcomes for unrevealed tasks.
+
+### What the evolver sees
+
+```
+/solver_workspace     — RW, solver artifacts (tools, infra, prompts)
+/evolver_workspace    — RW, evolver state (task_board, research_log, architecture)
+/trajectories         — RO, safe per-task conversations + patches (no scores)
+```
+
+The evolver's batch context (passed as text in prompts) contains:
+- **Revealed tasks**: full feedback — the evolver can learn from these
+- **Unrevealed tasks**: behavior only — the evolver sees what the solver
+  did (searches, tool calls, turns) but not whether it was correct
+
+This means the analyst's failure diagnosis comes from two signals:
+1. Explicit feedback on revealed tasks ("task X scored 0.0")
+2. Behavioral patterns on unrevealed tasks ("task Y used 30 turns
+   and repeated the same search 10 times" — likely struggling)
+
+### Privacy guarantees
+
+1. `feedback_archive.jsonl` is masked with `/dev/null` — evolver
+   LLM cannot read it even though it's in the mounted workspace
+2. `observations/` directory is masked with tmpfs — appears empty
+   to the evolver sandbox
+3. `trajectories/` is mounted read-only — evolver can read
+   conversations but cannot modify or access the parent `evolution/`
+4. `filter_batch_for_evolver()` is the final gate — strips labels
+   at the prompt-building level before any template sees them
+
 ## Design: 4-phase structured evolution
 
 ### Overview
