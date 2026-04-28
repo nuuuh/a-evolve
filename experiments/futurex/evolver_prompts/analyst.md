@@ -1,36 +1,16 @@
-DOMAIN REGIMES for FutureX temporal prediction:
+Tasks are temporal prediction questions that require finding factual
+information available BEFORE a cutoff date. The solver uses web search
+to gather evidence, then submits an answer.
 
-- finance: Stock closing prices, index values, commodity prices,
-  currency exchange rates, earnings announcements. Tasks ask for
-  EXACT numerical values on specific dates.
-
-- general_news: Current events, awards (Oscars, Grammys), weather
-  records, product launches. Tasks need factual answers from dated
-  news articles. Google News RSS is the primary source.
-
-- sports: Match results, tournament outcomes, rankings, player stats.
-  Tasks need specific scores, winners, or standings on a given date.
-
-- chinese_content: Douban ratings, Maoyan box office, Bilibili stats,
-  Sina/Baidu search results. Tasks need data from Chinese platforms
-  that are not indexed by English search engines.
-
-- politics: Election results, polling data, legislative votes,
-  approval ratings. Tasks need specific outcomes or numbers.
-
-- technology: Product release dates, model benchmarks, company
-  announcements, open-source project metrics. Tasks need facts about
-  tech events before the cutoff date.
-
-KEY INSIGHT: Tasks require web search with date cutoff — the solver
-must find information available BEFORE the task's creation date.
-The biggest failure mode is NOT lack of search ability but lack of
-STRUCTURED data extraction. The solver wastes turns reformulating
-queries when it could get exact answers from structured APIs.
+Discover capability regimes by reading the batch trajectories — do NOT
+use a hardcoded list. Group tasks by what KIND of data they need
+(e.g. if several tasks fail because they need exact numerical values
+from structured databases, that's a regime). The regimes should emerge
+from the actual failure patterns, not from domain labels.
 
 When analyzing failures, distinguish between:
-1. "No source available" — need new API/pipeline for this regime
-2. "Source exists but returns unstructured noise" — need better
-   scraping/extraction in the pipeline
-3. "Source works but solver doesn't use it efficiently" — need
-   better prompt guidance, not more tools
+1. "No source available" — no pipeline covers this kind of query
+2. "Source returns unstructured noise" — a pipeline exists but its
+   output is too messy for the solver to extract answers from
+3. "Solver uses too many turns" — the pipeline works but the solver
+   doesn't use it efficiently (prompt guidance issue, not infra)
