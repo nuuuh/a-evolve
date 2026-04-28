@@ -228,8 +228,6 @@ def main():
 
         # Evolution infrastructure
         ws_dir = agent.workspace.root
-        evo_dir = ws_dir / "evolution"
-        evo_dir.mkdir(parents=True, exist_ok=True)
         versioning = VersionControl(ws_dir)
         versioning.init()
 
@@ -249,6 +247,18 @@ def main():
         config.extra.setdefault("region", args.region)
         if args.verbose:
             config.extra["verbose"] = True
+
+        # Observer writes to evolver workspace when structured_evolution
+        # is active (separate workspace), else to solver workspace.
+        orchestrator_type = config.extra.get("orchestrator", "")
+        if orchestrator_type == "structured_evolution":
+            from agent_evolve.algorithms.navigation.templates._evolution_workspace import (
+                get_evolver_workspace_path,
+            )
+            evo_dir = get_evolver_workspace_path(ws_dir) / "evolution"
+        else:
+            evo_dir = ws_dir / "evolution"
+        evo_dir.mkdir(parents=True, exist_ok=True)
         observer = Observer(
             evo_dir,
             trajectory_only=config.trajectory_only,

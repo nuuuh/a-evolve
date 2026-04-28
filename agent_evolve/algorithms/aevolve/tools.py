@@ -143,26 +143,22 @@ class EvolverSandbox:
             mounts += ["-v", f"{self.evolver_workspace}:/evolver_workspace"]
             work_dir = "/evolver_workspace"
 
-        # Mask the ground-truth observations tree with a tmpfs so the
-        # evolver cannot read success/score/feedback even though the
-        # solver workspace itself is mounted RW. This is a defence-in-
-        # depth complement to the /trajectories:ro mount below: the
-        # only way for the evolver to reach observer data is via the
-        # privacy-safe trajectories/ + patches tree.
-        mounts += ["--tmpfs", "/solver_workspace/evolution/observations"]
-        # Also mask feedback_archive.jsonl which contains unrevealed
-        # labels when temporal_reveal is enabled. tmpfs can only mask
-        # directories; for individual files, bind-mount /dev/null.
-        archive = Path(self.workspace_root) / "evolution" / "feedback_archive.jsonl"
-        if archive.exists():
-            mounts += ["-v", "/dev/null:/solver_workspace/evolution/feedback_archive.jsonl:ro"]
-        if self.evolver_workspace:
-            mounts += [
-                "--tmpfs", "/evolver_workspace/evolution/observations",
-            ]
-            evo_archive = Path(self.evolver_workspace) / "evolution" / "feedback_archive.jsonl"
-            if evo_archive.exists():
-                mounts += ["-v", "/dev/null:/evolver_workspace/evolution/feedback_archive.jsonl:ro"]
+        # Mask ground-truth observations and feedback_archive in whichever
+        # workspace contains them. When evolver_workspace exists, the
+        # Observer writes to evolver_workspace/evolution/; otherwise to
+        # solver_workspace/evolution/.
+        for mount_prefix, host_root in [
+            ("/solver_workspace", self.workspace_root),
+            ("/evolver_workspace", self.evolver_workspace),
+        ]:
+            if host_root is None:
+                continue
+            obs_dir = Path(host_root) / "evolution" / "observations"
+            if obs_dir.exists():
+                mounts += ["--tmpfs", f"{mount_prefix}/evolution/observations"]
+            archive = Path(host_root) / "evolution" / "feedback_archive.jsonl"
+            if archive.exists():
+                mounts += ["-v", f"/dev/null:{mount_prefix}/evolution/feedback_archive.jsonl:ro"]
 
         # Read-only trajectories mount. Evolution ground truth
         # (success/score/feedback in batch_*.jsonl) is masked above and

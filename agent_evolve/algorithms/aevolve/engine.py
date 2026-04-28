@@ -258,7 +258,10 @@ class AEvolveEngine(EvolutionEngine):
         # Mount the safe trajectories subtree (conversation + patch only).
         # Ground-truth-bearing observations/*.jsonl is deliberately not
         # mounted: the evolver must infer from behaviour alone.
-        trajectories_dir = Path(workspace_root) / "evolution" / "trajectories"
+        if evolver_workspace:
+            trajectories_dir = Path(evolver_workspace) / "evolution" / "trajectories"
+        else:
+            trajectories_dir = Path(workspace_root) / "evolution" / "trajectories"
         trajectories_dir.mkdir(parents=True, exist_ok=True)
         sandbox = make_workspace_bash(
             workspace_root,
