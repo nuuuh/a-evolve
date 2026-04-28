@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import EvolutionTemplate
-from ._guardrails import apply_all_guardrails
+from ._guardrails import strip_search_caps, cap_prompt_size
 from ....engine.human_interface import create_interface
 from ._evolution_workspace import (
     get_evolver_workspace_path,
@@ -204,12 +204,20 @@ class Template(EvolutionTemplate):
             evo_number, max_retries, prompts_dir, trajectory, evo_ws,
         )
 
-        # ── Guardrails G2-G5 ──
+        # ── Guardrails G2 + G5 (skip G4 — structured tools are modules,
+        #    not CLI scripts, so G4's subprocess test would remove them) ──
         if mutated:
-            sample_query = _extract_sample_query(batch_results)
-            guardrail_results = apply_all_guardrails(
-                ws_root, sample_query=sample_query,
-            )
+            guardrail_results: dict[str, Any] = {}
+            prompt_path = ws_root / "prompts" / "system.md"
+            if prompt_path.exists():
+                original = prompt_path.read_text()
+                cleaned = strip_search_caps(original)
+                if cleaned != original:
+                    prompt_path.write_text(cleaned)
+                    guardrail_results["search_caps_stripped"] = True
+                else:
+                    guardrail_results["search_caps_stripped"] = False
+            guardrail_results["prompt_truncated"] = cap_prompt_size(ws_root)
             trajectory.append({"step": "guardrails", **guardrail_results})
             vc.commit(
                 message=f"evo-{evo_number}-guardrails: cleanup",
