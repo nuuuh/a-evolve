@@ -397,7 +397,7 @@ class Template(EvolutionTemplate):
         in_failure_section = False
         gaps = []
         for line in task_board.splitlines():
-            stripped = line.strip()
+            stripped = line.strip().replace("`", "")
             # Accept #, ##, ### variants of Failure Patterns heading
             if re.match(r"^#{1,3}\s+Failure Patterns", stripped, re.IGNORECASE):
                 in_failure_section = True
@@ -420,7 +420,7 @@ class Template(EvolutionTemplate):
         # Fallback: if no gaps found in section, scan all PRIORITY bullets
         if not gaps:
             for line in task_board.splitlines():
-                stripped = line.strip()
+                stripped = line.strip().replace("`", "")
                 if "|" in stripped:
                     continue
                 match = re.match(

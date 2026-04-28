@@ -121,7 +121,7 @@ def validate_task_board(content: str) -> bool:
     in_failure = False
     valid_count = 0
     for line in content.splitlines():
-        stripped = line.strip()
+        stripped = line.strip().replace("`", "")
         if re.match(r"^##\s+Failure Patterns(?:\s*\(.*\))?\s*$", stripped, re.IGNORECASE):
             in_failure = True
             continue
