@@ -44,15 +44,23 @@ logger = logging.getLogger(__name__)
 
 
 def _strip_preamble(content: str) -> str:
-    """Strip conversational text before the ## Failure Patterns heading.
+    """Strip conversational text before the Failure Patterns heading.
 
     LLMs often emit reasoning text before the structured output.
     We keep only the content starting from the heading.
+    Tolerates #, ##, ###, or **bold** heading variants and normalizes
+    to ## for downstream validation.
     """
     lines = content.splitlines(keepends=True)
     for i, line in enumerate(lines):
-        if re.match(r"^##\s+Failure Patterns", line.strip(), re.IGNORECASE):
-            return "".join(lines[i:])
+        stripped = line.strip()
+        if re.match(r"^#{1,3}\s+Failure Patterns", stripped, re.IGNORECASE):
+            # Normalize to ## heading
+            normalized = re.sub(r"^#{1,3}\s+", "## ", stripped)
+            return normalized + "\n" + "".join(lines[i + 1:])
+        if re.match(r"^\*{1,2}Failure Patterns", stripped, re.IGNORECASE):
+            normalized = re.sub(r"^\*{1,2}(.*)\*{1,2}$", r"## \1", stripped)
+            return normalized + "\n" + "".join(lines[i + 1:])
     return content
 
 
@@ -288,7 +296,11 @@ class Template(EvolutionTemplate):
                     trajectory.append({"step": "analyze", "success": True, "repaired": True})
                 else:
                     logger.warning("Phase 1: analyst output failed validation after repair")
-                    trajectory.append({"step": "analyze", "success": False, "reason": "invalid_format"})
+                    # Best-effort: save raw content so _extract_gaps can try
+                    # to find PRIORITY bullets even in malformed boards
+                    update_task_board(evo_ws, repaired or content)
+                    trajectory.append({"step": "analyze", "success": False,
+                                       "reason": "invalid_format", "best_effort": True})
             else:
                 trajectory.append({"step": "analyze", "success": False, "reason": "empty_output"})
         except Exception as e:
@@ -386,10 +398,11 @@ class Template(EvolutionTemplate):
         gaps = []
         for line in task_board.splitlines():
             stripped = line.strip()
-            if re.match(r"^##\s+Failure Patterns(?:\s*\(.*\))?\s*$", stripped, re.IGNORECASE):
+            # Accept #, ##, ### variants of Failure Patterns heading
+            if re.match(r"^#{1,3}\s+Failure Patterns", stripped, re.IGNORECASE):
                 in_failure_section = True
                 continue
-            if stripped.startswith("## "):
+            if re.match(r"^#{1,3}\s+", stripped):
                 in_failure_section = False
                 continue
             if not in_failure_section:
@@ -404,6 +417,20 @@ class Template(EvolutionTemplate):
                 tag = match.group(1).lower()
                 if tag not in IGNORED_GAP_LABELS:
                     gaps.append(tag)
+        # Fallback: if no gaps found in section, scan all PRIORITY bullets
+        if not gaps:
+            for line in task_board.splitlines():
+                stripped = line.strip()
+                if "|" in stripped:
+                    continue
+                match = re.match(
+                    r"[-*]\s*(\w[\w_]*):\s*\d+.*PRIORITY:\s*(HIGH|MEDIUM|LOW)",
+                    stripped, re.IGNORECASE,
+                )
+                if match:
+                    tag = match.group(1).lower()
+                    if tag not in IGNORED_GAP_LABELS:
+                        gaps.append(tag)
         return gaps[:k]
 
     # ────────────────────────────────────────────────────────────────
