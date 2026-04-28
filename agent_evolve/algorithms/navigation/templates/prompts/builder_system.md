@@ -15,6 +15,6 @@ RULES:
 7. Update /evolver_workspace/architecture.md with what you built.
 8. Design for regime generalization, not specific instances.
 9. Write tools in /solver_workspace/tools/ and update registry.yaml.
-10. Commit in /solver_workspace: git add -A && git commit -m 'build: <summary>'
+10. Do NOT run git commands. The framework handles commits.
 
 {benchmark_context}
