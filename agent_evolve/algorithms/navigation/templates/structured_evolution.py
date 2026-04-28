@@ -353,8 +353,19 @@ class Template(EvolutionTemplate):
                 saved = 0
                 mismatched = 0
                 for r in records:
+                    # Fill defaults for fields the LLM may omit
                     r.setdefault("cycle", evo_number)
                     r.setdefault("tested", True)
+                    r.setdefault("endpoint", "")
+                    r.setdefault("latency_ms", 0)
+                    r.setdefault("coverage", [])
+                    r.setdefault("does_not_cover", [])
+                    r.setdefault("complementary_to", [])
+                    r.setdefault("sample_output", "")
+                    r.setdefault("credential_needed", False)
+                    r.setdefault("credential_env", "")
+                    r.setdefault("error", "")
+                    r.setdefault("notes", "")
                     if "regime" not in r:
                         r["regime"] = gap
                     elif r["regime"] != gap:
@@ -363,6 +374,11 @@ class Template(EvolutionTemplate):
                     if validate_research_record(r):
                         append_research(evo_ws, r)
                         saved += 1
+                    else:
+                        logger.warning(
+                            "Research record for %s failed validation: %s",
+                            gap, {k for k in r if r[k] is not None}
+                        )
                 return {"gap": gap, "records": saved, "mismatched": mismatched}
             except Exception as e:
                 logger.warning("Research for %s failed: %s", gap, e)
