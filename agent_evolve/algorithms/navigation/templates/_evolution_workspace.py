@@ -44,10 +44,24 @@ def _ws_path(evo_root: Path) -> Path:
     return evo_root
 
 
+TESTS_DIR = "tests"
+
+
 def init_evolution_workspace(evo_root: Path) -> None:
-    """Create evolver workspace structure if missing."""
+    """Create evolver workspace structure if missing.
+
+    Layout:
+      evolver_workspace/
+        task_board.md          — failure patterns + prioritized gaps
+        research_log.jsonl     — structured research records
+        architecture.md        — what was built and why
+        insights.jsonl         — cross-cycle lessons
+        tests/                 — verification test scripts + logs
+        evolution/             — observer data (created by harness)
+    """
     ws = _ws_path(evo_root)
     ws.mkdir(parents=True, exist_ok=True)
+    (ws / TESTS_DIR).mkdir(exist_ok=True)
     tb = ws / TASK_BOARD
     if not tb.exists():
         tb.write_text(
