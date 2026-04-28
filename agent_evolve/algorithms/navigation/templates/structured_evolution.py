@@ -66,13 +66,32 @@ def _extract_sample_query(batch_results: list[dict]) -> str:
     return "latest news headlines 2026"
 
 
+_GENERAL_PROMPTS_DIR = Path(__file__).parent / "prompts"
+
+
 def _load_prompt(prompts_dir: Path | None, name: str, fallback: str = "") -> str:
-    """Load a prompt file from the prompts directory, or return fallback."""
+    """Load a general prompt and append benchmark-specific context.
+
+    1. Load the general prompt from templates/prompts/<name>
+    2. Load the benchmark context from <prompts_dir>/<name> if it exists
+    3. Replace {benchmark_context} in the general prompt with the
+       benchmark content (or empty string if no benchmark file)
+    """
+    general = _GENERAL_PROMPTS_DIR / name
+    if general.exists():
+        text = general.read_text()
+    elif fallback:
+        text = fallback
+    else:
+        return ""
+
+    benchmark_context = ""
     if prompts_dir:
-        p = prompts_dir / name
-        if p.exists():
-            return p.read_text()
-    return fallback
+        bp = Path(prompts_dir) / name
+        if bp.exists():
+            benchmark_context = bp.read_text().strip()
+
+    return text.replace("{benchmark_context}", benchmark_context)
 
 
 def _parse_json_blocks(text: str) -> list[dict]:
