@@ -12,9 +12,11 @@ showed are necessary to avoid regression:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -147,6 +149,43 @@ def cap_prompt_size(
     logger.info("G5: truncated prompt from %d to %d chars",
                 len(content), max_chars)
     return True
+
+
+def verify_pipeline(workspace_root: Path, timeout: int = 15) -> bool:
+    """Test that infra/search_pipeline.py runs and returns valid JSON (G6).
+
+    Returns True if pipeline is valid or absent. Returns False and removes
+    the pipeline if it fails.
+    """
+    pipeline = workspace_root / "infra" / "search_pipeline.py"
+    if not pipeline.exists():
+        return True
+    test_input = json.dumps({"query": "test query 2026", "cutoff_date": "2026-01-15"})
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(pipeline)],
+            input=test_input, capture_output=True, text=True, timeout=timeout,
+            cwd=str(workspace_root),
+        )
+        if proc.returncode != 0:
+            logger.info("G6: removed search_pipeline.py (exit %d: %s)",
+                        proc.returncode, proc.stderr[:200])
+            pipeline.unlink()
+            return False
+        output = json.loads(proc.stdout.strip())
+        if not isinstance(output, dict):
+            logger.info("G6: removed search_pipeline.py (output not a dict)")
+            pipeline.unlink()
+            return False
+        return True
+    except subprocess.TimeoutExpired:
+        logger.info("G6: removed search_pipeline.py (timeout %ds)", timeout)
+        pipeline.unlink()
+        return False
+    except (json.JSONDecodeError, Exception) as e:
+        logger.info("G6: removed search_pipeline.py (%s)", e)
+        pipeline.unlink()
+        return False
 
 
 def apply_all_guardrails(

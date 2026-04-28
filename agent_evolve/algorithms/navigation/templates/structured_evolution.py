@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import EvolutionTemplate
-from ._guardrails import strip_search_caps, cap_prompt_size
+from ._guardrails import strip_search_caps, cap_prompt_size, verify_pipeline
 from ....engine.human_interface import create_interface
 from ._evolution_workspace import (
     get_evolver_workspace_path,
@@ -204,8 +204,7 @@ class Template(EvolutionTemplate):
             evo_number, max_retries, prompts_dir, trajectory, evo_ws,
         )
 
-        # ── Guardrails G2 + G5 (skip G4 — structured tools are modules,
-        #    not CLI scripts, so G4's subprocess test would remove them) ──
+        # ── Guardrails G2 + G5 + G6 + infra cleanup ──
         if mutated:
             guardrail_results: dict[str, Any] = {}
             prompt_path = ws_root / "prompts" / "system.md"
@@ -218,6 +217,18 @@ class Template(EvolutionTemplate):
                 else:
                     guardrail_results["search_caps_stripped"] = False
             guardrail_results["prompt_truncated"] = cap_prompt_size(ws_root)
+            guardrail_results["pipeline_valid"] = verify_pipeline(ws_root)
+            # Clean up non-pipeline files from infra/ (prevent multi-module drift)
+            infra_dir = ws_root / "infra"
+            if infra_dir.exists():
+                allowed = {"search_pipeline.py", "__init__.py", "__pycache__"}
+                for item in list(infra_dir.iterdir()):
+                    if item.name not in allowed and not item.name.startswith("."):
+                        if item.is_file():
+                            item.unlink()
+                        elif item.is_dir() and item.name != "__pycache__":
+                            import shutil
+                            shutil.rmtree(item)
             trajectory.append({"step": "guardrails", **guardrail_results})
             vc.commit(
                 message=f"evo-{evo_number}-guardrails: cleanup",

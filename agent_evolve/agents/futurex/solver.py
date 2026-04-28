@@ -589,48 +589,45 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
         def _strict_search(query):
             """Multi-source pre-cutoff search — guaranteed zero label leakage.
 
-            If an evolved infra/search_pipeline.py exists, it generates search
-            queries/config. The actual HTTP+htmldate filtering is always enforced
-            by the framework regardless of what the evolved code returns.
-
-            Layers:
-              1. Wikipedia Revision API  — encyclopedic content
-              2. Evolved search pipeline OR DuckDuckGo+htmldate (free)
-              3. FRED                    — economic indicators (if query matches)
+            Layers (evolved pipeline first, wiki/FRED as fallbacks):
+              1. Evolved search pipeline  — direct API results + smarter queries
+              2. Web search (htmldate)    — pipeline queries OR original query
+              3. Wikipedia Revision API   — fallback encyclopedic content
+              4. FRED                     — fallback economic indicators
             """
             results = []
-
-            # Layer 1: Wikipedia
-            try:
-                for title in _wiki_search(query, limit=5):
-                    if title.lower() in _seen_titles:
-                        continue
-                    rev = _wiki_revision(title)
-                    if rev:
-                        ts, text = rev
-                        _seen_titles.add(title.lower())
-                        results.append(f"{title}\n   [Wikipedia rev {ts}] {text}")
-                    if len(results) >= 3:
-                        break
-            except Exception as e:
-                log.debug("Wikipedia layer failed: %s", e)
-
-            # Layer 2: Web search
-            # If evolved infra/search_pipeline.py exists, use it for query
-            # generation. The htmldate filtering is ALWAYS enforced by framework.
             search_queries = [query]
+
+            # Layer 1+2: Evolved search pipeline
             if _infra_search:
                 try:
+                    pipeline_input = json.dumps({
+                        "query": query,
+                        "cutoff_date": cutoff_str,
+                    })
                     proc = subprocess.run(
                         [sys.executable, str(_infra_search)],
-                        input=query, capture_output=True, text=True, timeout=10,
+                        input=pipeline_input,
+                        capture_output=True, text=True, timeout=20,
                     )
                     if proc.returncode == 0 and proc.stdout.strip():
                         config_out = json.loads(proc.stdout.strip())
+                        # Direct results from structured APIs (pipeline-verified dates)
+                        for dr in config_out.get("direct_results", []):
+                            title = dr.get("title", "")
+                            content = dr.get("content", "")
+                            source = dr.get("source", "API")
+                            date = dr.get("date", "")
+                            if content and title.lower() not in _seen_titles:
+                                _seen_titles.add(title.lower())
+                                attr = f"[{source}" + (f" {date}]" if date else "]")
+                                results.append(f"{title}\n   {attr} {content}")
+                        # Alternative queries for web search
                         search_queries = config_out.get("queries", [query])
                 except Exception as e:
                     log.debug("Evolved search pipeline failed: %s", e)
 
+            # Layer 2: Web search with htmldate filtering
             for sq in search_queries[:3]:
                 web_results = _htmldate_web_search(sq, limit=3)
                 for wr in web_results:
@@ -639,8 +636,24 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                         _seen_titles.add(first_line)
                         results.append(wr)
 
-            # Layer 3: FRED economic data
-            if _is_economic_query(query):
+            # Layer 3: Wikipedia fallback (if pipeline + web search came up short)
+            if len(results) < 3:
+                try:
+                    for title in _wiki_search(query, limit=5):
+                        if title.lower() in _seen_titles:
+                            continue
+                        rev = _wiki_revision(title)
+                        if rev:
+                            ts, text = rev
+                            _seen_titles.add(title.lower())
+                            results.append(f"{title}\n   [Wikipedia rev {ts}] {text}")
+                        if len(results) >= 5:
+                            break
+                except Exception as e:
+                    log.debug("Wikipedia layer failed: %s", e)
+
+            # Layer 4: FRED economic data fallback
+            if _is_economic_query(query) and len(results) < 3:
                 results.extend(_fred_search(query))
 
             if not results:
@@ -694,6 +707,115 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                 "You are done. Do NOT call any more tools."
             )
 
+        # -- LLM temporal filter (replaces htmldate) ---------
+        _filter_client = None
+        _filter_enabled = (
+            config_obj and hasattr(config_obj, 'extra')
+            and config_obj.extra.get("sandbox_network") == "bridge"
+        )
+
+        def _temporal_filter(content: str, command: str) -> str:
+            """LLM-based temporal filter for all tool output.
+
+            Sends the task description, cutoff date, and retrieved
+            content to Haiku.  Haiku returns a REDACTED version with
+            post-cutoff values replaced by [REDACTED], or the original
+            content if everything is pre-cutoff.
+
+            Triggers on both serper_search and jina_reader output.
+            """
+            if not _filter_enabled:
+                return content
+            if "serper_search" not in command and "jina_reader" not in command:
+                return content
+            if len(content) < 80:
+                return content
+
+            nonlocal _filter_client
+            try:
+                if _filter_client is None:
+                    import boto3 as _boto3
+                    _filter_client = _boto3.client(
+                        "bedrock-runtime",
+                        region_name=args_dict.get("region", "us-east-1"),
+                    )
+
+                snippet = content[:4000]
+                resp = _filter_client.converse(
+                    modelId="us.anthropic.claude-3-5-haiku-20241022-v1:0",
+                    messages=[{"role": "user", "content": [{"text":
+                        f"TASK: {prompt[:300]}\n"
+                        f"CUTOFF DATE: {_date_end}\n"
+                        f"The agent must predict events AFTER the cutoff "
+                        f"date using ONLY information available BEFORE it.\n\n"
+                        f"Below is content retrieved by the agent's tools. "
+                        f"Your job:\n"
+                        f"1. Identify any specific data points (numbers, "
+                        f"names, rankings, statistics) that correspond to "
+                        f"dates AFTER {_date_end}. These would directly "
+                        f"answer the prediction task — that is label leakage.\n"
+                        f"2. If you find leaked data: return the content "
+                        f"with ONLY the post-cutoff values replaced by "
+                        f"[REDACTED]. Keep all pre-cutoff data intact — "
+                        f"the agent needs it for trend analysis.\n"
+                        f"3. If all data is before the cutoff, or the "
+                        f"content is a live platform ranking page (Douban, "
+                        f"Maoyan, QQ Music) with no explicit post-cutoff "
+                        f"dates, return: CLEAN\n\n"
+                        f"CONTENT:\n{snippet}"
+                    }]}],
+                    system=[{"text":
+                        "You are a temporal leakage filter for a prediction "
+                        "benchmark. The agent predicts future events and must "
+                        "not see actual outcomes beforehand.\n\n"
+                        "RULES:\n"
+                        "- Replace ALL data points dated STRICTLY AFTER the "
+                        "cutoff with [REDACTED]\n"
+                        "- Keep data ON or BEFORE the cutoff\n"
+                        "- For tables: redact entire rows where date > cutoff\n"
+                        "- For search snippets: redact values for dates > cutoff\n"
+                        "- Live platform ranking pages (Douban, Maoyan, QQ Music, "
+                        "Maoer FM, Dongchedi) WITHOUT per-row dates: CLEAN\n"
+                        "- If ALL content is on/before cutoff or undated "
+                        "rankings: reply exactly CLEAN\n"
+                        "- Otherwise: return content with post-cutoff values "
+                        "replaced by [REDACTED]\n"
+                        "- Be strict: Apr 10 data is AFTER an Apr 8 cutoff"
+                    }],
+                    inferenceConfig={"maxTokens": 4096, "temperature": 0},
+                )
+                verdict = ""
+                for block in resp.get("output", {}).get("message", {}).get("content", []):
+                    if "text" in block:
+                        verdict = block["text"].strip()
+                        break
+
+                if verdict == "CLEAN":
+                    return content
+
+                if "[REDACTED]" in verdict:
+                    n_redacted = verdict.count("[REDACTED]")
+                    log.info("Temporal filter: redacted %d values (cutoff=%s)",
+                             n_redacted, _date_end)
+                    return (
+                        f"[Temporal filter: {n_redacted} post-cutoff values "
+                        f"redacted (cutoff={_date_end})]\n\n" + verdict
+                    )
+
+                if verdict.upper().startswith("LEAKED"):
+                    reason = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
+                    log.info("Temporal filter blocked: %s", reason[:80])
+                    return (
+                        f"[LEAKAGE BLOCKED: {reason}]\n\n"
+                        "Post-cutoff data was removed. Use pre-cutoff "
+                        "trends and historical data to make your prediction."
+                    )
+
+            except Exception as e:
+                log.debug("Temporal filter failed (passthrough): %s", e)
+
+            return content
+
         # -- bash (only when Docker sandbox is available) --
         @tool
         def bash(command: str) -> str:
@@ -718,6 +840,7 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                     return "(no output)"
                 if len(out) > 8000:
                     out = out[:4000] + "\n...[truncated]...\n" + out[-4000:]
+                out = _temporal_filter(out, command)
                 return out
             except subprocess.TimeoutExpired:
                 return "ERROR: Command timed out after 30s."

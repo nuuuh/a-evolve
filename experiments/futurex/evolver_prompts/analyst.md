@@ -1,20 +1,18 @@
-Tasks are temporal prediction questions that require finding factual
-information available BEFORE a cutoff date. The solver uses web search
-to gather evidence, then submits an answer.
+Tasks are temporal prediction questions requiring factual information
+available BEFORE a cutoff date. The solver calls web_search(query)
+which internally runs infra/search_pipeline.py to fetch structured
+data from APIs, then falls back to Wikipedia and web search.
 
-Identify failure regimes by DATA SOURCE CAPABILITY, not by solver
-behavior. Group tasks by what kind of data source they need:
-- Tasks needing exact numerical data from structured APIs
-- Tasks needing dated news articles or event reports
-- Tasks needing content from non-English platforms
-- Tasks needing sports scores or tournament results
-These are examples — discover the actual regimes from trajectories.
+Identify failure regimes by what DATA SOURCE the pipeline is missing:
+- Tasks where the pipeline returns no direct_results → needs a new
+  handler function in search_pipeline.py for that data type
+- Tasks where direct_results exist but are wrong/incomplete → the
+  handler needs better parsing or a fallback API chain
+- Tasks where classify() routes to the wrong handler → classification
+  patterns need updating
+- Tasks where the solver wastes turns despite good results → this is
+  a prompt/strategy issue, not a pipeline gap
 
-When analyzing failures, distinguish between:
-1. "No source module" — infra/sources/ has no module for this query type
-2. "Source exists but extraction is poor" — a module exists but returns
-   unstructured noise; needs better scraping/formatting
-3. "Router misclassifies" — query goes to the wrong source module
-4. "Solver behavior issue" — infra works but solver wastes turns
-   (this is a prompt problem, NOT an infra gap — note it but don't
-   create a new source module for it)
+Do NOT name regimes after solver behavior (e.g. "excessive_searching").
+Name them after the missing data capability (e.g. "sports_scores",
+"crypto_prices", "chinese_content").

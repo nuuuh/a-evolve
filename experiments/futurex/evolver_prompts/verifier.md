@@ -1,22 +1,28 @@
-For FutureX temporal prediction tasks, verify each source module:
+Test the search pipeline at /solver_workspace/infra/search_pipeline.py:
 
-1. ANSWER QUALITY: Does the output contain a specific, extractable
-   answer? The solver should be able to read the output and commit
-   to an answer without further searching. Reject outputs that are
-   vague, narrative, or just a list of links.
+Run it via subprocess:
+  echo '{{"query": "<sample_query>", "cutoff_date": "{cutoff_date}"}}' | python3 /solver_workspace/infra/search_pipeline.py
 
-2. DATE COMPLIANCE: Query with a cutoff date and verify no returned
-   content is from after that date.
+For each data category the pipeline handles, verify:
 
-3. SCRAPING ROBUSTNESS: Try queries with non-ASCII characters,
-   unusual formatting, very old dates. The source should return
-   "" gracefully, not crash or return garbage.
+1. DIRECT RESULTS: Does it return specific, extractable answers?
+   "AAPL close: $237.42 on 2026-01-07" → PASS
+   Empty list or vague text → FAIL
 
-4. FALLBACK CHAIN: Try a query the primary API can't answer and
-   verify the secondary source in the chain returns data.
+2. DATE COMPLIANCE: Do all direct_results have dates before cutoff?
+   Any post-cutoff data → FAIL
 
-5. OUTPUT FORMAT: Verify the response is under 2000 characters,
-   contains no raw HTML/JSON blobs, and leads with the key fact.
+3. CLASSIFICATION: Does classify() route different query types
+   correctly? Test a finance query, a news query, a general query.
 
-6. ROUTER: Verify that different query types route to the correct
-   source module (e.g. a price query goes to finance, not news).
+4. FALLBACK: If the primary API fails (bad ticker, timeout), does
+   the handler return [] gracefully without crashing?
+
+5. QUERIES: Does the pipeline generate useful alternative search
+   terms in the "queries" field?
+
+6. FORMAT: Output is valid JSON with optional direct_results and
+   queries fields. Script exits 0. Completes under 15 seconds.
+
+Test with diverse queries: a stock price, a news event, a sports
+result, and a query in the "general" category.
