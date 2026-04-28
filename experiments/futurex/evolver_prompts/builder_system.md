@@ -1,33 +1,42 @@
 Pipelines take `cutoff_date` in context kwargs. The solver calls
-`web_search(query)` which routes through infra pipelines.
+`web_search(query)` which routes through infra.
 
-PIPELINE DESIGN PRINCIPLES:
+TARGET INFRA STRUCTURE:
+```
+infra/
+  __init__.py
+  router.py           # classify query → dispatch to right source
+  utils.py            # shared: HTML→text, JSON parsing, date filter, output format
+  sources/
+    <source>.py       # one module per data source CAPABILITY
+```
 
-1. ONE PIPELINE PER REGIME. Each pipeline integrates multiple sources
-   into a fallback chain. Example: a finance pipeline might chain
-   a structured API → a scraper for a backup site → a news search
-   as last resort. The solver doesn't choose sources — the pipeline
-   routes internally.
+Each source module in infra/sources/ covers a DATA CAPABILITY, not a
+failure mode. Examples: a finance source handles stock prices, index
+values, exchange rates. A news source handles dated headlines, event
+reports. Do NOT name modules after solver problems (e.g. no
+"answer_format_mismatch_pipeline.py" or "turn_waste_pipeline.py").
 
-2. SCRAPING AND EXTRACTION IS THE CORE VALUE. Accessing a URL is
-   trivial. What matters is:
-   - Parsing HTML tables, JSON responses, CSV data, RSS/XML feeds
-   - Extracting the specific fact the solver needs (not the whole page)
-   - Formatting it as clean, agent-readable text
-   - Handling encoding, pagination, rate limits, error responses
-   Build shared extraction helpers in infra/utils.py.
+EACH SOURCE MODULE should:
+- Have a `search(query, cutoff_date) -> str` method
+- Contain a fallback chain: primary API → secondary → web search
+- Include scraping/extraction logic that turns raw responses into
+  clean, agent-readable text (this is where the value is)
+- Handle errors gracefully — return "" on failure, let router try next
 
-3. STRUCTURED OUTPUT FORMAT. Every pipeline must return text that an
-   LLM can parse in one read:
-   - Lead with the most relevant fact and its date
-   - Include source attribution so the solver can assess reliability
-   - Cap at 2000 characters — trim to the most relevant items
-   - Return "" on failure, never raw HTML or stack traces
+THE ROUTER (infra/router.py) should:
+- Classify incoming queries by capability type
+- Try sources in order of specificity (structured API → general web)
+- Return the first non-empty result
 
-4. DATE FILTERING. Pipelines must respect cutoff_date. Never return
-   data from after the cutoff. Implement filtering at the source
-   level (API params) and verify at the output level.
+SHARED UTILS (infra/utils.py) should:
+- HTML → text extraction
+- JSON/CSV/XML parsing helpers
+- Date filtering and validation
+- Output formatting (cap at 2000 chars, structured format)
 
-5. ERROR RESILIENCE. Every source method returns "" on failure.
-   The pipeline tries the next source in the chain automatically.
-   Log which source succeeded for architecture documentation.
+EVOLUTION IS INCREMENTAL:
+- Cycle 1 might create 2-3 source modules + router
+- Cycle 2 adds a new source module OR improves an existing one
+  by adding a new API to its fallback chain
+- Don't rebuild what already works — extend it

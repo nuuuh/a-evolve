@@ -28,3 +28,9 @@ For each source you test, evaluate the FULL pipeline viability:
 Remember: the hard part is NOT finding a URL that returns data.
 The hard part is building a reliable extraction path that turns raw
 responses into clean, structured, agent-readable text.
+
+Your research records feed directly into the builder. For each
+verified source, document:
+- Which source MODULE it should go into (e.g. finance, news, sports)
+- The exact parsing steps needed to extract structured output
+- How it complements other sources in the same module's fallback chain
