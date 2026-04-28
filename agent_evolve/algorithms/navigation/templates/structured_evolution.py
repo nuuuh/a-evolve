@@ -349,7 +349,11 @@ class Template(EvolutionTemplate):
                     system_prompt=system,
                     evolver_workspace=evo_ws,
                 )
-                records = _parse_json_blocks(result.get("content", ""))
+                # Read records from file the agent wrote, plus any in response text
+                file_path = evo_ws / "tests" / f"research_{gap}.jsonl"
+                file_text = file_path.read_text() if file_path.exists() else ""
+                all_text = file_text + "\n" + (result.get("content", "") or "")
+                records = _parse_json_blocks(all_text)
                 saved = 0
                 mismatched = 0
                 for r in records:
