@@ -1,13 +1,13 @@
 PIPELINE CONTRACT (infra/search_pipeline.py):
 
 Input (JSON via stdin):
-  {"query": "...", "cutoff_date": "YYYY-MM-DD"}
+  {{"query": "...", "cutoff_date": "YYYY-MM-DD"}}
 
 Output (JSON via stdout):
-  {"classification": "...", "direct_results": [...], "queries": [...]}
+  {{"classification": "...", "direct_results": [...], "queries": [...]}}
 
   direct_results: structured API data (pre-verified dates)
-    [{"title": str, "content": str, "source": str, "date": str}]
+    [{{"title": str, "content": str, "source": str, "date": str}}]
   queries: alternative search terms for the framework's web search
 
 WHAT TO BUILD:
