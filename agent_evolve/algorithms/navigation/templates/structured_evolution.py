@@ -118,6 +118,95 @@ def _parse_json_blocks(text: str) -> list[dict]:
     return records
 
 
+def _bundle_infra(ws_root: Path) -> None:
+    """Bundle infra/sources/*.py + utils.py + router.py into search_pipeline.py.
+
+    The builder writes multi-file source modules for readability and
+    incremental evolution. The solver runs search_pipeline.py as a
+    subprocess and can't import from infra/sources/. This bundler
+    concatenates everything into a single self-contained file.
+
+    If infra/sources/ doesn't exist, leaves search_pipeline.py as-is.
+    """
+    infra_dir = ws_root / "infra"
+    sources_dir = infra_dir / "sources"
+    if not sources_dir.exists():
+        return
+
+    parts = [
+        "#!/usr/bin/env python3",
+        '"""Bundled search pipeline — auto-generated from infra/sources/."""',
+        "import json, re, sys, urllib.error, urllib.parse, urllib.request",
+        "import xml.etree.ElementTree as ET",
+        "from datetime import datetime, timedelta, timezone",
+        "",
+    ]
+
+    # Collect source files in deterministic order
+    source_files = sorted(sources_dir.glob("*.py"))
+    source_files = [f for f in source_files if f.name != "__init__.py"]
+
+    # Also include utils.py and router.py if they exist
+    for name in ["utils.py", "router.py"]:
+        p = infra_dir / name
+        if p.exists() and p not in source_files:
+            source_files.insert(0, p)
+
+    _SKIP_IMPORTS = {
+        "import json", "import re", "import sys",
+        "import urllib.request", "import urllib.parse",
+        "import urllib.error",
+        "import xml.etree.ElementTree as ET",
+        "from datetime import datetime",
+        "from datetime import datetime, timedelta",
+        "from datetime import datetime, timedelta, timezone",
+    }
+
+    for src in source_files:
+        code = src.read_text()
+        module_name = src.stem  # e.g. "finance", "news", "utils"
+        is_source = src.parent.name == "sources"
+        lines = []
+        for line in code.splitlines():
+            if line.strip().startswith("from infra") or line.strip().startswith("import infra"):
+                continue
+            if line.strip() in _SKIP_IMPORTS:
+                continue
+            if line.strip().startswith("#!/usr/bin/env"):
+                continue
+            # Rename search() in source modules to <module>_search()
+            # so they don't clash when bundled together
+            if is_source and line.startswith("def search("):
+                line = line.replace("def search(", f"def {module_name}_search(", 1)
+            lines.append(line)
+        parts.append(f"\n# ── {src.name} {'─' * (50 - len(src.name))}")
+        parts.append("\n".join(lines))
+
+    # Add a main() entry point if not already present
+    combined = "\n".join(parts)
+    if "def main()" not in combined:
+        # Check if router.py defines main
+        if 'if __name__ == "__main__"' not in combined:
+            parts.append(
+                '\nif __name__ == "__main__":\n'
+                '    raw = sys.stdin.read().strip()\n'
+                '    try:\n'
+                '        ctx = json.loads(raw)\n'
+                '    except json.JSONDecodeError:\n'
+                '        ctx = {"query": raw, "cutoff_date": "2099-01-01"}\n'
+                '    query = ctx.get("query", raw)\n'
+                '    cutoff = ctx.get("cutoff_date", "2099-01-01")\n'
+                '    classification = classify(query) if "classify" in dir() else "general"\n'
+                '    json.dump({"classification": classification, '
+                '"direct_results": [], "queries": [query]}, sys.stdout)\n'
+            )
+
+    bundled = "\n".join(parts)
+    (infra_dir / "search_pipeline.py").write_text(bundled)
+    logger.info("Bundled %d source files into search_pipeline.py (%d lines)",
+                len(source_files), bundled.count("\n"))
+
+
 class Template(EvolutionTemplate):
     """4-phase structured evolution: analyze → research → build → verify."""
 
@@ -192,18 +281,12 @@ class Template(EvolutionTemplate):
                 else:
                     guardrail_results["search_caps_stripped"] = False
             guardrail_results["prompt_truncated"] = cap_prompt_size(ws_root)
+            # Bundle infra/sources/*.py into infra/search_pipeline.py
+            # The builder writes multi-file sources for readability;
+            # the bundler concatenates them into a single file the solver
+            # can run as a subprocess without import path issues.
+            _bundle_infra(ws_root)
             guardrail_results["pipeline_valid"] = verify_pipeline(ws_root)
-            # Clean up non-pipeline files from infra/ (prevent multi-module drift)
-            infra_dir = ws_root / "infra"
-            if infra_dir.exists():
-                allowed = {"search_pipeline.py", "__init__.py", "__pycache__"}
-                for item in list(infra_dir.iterdir()):
-                    if item.name not in allowed and not item.name.startswith("."):
-                        if item.is_file():
-                            item.unlink()
-                        elif item.is_dir() and item.name != "__pycache__":
-                            import shutil
-                            shutil.rmtree(item)
             trajectory.append({"step": "guardrails", **guardrail_results})
             vc.commit(
                 message=f"evo-{evo_number}-guardrails: cleanup",
