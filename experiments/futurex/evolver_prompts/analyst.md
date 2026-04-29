@@ -1,18 +1,14 @@
-Tasks are temporal prediction questions. The solver calls web_search(query)
-to gather evidence, then submits an answer.
+Tasks are temporal prediction questions requiring factual information
+available BEFORE a cutoff date. The solver calls web_search(query)
+which returns results from the evolved search pipeline + Wikipedia +
+web search fallbacks.
 
-The pipeline currently integrates these data sources (check architecture.md
-and the existing infra/ code to see what's built). Analyze which query
-types STILL lack good data source coverage:
-
-- Which queries returned only Wikipedia/web search (no structured API data)?
-- Which data domains have zero source coverage in the pipeline?
+Focus on DATA SOURCE COVERAGE gaps:
+- Which query types got no structured API data (only Wikipedia/web)?
+- Which data domains have zero coverage in the current pipeline?
 - Which existing sources returned errors or empty results?
-- Are there regional/language-specific gaps (e.g. Chinese, Japanese content)?
+- Are there regional/language gaps (Chinese, Japanese, non-English)?
 
-Use bash to browse /trajectories/ and /evolver_workspace/evolution/observations/
-to see what the solver actually received from web_search.
-
-The goal: identify which NEW data sources need to be discovered and
-integrated next. The more sources the pipeline covers, the more queries
-the solver can answer accurately.
+The more data sources the pipeline integrates, the more queries the
+solver can answer. Your task board should drive research toward
+discovering and integrating new sources.
