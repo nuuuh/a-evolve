@@ -1,0 +1,88 @@
+% Planned tables and figures for the ACL paper.
+% This file is a checklist. Move finalized LaTeX tables/figure commands here
+% once the experimental numbers are locked.
+
+\section*{Main Tables}
+
+% Table 1: Benchmark and temporal shift summary.
+% Columns:
+% Benchmark | Domain | Tasks | Span | Ordering | Metric | Primary shift
+% Rows:
+% PolyBench | prediction markets | 5,075 | 16 days | market close time |
+% traded accuracy/CWR return | liquidity, uncertainty, market regime
+% CTF-Dojo | CTF cybersecurity | 261 | 2011--2024 | year/event/name |
+% pass rate | challenge format, file count, runtime dependency
+% FutureX | future event prediction | 332 | 82 days | resolution date |
+% accuracy | language, searchability, difficulty, platform data
+
+% Table 2: Main results across variants.
+% This is the paper's primary empirical table.
+% Columns:
+% Benchmark | H0 Baseline | H1 Linear | Early Freeze | H5 Navigation |
+% H5 Multi | Best | Regression vs H0 | Cost
+% Use benchmark-appropriate main metric:
+% PolyBench: traded accuracy and CWR return in same cell.
+% CTF/FutureX: accuracy.
+% Add deltas in parentheses.
+
+% Table 3: Task-level transfer/regression analysis.
+% Columns:
+% Benchmark | Variant | Improved over H0 | Regressed vs H0 | Net |
+% Late-stream accuracy | Artifact size | Branch count
+% This table directly answers reviewer concerns about overfitting and
+% whether navigation merely increases capacity.
+
+% Table 4: Artifact audit.
+% Columns:
+% Artifact path | Type | Stationary/non-stationary | Evidence | Expected branch
+% Include representative artifacts from prompts, skills, tools, infra, memory.
+% Keep this table in appendix if space is tight.
+
+\section*{Main Figures}
+
+% Figure 1: Method overview.
+% Draw one diagram with:
+% (a) linear A-Evolve chain: main evolves through all batches and every task
+% loads all artifacts;
+% (b) decoupled strategy tree: main trunk plus specialized branches;
+% (c) inference path: navigator reads branch leaves and routes each task;
+% (d) evolution path: stationary failures deepen main, regime failures branch.
+% This should be the main figure in Section 3.
+
+% Figure 2: Temporal shift and performance over time.
+% Multi-panel plot:
+% x-axis = batch/time.
+% y-axis left = benchmark score; y-axis right or shaded bands = shift property.
+% Panels for PolyBench, CTF-Dojo, FutureX.
+% Overlay H0, H1, early-freeze, H5, H5_multi if available.
+% The visual should make RQ1 obvious: full linear evolution does not simply
+% improve with more cycles under temporal shift.
+
+% Figure 3: Routing behavior.
+% Stacked area chart or alluvial diagram:
+% x-axis = cycle/time; y-axis = fraction of tasks routed to each branch.
+% Annotate branch creation points and major shift regions.
+% A small side panel should show branch utilization by task property.
+
+% Figure 4: Multi-agent evolution decomposition.
+% Optional if space allows. Show planner -> assignments -> per-branch evolver
+% calls -> commits/rebases/registered branches. Use in method or appendix.
+
+\section*{Analysis Plots}
+
+% Plot A: Regression/improvement scatter.
+% x-axis = improvements over baseline; y-axis = regressions vs baseline.
+% Each point = variant/benchmark. Good systems move down/right.
+
+% Plot B: Artifact growth vs performance.
+% x-axis = prompt chars or total artifacts; y-axis = score.
+% Show that bigger workspaces are not automatically better, supporting the
+% need for selective navigation.
+
+% Plot C: Navigation confidence/calibration.
+% If navigator confidence is logged, bin by confidence and report routing
+% success proxy: branch pass rate or branch-property match.
+
+% Plot D: Branch staleness.
+% x-axis = cycles since last routed; y-axis = branch selection/pass rate.
+% Use to motivate stale-branch filtering or future work.

@@ -1,0 +1,60 @@
+\documentclass[11pt]{article}
+
+% ACL submission skeleton.
+% Replace this with the official ACL style files when drafting:
+%   \usepackage[review]{acl}
+% Keep section bodies in sections/*.tex. This entrance file should contain
+% only the preamble, title/author block, abstract, and section includes.
+
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{url}
+
+\title{Agentic Navigation for Evolution under Temporal Distribution Shift}
+
+\author{
+  % TODO: Add author list, affiliations, and contribution footnotes.
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+% Write a 4--5 sentence abstract.
+% Sentence 1: State the problem: agentic evolution adapts LLM agents from
+% deployment experience, but existing linear evolution assumes past experience
+% transfers monotonically; temporal benchmarks violate this assumption.
+% Sentence 2: Name the key failure mode: accumulated experience contains both
+% stationary capabilities and non-stationary, regime-local heuristics, and a
+% single evolved workspace cannot decide which to apply per task.
+% Sentence 3: Present the method: decoupled evolution with a git-backed
+% strategy tree, stationary artifacts on main, non-stationary artifacts on
+% branches, per-task LLM navigation, and optional multi-agent evolution
+% decomposition.
+% Sentence 4: Summarize the empirical setup: PolyBench, CTF-Dojo, and FutureX,
+% ordered by real chronology, with baseline, linear A-Evolve, early-freeze,
+% navigation, and orchestrated-navigation variants.
+% Sentence 5: Give the core result after final numbers are locked: navigation
+% improves or stabilizes performance under shift, reduces regressions from
+% over-evolution, and explains when evolution should branch, freeze, or deepen.
+\end{abstract}
+
+\input{sections/introduction}
+\input{sections/method}
+\input{sections/experiment}
+\input{sections/conclusions}
+
+% Uncomment these lines once references.bib contains real entries and the draft
+% has at least one \cite{...}. The current outline intentionally has no
+% citations, so enabling BibTeX now makes latexmk fail on a missing .bbl file.
+% \bibliographystyle{plain}
+% \bibliography{references}
+
+\appendix
+\input{sections/appendix}
+
+\end{document}

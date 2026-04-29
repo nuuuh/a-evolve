@@ -1,0 +1,64 @@
+% !TEX root = ../main.tex
+
+\section{Method: Decoupled Evolution with Agentic Navigation}
+\subsection{Overview}
+% First paragraph: Give the method name and one-sentence thesis: replace the
+% single linear workspace chain with a strategy tree whose main branch stores
+% stationary improvements and whose side branches store non-stationary regimes.
+% Second paragraph: Present the two phases per cycle:
+% (1) inference: navigator routes each task to main or a branch, solver runs on
+% that checked-out workspace;
+% (2) evolution: batch trajectories update main, existing branches, or new
+% branches depending on whether evidence is stationary or regime-specific.
+% Include Figure~\ref{fig:framework}: architecture diagram.
+
+\subsection{Strategy Tree State}
+% Define the state formally:
+% T_t is a git-backed tree of workspaces; each node/branch contains prompts,
+% skills, memory, tools, and optional infra. main is the stationary trunk.
+% Branch metadata stores description, routing statistics, last routed cycle,
+% failures/checkouts, and task counts. Note that the implementation uses git
+% branches and StrategyTree/BranchInfo.
+
+\subsection{Per-Task Navigation}
+% Describe F_Navigate. The navigator receives the full task description plus
+% actual branch leaf content read via git: README.md, prompts/system.md, skills
+% listing, and tools/registry.yaml. It outputs a JSON branch decision.
+% Stress the reviewer-relevant detail: routing is based on branch capabilities,
+% not ground-truth labels or branch names alone. Labels are optionally hidden by
+% trajectory-only and temporal-reveal gates.
+%
+% Add algorithm pseudocode:
+% For each task x_i: read viable leaves; build task context; call navigator;
+% resolve branch name; checkout branch; reload agent; solve; log routing.
+
+\subsection{Branch-Aware Evolution}
+% Explain inline H5 mode. The evolver gets the batch and tree summary in one
+% sandboxed call with git access. It may commit main improvements, create or
+% update branch/<slug>, write branch README.md, and return to main. The pipeline
+% validates/discovers branches afterward.
+%
+% Make clear what counts as stationary vs non-stationary:
+% stationary = recurrent across branches/tasks, helps all future tasks;
+% non-stationary = tied to a property region and would pollute other regimes.
+
+\subsection{Multi-Agent Orchestration}
+% Explain H5_multi mode. The planner/analyst reads batch trajectories and emits
+% a JSON plan with assignments: target, focus, workload, task_ids. The evolver
+% then executes one sandboxed branch-cycle per assignment. This decomposes
+% analysis/classification/planning from mutation.
+%
+% Map implementation names to method concepts:
+% OrchestratedTemplate, build_planner_prompt, branch_cycle activity,
+% ActivityRuntime, ExpansionRegion, git_realise_branches.
+%
+% Clarify that this addresses C3 and is orthogonal to navigation: navigation
+% solves which artifacts to use for each task; orchestration improves the
+% quality of evolution decisions and edits.
+
+\subsection{Privacy and Temporal Validity}
+% Reviewers will worry about label leakage. State the exact policy:
+% trajectory-only evolution hides success/score; temporal-reveal reveals labels
+% only when the task resolution date is at or before the batch watermark. Routing
+% logs contain task_id, properties, branch, cycle but not score/pass/fail.
+% Include this in the method or experimental setup depending on space.

@@ -1,0 +1,51 @@
+% !TEX root = ../main.tex
+
+\section{Related Work}
+\subsection{Agentic Evolution and Self-Improving Agents}
+% Cover A-Evolve, DGM, ADAS, AFlow, GEPA/meta-harness style evolution. The key
+% contrast is not just performance: compare search structure, evaluation signal,
+% evolvable scope, and degradation protection.
+
+\subsection{Continual Learning and Test-Time Adaptation}
+% Connect stationary/non-stationary decomposition to continual learning,
+% catastrophic forgetting, mixture-of-experts, and retrieval/memory selection.
+% Emphasize that this work adapts agent workspaces and infrastructure rather
+% than model weights.
+
+\subsection{Multi-Agent Systems for LLM Tool Use}
+% Discuss planner/executor/critic patterns and orchestration frameworks. The
+% contrast: most systems orchestrate solving; this paper orchestrates evolution.
+
+\subsection{Temporal and Dynamic Evaluation}
+% Position PolyBench, FutureX, CTF-Dojo and other temporally sensitive agent
+% evaluations. Explain why chronological ordering is part of the benchmark, not
+% a nuisance to shuffle away.
+
+\section{Limitations}
+% Be direct. Mention:
+% results depend on LLM capability and tool reliability;
+% branch creation and routing are LLM-decided and can be unstable;
+% not all domains need branching;
+% current implementation uses filesystem/git workspaces, which may not map to
+% closed agents;
+% experiments are costly, so number of full reruns may be limited;
+% temporal benchmarks can conflate true capability drift with changing task
+% difficulty.
+
+\section{Conclusion}
+% One paragraph. Re-state the core message: agentic evolution under temporal
+% shift should not accumulate all experience into one global workspace. A
+% strategy tree plus per-task navigation lets stationary knowledge transfer
+% while isolating non-stationary regimes; multi-agent orchestration improves the
+% evolution process when single-call evolution becomes the bottleneck.
+
+\section*{Ethics Statement}
+% Address cybersecurity and prediction-market domains. State that CTF-Dojo uses
+% sandboxed benchmark challenges, not real targets. For forecasting/markets,
+% clarify that the system is evaluated as a benchmark solver and not financial
+% advice or deployment guidance.
+
+\section*{Reproducibility Statement}
+% List what to release: code, configs, seeds, temporal task ordering,
+% routing logs without labels, evolved workspaces, analysis scripts, and
+% exact model/provider settings. Mention deterministic ordering and git tags.

@@ -1,0 +1,128 @@
+% !TEX root = ../main.tex
+
+\section{Experimental Setup}
+\subsection{Research Questions}
+% Introduce RQs before any result subsections. Each following experimental or
+% analysis subsection should explicitly answer one RQ.
+%
+% RQ1: Does temporal ordering create non-monotonic evolution, where more linear
+% evolution can underperform early stopping despite additional compute?
+%
+% RQ2: Can decoupling stationary and non-stationary experience via navigation
+% reduce regressions while preserving transferable gains?
+%
+% RQ3: Does per-task branch routing select meaningfully different strategies for
+% shifted regimes, rather than merely adding capacity or prompt length?
+%
+% RQ4: Does multi-agent orchestration improve the evolution process beyond
+% single-call branching, especially on domains requiring tool/infra changes?
+%
+% RQ5: What failure modes remain: navigator misrouting, branch proliferation,
+% stale branches, label-delay effects, and evolver overfitting to local history?
+
+\subsection{Benchmarks}
+% Describe PolyBench, CTF-Dojo, FutureX in one paragraph each.
+% For PolyBench include traded accuracy, F1, ECE, CWR return, Sharpe, gating.
+% For CTF-Dojo include 261 tasks, categories, year order, pass/fail via flag
+% hash, bash/submit tools, sandbox limits.
+% For FutureX include 332 tasks, domain categories, difficulty levels, search
+% modes, temporal resolution windows, and strict vs live search distinction.
+
+\subsection{Systems Compared}
+% Define variants cleanly:
+% H0: baseline, no evolution.
+% H1: full linear A-Evolve, single path, evolves every cycle.
+% Early-freeze: linear A-Evolve for early cycles then freeze workspace.
+% H5: navigation/branching with inline branch-aware evolution.
+% H5_multi: navigation plus planner/evolver orchestration.
+% Include additional controls as available: no-search/live-search for FutureX,
+% late-start, flat multi-agent without navigation if runs exist.
+
+\subsection{Metrics}
+% Primary metrics by benchmark:
+% PolyBench: traded accuracy and CWR return, with F1/ECE/Sharpe as secondary.
+% CTF-Dojo/FutureX: accuracy/pass rate, plus turns, elapsed time, token cost.
+% Cross-benchmark metrics:
+% regression count vs baseline, improvement count, net task-level change,
+% artifact growth (skills/tools/memories/prompt chars), evolution time, number
+% of branches, routing entropy, branch utilization, stale branch rate.
+
+\subsection{Implementation Details}
+% Name the base model, temperature, batch size, max turns/timeouts, workers,
+% evolution cycles, and config files used for each benchmark. Cite scripts:
+% solve_all_with_evolution.py and experiments/*/configs/*.yaml.
+% State that all variants use the same seed workspace and benchmark ordering
+% unless explicitly controlled.
+
+\section{Main Results}
+\subsection{RQ1: Linear Evolution is Non-Monotonic under Temporal Shift}
+% Use Table~\ref{tab:main-results}. Show H0, H1/full_evo, early-freeze, H5,
+% H5_multi for each benchmark. If final H5 numbers are still in progress,
+% leave placeholders but write the claim pattern expected from locked runs.
+% The paragraph should not oversell: emphasize that early-freeze beating
+% full_evo shows accumulated experience can become harmful, motivating
+% decoupling rather than rejecting evolution.
+
+\subsection{RQ2: Navigation Preserves Transfer while Isolating Local Heuristics}
+% Compare task-level improvements/regressions against baseline and against
+% full_evo. Use net gain and regression rate. The key reviewer concern is
+% whether branches merely add noise; answer by showing fewer regressions or
+% better late-stream performance at comparable compute.
+
+\subsection{RQ3: Routing Tracks Strategy-Relevant Shift}
+% Analyze routing logs. Show branch utilization over time and by properties:
+% PolyBench liquidity/uncertainty; CTF year/category/runtime dependency;
+% FutureX language/searchability/difficulty. Demonstrate that the navigator
+% uses branches for coherent regimes and falls back to main for general tasks.
+
+\subsection{RQ4: Multi-Agent Orchestration Improves Evolution Quality}
+% Compare H5 and H5_multi. Focus on evolution-side diagnostics: number of
+% independent assignments, mutation success rate, tool/infra creation,
+% branch README quality, fewer malformed branches/checkouts, better downstream
+% accuracy or lower regressions. If gains are mixed, report where orchestration
+% helps and where it adds overhead.
+
+\section{Analysis}
+\subsection{Distribution Shift Diagnostics}
+% This section should justify the paper's premise independently of method
+% results. Use one compact table or figure showing early vs late property
+% shifts from challenges.md:
+% PolyBench: market certainty, uncertainty, liquidity.
+% CTF-Dojo: text/script format, files per challenge, runtime dependencies.
+% FutureX: Chinese-language tasks, unsearchable platform data, L3--L4
+% difficulty, baseline late accuracy.
+
+\subsection{Stationary vs Non-Stationary Artifact Audit}
+% Manually inspect evolved artifacts. Classify examples:
+% stationary: flag verification, temporal disambiguation, API validation,
+% source freshness checks, output formatting.
+% non-stationary: old crypto heuristics, Oscar/result memorization, consensus
+% following in prediction markets, platform-specific ranking shortcuts.
+% Show 6--10 examples in a table with artifact path, classification, evidence,
+% and expected routing behavior.
+
+\subsection{Ablation: What Must Be Agentic?}
+% Include ablations if available or proposed:
+% no branch leaf inspection (route by branch names only);
+% random/static routing;
+% branches without README;
+% branch creation disabled but navigator enabled;
+% flat multi-agent planner without navigation.
+% Explain what each ablation isolates and which RQ it supports.
+
+\subsection{Cost, Complexity, and Scaling}
+% Report token cost, elapsed time, number of LLM evolution calls, prompt length,
+% skills/tools/memories, and branch count. Discuss the tradeoff: navigation adds
+% routing calls and git operations, but may save downstream solver cost by
+% avoiding bloated all-purpose prompts or bad global heuristics.
+
+\subsection{Failure Cases}
+% Required for a strong ACL paper. Analyze concrete failures:
+% navigator chooses a stale/missing branch;
+% branch names reflect topics rather than strategy;
+% branches over-specialize and starve;
+% planner creates too many assignments;
+% temporal reveal delays make the evolver infer from incomplete signals;
+% FutureX live-search inconsistencies confound evolution.
+% For each, state whether it is a method limitation, implementation issue, or
+% benchmark/data issue.
