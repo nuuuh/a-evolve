@@ -1,29 +1,18 @@
-The goal is to find data sources that can be implemented as FUNCTIONS
-within a single Python file using only stdlib (urllib.request, json,
-re, xml.etree). The function receives a query + cutoff_date and must
-return structured, agent-readable text.
+Find data sources that return EXACT ANSWERS, not web pages.
+
+For each regime the analyst identified, discover sources that can
+turn a natural language query into a specific factual answer using
+only Python stdlib (urllib.request, json, re, xml.etree).
 
 For each source you test, evaluate:
-1. ACCESS: Can you call it with urllib.request? No auth needed?
-2. DATE FILTERING: Can it return data for a specific past date?
-3. RESPONSE FORMAT: JSON or XML preferred (easy to parse with stdlib).
-   HTML requires regex extraction (fragile but acceptable).
-4. OUTPUT QUALITY: After parsing, does it give a clear answer?
-   "Close: $237.42 on 2026-01-07" is good. Raw dumps are useless.
-5. RELIABILITY: Works 3/3 times? Latency under 8 seconds?
-6. STDLIB ONLY: Can the full request → parse → format chain be done
-   with urllib + json + re? No requests, beautifulsoup, or htmldate.
+1. Does it return the EXACT VALUE the solver needs? (e.g. a price
+   number, a score, a date — not a web page about the topic)
+2. Can it filter by date? (historical data >> "latest" only)
+3. Is the response parseable with stdlib? (JSON/XML/CSV >> HTML)
+4. Does it work reliably? (3/3 test calls succeed, <8s each)
+5. What query types does it handle vs NOT handle?
 
-SOURCE CATEGORIES:
-- Structured APIs: Yahoo Finance, FRED, TheSportsDB, Open-Meteo,
-  CoinGecko, Wikidata SPARQL (return JSON with exact values)
-- RSS feeds: Google News RSS, podcast feeds (return XML with dates)
-- Wikipedia API: search + extracts + historical revisions
-- AI search APIs (KEY-GATED — document credential_needed):
-  Serper (Google SERP as JSON), Jina Reader (clean markdown from URLs),
-  Tavily (AI search), Exa (semantic search with date filtering)
-- For key-gated sources: test if the endpoint responds, log
-  credential_needed=true so HITL can supply keys later
+For key-gated sources (need API key to access): test if the endpoint
+responds, document credential_needed=true so HITL can supply keys.
 
-Document for the builder: which function name it should go under
-(e.g. _sports, _crypto), the exact urllib call, and parsing steps.
+Write findings to /evolver_workspace/tests/research_{regime}.jsonl.
