@@ -1,38 +1,32 @@
-YOUR GOAL: Make web_search return the exact answer as result #1.
+YOUR GOAL: Search as many useful data sources as possible and integrate
+them into the pipeline. The solver benefits from ABUNDANT retrievals
+from DIVERSE sources — it can reason across multiple pieces of evidence.
 
-The solver calls web_search("NVDA stock price January 15 2026") and
-gets back a string of numbered results. If result #1 contains the
-exact price, the solver gets it right in one search. If it contains
-Wikipedia markup about NVIDIA's founding, the solver wastes 10 more
-searches and probably gets it wrong.
+The baseline solver only has Wikipedia + DuckDuckGo. Every new data
+source you integrate (financial APIs, news feeds, sports databases,
+government data, knowledge bases, etc.) expands what the solver can
+answer. The more sources, the better.
 
-BEFORE (what bad results look like — wastes solver turns):
-  1. NVIDIA Corporation
-     [Wikipedia rev 2026-01-20] | type = Public | traded_as =
-     NASDAQ: NVDA | founded = January 1993 | ...
-  → Solver reads this, learns nothing about the price, searches again
+FOR EACH QUERY, THE PIPELINE SHOULD:
+1. Classify the query type
+2. Hit MULTIPLE relevant sources (not just one)
+3. Parse each response into clean, readable text
+4. Return ALL results as direct_results — let the solver decide
+   what's most relevant from the rich result set
+5. Generate good alternative search queries as fallback
 
-AFTER (what good results look like — solver answers immediately):
-  1. NVDA price 2026-01-15
-     [Yahoo Finance 2026-01-15] NVDA close: $237.42 (High: $239.10,
-     Low: $235.80, Vol: 52.3M)
-  → Solver reads exact price, submits answer
+INTEGRATION QUALITY MATTERS:
+- Raw HTML or JSON dumps are useless — parse them into readable text
+- Include source attribution and dates so the solver can assess
+  reliability and temporal relevance
+- Enforce cutoff_date: drop anything dated >= cutoff
+- Each source should have error handling — one failing source
+  shouldn't block the others
 
-YOUR CODE produces the "AFTER" results by calling structured APIs
-and returning them as direct_results. The framework puts your
-direct_results at the TOP of web_search output, before Wikipedia
-and web search fallbacks.
-
-QUALITY BAR:
-- Exact numbers, not narratives ("$237.42" not "the stock rose")
-- Dated and attributed ("[Yahoo Finance 2026-01-15]")
-- Pre-cutoff enforced (drop anything dated >= cutoff_date)
-- Under 500 chars per result — the key fact first
-- If your code can't answer, return empty direct_results and good
-  alternative queries — the framework's web search will handle it
-
-WHAT KILLS PERFORMANCE:
-- Returning raw HTML or JSON blobs
-- Returning vague summaries ("various sources suggest...")
-- Crashing or timing out (>20s) — blocks the entire search
-- Ignoring cutoff_date — future data leaks invalidate answers
+WHAT TO BUILD:
+- Read the research_log.jsonl — it contains verified data sources
+  with endpoints, parsing notes, and coverage information
+- For each verified source, write the code to call it, parse the
+  response, and format it as a direct_result
+- Group related sources so they're tried together (fallback chains)
+- The more sources integrated, the more queries the solver can answer

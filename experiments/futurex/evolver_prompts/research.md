@@ -1,18 +1,24 @@
-Find data sources that return EXACT ANSWERS, not web pages.
+Find as many useful data sources as possible for the assigned regime.
+The value comes from BREADTH — discovering sources the previous cycles
+missed. Don't stop at the first one that works.
 
-For each regime the analyst identified, discover sources that can
-turn a natural language query into a specific factual answer using
-only Python stdlib (urllib.request, json, re, xml.etree).
+For each regime, explore broadly:
+- Public APIs (REST, RSS, GraphQL) with structured responses
+- Websites with scrapeable structured data (tables, lists, feeds)
+- Specialized databases and archives with historical data
+- Search engines with date-range filtering
+- Regional/language-specific platforms
+- Key-gated APIs (document credential_needed=true for HITL)
 
 For each source you test, evaluate:
-1. Does it return the EXACT VALUE the solver needs? (e.g. a price
-   number, a score, a date — not a web page about the topic)
-2. Can it filter by date? (historical data >> "latest" only)
+1. What query types does it cover? What does it NOT cover?
+2. Can it return data for a specific past date?
 3. Is the response parseable with stdlib? (JSON/XML/CSV >> HTML)
-4. Does it work reliably? (3/3 test calls succeed, <8s each)
-5. What query types does it handle vs NOT handle?
+4. Does it work reliably? (3/3 calls succeed, <8s each)
+5. How does it COMPLEMENT other sources in this regime?
 
-For key-gated sources (need API key to access): test if the endpoint
-responds, document credential_needed=true so HITL can supply keys.
+The goal: give the builder a rich menu of verified sources to
+integrate. Multiple sources per regime means fallback chains and
+broader coverage.
 
 Write findings to /evolver_workspace/tests/research_{regime}.jsonl.
