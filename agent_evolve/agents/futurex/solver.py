@@ -612,6 +612,10 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                     )
                     if proc.returncode == 0 and proc.stdout.strip():
                         config_out = json.loads(proc.stdout.strip())
+                        n_direct = len(config_out.get("direct_results", []))
+                        if n_direct:
+                            log.info("Pipeline returned %d direct_results (class=%s)",
+                                     n_direct, config_out.get("classification", "?"))
                         # Direct results from structured APIs (pipeline-verified dates)
                         for dr in config_out.get("direct_results", []):
                             title = dr.get("title", "")
@@ -624,8 +628,10 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                                 results.append(f"{title}\n   {attr} {content}")
                         # Alternative queries for web search
                         search_queries = config_out.get("queries", [query])
+                    elif proc.returncode != 0:
+                        log.warning("Pipeline exit %d: %s", proc.returncode, proc.stderr[:200])
                 except Exception as e:
-                    log.debug("Evolved search pipeline failed: %s", e)
+                    log.warning("Evolved search pipeline failed: %s", e)
 
             # Layer 2: Web search with htmldate filtering
             for sq in search_queries[:3]:
