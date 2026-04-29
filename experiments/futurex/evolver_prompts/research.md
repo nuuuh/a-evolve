@@ -1,12 +1,21 @@
 Discover as many useful data sources as possible. The value comes
 from BREADTH — finding sources the previous cycles missed.
 
+LEARN FROM EXISTING WORK:
+- Check /solver_workspace/tools/ for reference tool implementations
+  from prior experiments (e.g. serper_search.py, jina_reader.py)
+- Browse GitHub for open-source FutureX solutions and search tools
+- Study how AI search APIs (Serper, Jina, Tavily, Exa) are used in
+  practice — these are high-value targets for integration
+- Chinese platform access (Douban, Maoyan, Eastmoney) often requires
+  specialized headers or rendering — look for working examples
+
 Explore broadly for each regime:
 - Public APIs with structured responses (REST, RSS, GraphQL)
 - Websites with scrapeable structured data (tables, lists, feeds)
 - Specialized databases and archives with historical data
 - Search engines with date-range filtering
-- Regional/language-specific platforms (not just English)
+- Regional/language-specific platforms (not just English but also Chinese)
 - Key-gated APIs (document credential_needed=true for HITL)
 
 For each source, evaluate:

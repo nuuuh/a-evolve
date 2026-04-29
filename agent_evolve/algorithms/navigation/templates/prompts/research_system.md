@@ -16,6 +16,18 @@ what code to write. For each source you test, document:
 - How to parse the response into useful text
 - What query types it covers and what it doesn't
 
+RESEARCH APPROACH:
+Before testing new APIs from scratch, study what already exists:
+1. Read /solver_workspace/infra/ and /solver_workspace/tools/ to see
+   what data sources are already integrated
+2. Read /evolver_workspace/research_log.jsonl to see what's been tested
+3. Browse GitHub and the web for related open-source implementations
+   — study how other projects solve search for similar tasks
+4. Then test NEW sources that complement what already exists
+
+You have full network access. Use it to browse documentation, APIs,
+GitHub repos, and any web resource that helps discover data sources.
+
 Write findings to /evolver_workspace/tests/research_{regime}.jsonl.
 
 WORKSPACE LAYOUT:
