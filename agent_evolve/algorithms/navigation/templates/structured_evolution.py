@@ -162,12 +162,24 @@ def _bundle_infra(ws_root: Path) -> None:
         "from datetime import datetime, timedelta, timezone",
     }
 
+    handler_names = []  # Track *_search() functions for dispatch
+
     for src in source_files:
         code = src.read_text()
-        module_name = src.stem  # e.g. "finance", "news", "utils"
+        module_name = src.stem
         is_source = src.parent.name == "sources"
         lines = []
+        in_name_main = False
         for line in code.splitlines():
+            # Fix 3: Strip if __name__ blocks from all files
+            if line.strip().startswith("if __name__") and "__main__" in line:
+                in_name_main = True
+                continue
+            if in_name_main:
+                if line and not line[0].isspace():
+                    in_name_main = False
+                else:
+                    continue
             if line.strip().startswith("from infra") or line.strip().startswith("import infra"):
                 continue
             if line.strip() in _SKIP_IMPORTS:
@@ -175,36 +187,63 @@ def _bundle_infra(ws_root: Path) -> None:
             if line.strip().startswith("#!/usr/bin/env"):
                 continue
             # Rename search() in source modules to <module>_search()
-            # so they don't clash when bundled together
             if is_source and line.startswith("def search("):
                 line = line.replace("def search(", f"def {module_name}_search(", 1)
+                handler_names.append(f"{module_name}_search")
+            # Also detect existing <module>_search definitions
+            if is_source and re.match(rf"def {module_name}_search\(", line):
+                if f"{module_name}_search" not in handler_names:
+                    handler_names.append(f"{module_name}_search")
             lines.append(line)
         parts.append(f"\n# ── {src.name} {'─' * (50 - len(src.name))}")
         parts.append("\n".join(lines))
 
-    # Add a main() entry point if not already present
-    combined = "\n".join(parts)
-    if "def main()" not in combined:
-        # Check if router.py defines main
-        if 'if __name__ == "__main__"' not in combined:
-            parts.append(
-                '\nif __name__ == "__main__":\n'
-                '    raw = sys.stdin.read().strip()\n'
-                '    try:\n'
-                '        ctx = json.loads(raw)\n'
-                '    except json.JSONDecodeError:\n'
-                '        ctx = {"query": raw, "cutoff_date": "2099-01-01"}\n'
-                '    query = ctx.get("query", raw)\n'
-                '    cutoff = ctx.get("cutoff_date", "2099-01-01")\n'
-                '    classification = classify(query) if "classify" in dir() else "general"\n'
-                '    json.dump({"classification": classification, '
-                '"direct_results": [], "queries": [query]}, sys.stdout)\n'
-            )
+    # Fix 1: Always generate a proper dispatch entry point that calls
+    # all discovered *_search() handlers. No reliance on builder's main().
+    dispatch_lines = []
+    for h in handler_names:
+        regime = h.replace("_search", "")
+        dispatch_lines.append(f'    "{regime}": {h},')
+    dispatch_table = "\n".join(dispatch_lines)
+
+    parts.append(f"""
+# ── auto-generated dispatch ──────────────────────────────
+_HANDLERS = {{
+{dispatch_table}
+}}
+
+if __name__ == "__main__":
+    raw = sys.stdin.read().strip()
+    try:
+        ctx = json.loads(raw)
+    except json.JSONDecodeError:
+        ctx = {{"query": raw, "cutoff_date": "2099-01-01"}}
+    query = ctx.get("query", raw)
+    cutoff = ctx.get("cutoff_date", "2099-01-01")
+    classification = classify(query) if "classify" in dir() else "general"
+    results = []
+    # Dispatch to classified handler
+    if classification in _HANDLERS:
+        try:
+            results.extend(_HANDLERS[classification](query, cutoff) or [])
+        except Exception:
+            pass
+    # Also try general fallback handlers (news, wikipedia)
+    for fallback in ["news", "wikipedia"]:
+        if fallback != classification and fallback in _HANDLERS:
+            try:
+                results.extend(_HANDLERS[fallback](query, cutoff) or [])
+            except Exception:
+                pass
+    queries = _alt_queries(query, classification) if "_alt_queries" in dir() else [query]
+    json.dump({{"classification": classification, "direct_results": results, "queries": queries}}, sys.stdout)
+""")
 
     bundled = "\n".join(parts)
     (infra_dir / "search_pipeline.py").write_text(bundled)
-    logger.info("Bundled %d source files into search_pipeline.py (%d lines)",
-                len(source_files), bundled.count("\n"))
+    logger.info("Bundled %d source files (%d handlers: %s) into search_pipeline.py (%d lines)",
+                len(source_files), len(handler_names),
+                ", ".join(handler_names), bundled.count("\n"))
 
 
 class Template(EvolutionTemplate):
@@ -688,7 +727,7 @@ class Template(EvolutionTemplate):
         task_board = load_task_board(evo_ws)
 
         verified_summary = "\n".join(
-            json.dumps(r) for r in verified[-30:]
+            json.dumps(r) for r in verified
         )
 
         builder_system = _load_prompt(
