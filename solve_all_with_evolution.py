@@ -437,17 +437,19 @@ def main():
                 prompt_args = backend.build_prompts(agent, branch_tasks)
                 task_dicts = [{"id": t.id, "input": t.input, "metadata": t.metadata}
                               for t in branch_tasks]
-                # Serialize infra files at build time so solvers don't
-                # read from disk after the checkout changes.
+                # Serialize infra files recursively so solvers can recreate
+                # the full directory structure (supports multi-file imports).
                 infra_dir = agent.workspace.root / "infra"
                 infra_files = {}
                 if infra_dir.exists():
-                    for f in infra_dir.iterdir():
-                        if f.is_file():
-                            try:
-                                infra_files[f.name] = f.read_text()
-                            except Exception:
-                                pass
+                    for f in infra_dir.rglob("*.py"):
+                        if "__pycache__" in str(f):
+                            continue
+                        try:
+                            rel = str(f.relative_to(infra_dir))
+                            infra_files[rel] = f.read_text()
+                        except Exception:
+                            pass
                 args_dict = {
                     "model_id": args.model_id, "region": args.region,
                     "max_tokens": args.max_tokens, "max_turns": args.max_turns,

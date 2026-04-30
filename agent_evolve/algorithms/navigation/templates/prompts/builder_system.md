@@ -38,16 +38,18 @@ INTERFACE CONTRACT (fixed — the solver depends on this):
   Each direct_result: {{"title": str, "content": str, "source": str, "date": str}}
 
 HOW YOUR CODE RUNS (fixed):
-  The solver runs infra/search_pipeline.py as an ISOLATED subprocess.
-  This file MUST exist, MUST have `if __name__ == "__main__"`, and
-  MUST be SELF-CONTAINED — it cannot import from other files in infra/.
-  At runtime, search_pipeline.py is copied to a temp location and run
-  alone. Any `from http_client import ...` or `from source_stocks import ...`
-  will fail with ImportError.
+  The solver runs infra/search_pipeline.py as a subprocess.
+  This file MUST exist and MUST have `if __name__ == "__main__"`.
 
-  You can create helper files in infra/ for development organization,
-  but ALL code that search_pipeline.py needs must be INSIDE that file.
-  Think of it as: search_pipeline.py is deployed as a standalone script.
+  The framework preserves your FULL infra/ directory structure at
+  runtime. search_pipeline.py CAN import from other files in infra/:
+    from http_client import fetch
+    from sources.finance import search_stocks
+  These imports work because the framework recreates the entire infra/
+  directory before running search_pipeline.py.
+
+  Design whatever multi-file architecture makes sense for a
+  sophisticated search system.
 
 RUNTIME CONSTRAINTS (fixed):
 - Python stdlib only (json, urllib, re, xml.etree, datetime)

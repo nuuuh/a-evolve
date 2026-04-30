@@ -569,15 +569,21 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
         _seen_titles = set()  # Dedup across searches within a task
 
         # Check for evolved search pipeline (infra/ layer).
-        # Prefer serialized infra_files (branch-safe) over live disk path.
+        # Recreate the full infra/ directory in a temp dir so multi-file
+        # imports work (search_pipeline.py can import from other infra files).
         _infra_search = None
+        _infra_dir = None
         _infra_files = args_dict.get("infra_files") or {}
         if "search_pipeline.py" in _infra_files:
             import tempfile as _tf
-            _infra_tmp = Path(_tf.mktemp(suffix="_search_pipeline.py"))
-            _infra_tmp.write_text(_infra_files["search_pipeline.py"])
-            _infra_search = _infra_tmp
-            log.info("Using serialized search pipeline from infra_files")
+            _infra_dir = Path(_tf.mkdtemp(prefix="infra_"))
+            for rel_path, content in _infra_files.items():
+                p = _infra_dir / rel_path
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(content)
+            _infra_search = _infra_dir / "search_pipeline.py"
+            log.info("Using serialized search pipeline (%d files) from infra_files",
+                     len(_infra_files))
         else:
             _ws_root = args_dict.get("workspace_root")
             if _ws_root:
@@ -585,6 +591,7 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                 if _infra_path.exists():
                     log.info("Loading evolved search pipeline: %s", _infra_path)
                     _infra_search = _infra_path
+                    _infra_dir = Path(_ws_root) / "infra"
 
         def _strict_search(query):
             """Multi-source pre-cutoff search — guaranteed zero label leakage.
@@ -609,6 +616,7 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                         [sys.executable, str(_infra_search)],
                         input=pipeline_input,
                         capture_output=True, text=True, timeout=20,
+                        cwd=str(_infra_dir) if _infra_dir else None,
                     )
                     if proc.returncode == 0 and proc.stdout.strip():
                         config_out = json.loads(proc.stdout.strip())
