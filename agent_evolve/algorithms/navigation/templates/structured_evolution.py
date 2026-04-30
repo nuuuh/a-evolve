@@ -132,6 +132,11 @@ def _bundle_infra(ws_root: Path) -> None:
     sources_dir = infra_dir / "sources"
     if not sources_dir.exists():
         return
+    # Only bundle if there are actual source modules (not just __init__.py).
+    # If the builder wrote directly to search_pipeline.py, don't overwrite.
+    source_pys = [f for f in sources_dir.glob("*.py") if f.name != "__init__.py"]
+    if not source_pys:
+        return
 
     parts = [
         "#!/usr/bin/env python3",
