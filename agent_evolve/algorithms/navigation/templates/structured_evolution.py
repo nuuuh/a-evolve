@@ -304,11 +304,6 @@ class Template(EvolutionTemplate):
                 else:
                     guardrail_results["search_caps_stripped"] = False
             guardrail_results["prompt_truncated"] = cap_prompt_size(ws_root)
-            # Bundle infra/sources/*.py into infra/search_pipeline.py
-            # The builder writes multi-file sources for readability;
-            # the bundler concatenates them into a single file the solver
-            # can run as a subprocess without import path issues.
-            _bundle_infra(ws_root)
             guardrail_results["pipeline_valid"] = verify_pipeline(ws_root)
             trajectory.append({"step": "guardrails", **guardrail_results})
             vc.commit(

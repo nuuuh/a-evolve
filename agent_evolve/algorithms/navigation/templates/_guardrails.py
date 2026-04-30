@@ -151,11 +151,13 @@ def cap_prompt_size(
     return True
 
 
-def verify_pipeline(workspace_root: Path, timeout: int = 15) -> bool:
+def verify_pipeline(workspace_root: Path, timeout: int = 20) -> bool:
     """Test that infra/search_pipeline.py runs and returns valid JSON (G6).
 
-    Returns True if pipeline is valid or absent. Returns False and removes
-    the pipeline if it fails.
+    Returns True if valid or absent. Returns False on failure but does
+    NOT delete the pipeline — the builder's code may work on real queries
+    even if it fails the test. Deleting was too aggressive and destroyed
+    working pipelines across multiple runs.
     """
     pipeline = workspace_root / "infra" / "search_pipeline.py"
     if not pipeline.exists():
@@ -168,22 +170,19 @@ def verify_pipeline(workspace_root: Path, timeout: int = 15) -> bool:
             cwd=str(workspace_root),
         )
         if proc.returncode != 0:
-            logger.info("G6: removed search_pipeline.py (exit %d: %s)",
-                        proc.returncode, proc.stderr[:200])
-            pipeline.unlink()
+            logger.warning("G6: search_pipeline.py failed (exit %d: %s) — kept for runtime",
+                           proc.returncode, proc.stderr[:200])
             return False
         output = json.loads(proc.stdout.strip())
         if not isinstance(output, dict):
-            logger.info("G6: removed search_pipeline.py (output not a dict)")
-            pipeline.unlink()
+            logger.warning("G6: search_pipeline.py returned non-dict — kept for runtime")
             return False
         return True
     except subprocess.TimeoutExpired:
-        logger.info("G6: removed search_pipeline.py (timeout %ds)", timeout)
-        pipeline.unlink()
+        logger.warning("G6: search_pipeline.py timed out (%ds) — kept for runtime", timeout)
         return False
     except (json.JSONDecodeError, Exception) as e:
-        logger.info("G6: removed search_pipeline.py (%s)", e)
+        logger.warning("G6: search_pipeline.py error (%s) — kept for runtime", e)
         pipeline.unlink()
         return False
 

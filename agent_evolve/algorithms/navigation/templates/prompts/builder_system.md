@@ -37,15 +37,18 @@ INTERFACE CONTRACT (fixed — the solver depends on this):
   stdout: {{"direct_results": [...], "queries": [...], "classification": "..."}}
   Each direct_result: {{"title": str, "content": str, "source": str, "date": str}}
 
-HOW BUNDLING WORKS (fixed — the framework does this automatically):
-  All .py files under infra/ (including subdirectories) are
-  concatenated into a single search_pipeline.py for runtime.
-  One file must have `if __name__ == "__main__"` as the entry point.
-  All code ends up in one namespace — no cross-file imports needed.
+HOW YOUR CODE RUNS (fixed):
+  The solver runs infra/search_pipeline.py as a subprocess.
+  This file MUST exist and MUST have `if __name__ == "__main__"`.
+  You can create helper files in infra/ but search_pipeline.py is
+  the entry point that the solver calls.
 
 RUNTIME CONSTRAINTS (fixed):
 - Python stdlib only (json, urllib, re, xml.etree, datetime)
 - Must complete within 20 seconds, exit 0, return valid JSON
+- NEVER return data dated after cutoff_date — this violates
+  temporal constraints and invalidates the solver's predictions
+- NEVER instruct the solver to use post-cutoff data in prompts
 
 WORKSPACE LAYOUT:
   /solver_workspace/infra/  — your code goes here (any structure)
