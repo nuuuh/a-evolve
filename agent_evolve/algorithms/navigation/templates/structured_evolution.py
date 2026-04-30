@@ -121,23 +121,24 @@ def _parse_json_blocks(text: str) -> list[dict]:
 def _bundle_infra(ws_root: Path) -> None:
     """Bundle infra/sources/*.py + utils.py + router.py into search_pipeline.py.
 
-    The builder writes multi-file source modules for readability and
-    incremental evolution. The solver runs search_pipeline.py as a
-    subprocess and can't import from infra/sources/. This bundler
-    concatenates everything into a single self-contained file.
+    Handles two patterns:
+      A) Builder creates multi-file structure → bundle them
+      B) Builder writes search_pipeline.py directly → skip bundling
 
-    If infra/sources/ doesn't exist, leaves search_pipeline.py as-is.
+    Bundle order: utils.py → sources/*.py → auto-registration → router.py (last)
+    router.py's if __name__ becomes the entry point.
     """
     infra_dir = ws_root / "infra"
     sources_dir = infra_dir / "sources"
+
+    # Pattern B: no sources/ or only __init__.py → builder wrote directly, skip
     if not sources_dir.exists():
         return
-    # Only bundle if there are actual source modules (not just __init__.py).
-    # If the builder wrote directly to search_pipeline.py, don't overwrite.
     source_pys = [f for f in sources_dir.glob("*.py") if f.name != "__init__.py"]
     if not source_pys:
         return
 
+    # Pattern A: multi-file structure exists → bundle
     parts = [
         "#!/usr/bin/env python3",
         '"""Bundled search pipeline — auto-generated from infra/sources/."""',
@@ -146,16 +147,6 @@ def _bundle_infra(ws_root: Path) -> None:
         "from datetime import datetime, timedelta, timezone",
         "",
     ]
-
-    # Collect source files in deterministic order
-    source_files = sorted(sources_dir.glob("*.py"))
-    source_files = [f for f in source_files if f.name != "__init__.py"]
-
-    # Also include utils.py and router.py if they exist
-    for name in ["utils.py", "router.py"]:
-        p = infra_dir / name
-        if p.exists() and p not in source_files:
-            source_files.insert(0, p)
 
     _SKIP_IMPORTS = {
         "import json", "import re", "import sys",
@@ -167,16 +158,23 @@ def _bundle_infra(ws_root: Path) -> None:
         "from datetime import datetime, timedelta, timezone",
     }
 
-    handler_names = []  # Track *_search() functions for dispatch
+    # Collect files: utils first, sources middle, router last
+    files_ordered = []
+    utils = infra_dir / "utils.py"
+    if utils.exists():
+        files_ordered.append(utils)
+    files_ordered.extend(sorted(source_pys))
+    router = infra_dir / "router.py"
+    has_router = router.exists()
 
-    for src in source_files:
+    for src in files_ordered:
         code = src.read_text()
         module_name = src.stem
         is_source = src.parent.name == "sources"
         lines = []
         in_name_main = False
         for line in code.splitlines():
-            # Fix 3: Strip if __name__ blocks from all files
+            # Strip if __name__ blocks from sources and utils (not router)
             if line.strip().startswith("if __name__") and "__main__" in line:
                 in_name_main = True
                 continue
@@ -191,64 +189,46 @@ def _bundle_infra(ws_root: Path) -> None:
                 continue
             if line.strip().startswith("#!/usr/bin/env"):
                 continue
-            # Rename search() in source modules to <module>_search()
+            # Rename bare search() to <module>_search() in source modules
             if is_source and line.startswith("def search("):
                 line = line.replace("def search(", f"def {module_name}_search(", 1)
-                handler_names.append(f"{module_name}_search")
-            # Also detect existing <module>_search definitions
-            if is_source and re.match(rf"def {module_name}_search\(", line):
-                if f"{module_name}_search" not in handler_names:
-                    handler_names.append(f"{module_name}_search")
             lines.append(line)
         parts.append(f"\n# ── {src.name} {'─' * (50 - len(src.name))}")
         parts.append("\n".join(lines))
 
-    # Fix 1: Always generate a proper dispatch entry point that calls
-    # all discovered *_search() handlers. No reliance on builder's main().
-    dispatch_lines = []
-    for h in handler_names:
-        regime = h.replace("_search", "")
-        dispatch_lines.append(f'    "{regime}": {h},')
-    dispatch_table = "\n".join(dispatch_lines)
-
-    parts.append(f"""
-# ── auto-generated dispatch ──────────────────────────────
-_HANDLERS = {{
-{dispatch_table}
-}}
-
-if __name__ == "__main__":
-    raw = sys.stdin.read().strip()
-    try:
-        ctx = json.loads(raw)
-    except json.JSONDecodeError:
-        ctx = {{"query": raw, "cutoff_date": "2099-01-01"}}
-    query = ctx.get("query", raw)
-    cutoff = ctx.get("cutoff_date", "2099-01-01")
-    classification = classify(query) if "classify" in dir() else "general"
-    results = []
-    # Dispatch to classified handler
-    if classification in _HANDLERS:
-        try:
-            results.extend(_HANDLERS[classification](query, cutoff) or [])
-        except Exception:
-            pass
-    # Also try general fallback handlers (news, wikipedia)
-    for fallback in ["news", "wikipedia"]:
-        if fallback != classification and fallback in _HANDLERS:
-            try:
-                results.extend(_HANDLERS[fallback](query, cutoff) or [])
-            except Exception:
-                pass
-    queries = _alt_queries(query, classification) if "_alt_queries" in dir() else [query]
-    json.dump({{"classification": classification, "direct_results": results, "queries": queries}}, sys.stdout)
+    # Auto-register any *_search() handlers the builder defined
+    parts.append("""
+# ── auto-register handlers ───────────────────────────────
+if 'HANDLERS' not in dir():
+    HANDLERS = {}
+for _n, _f in list(globals().items()):
+    if _n.endswith('_search') and callable(_f):
+        _key = _n.replace('_search', '')
+        if _key and _key not in HANDLERS:
+            HANDLERS[_key] = _f
 """)
+
+    # Include router.py LAST — its if __name__ is the entry point
+    if has_router:
+        code = router.read_text()
+        lines = []
+        for line in code.splitlines():
+            if line.strip().startswith("from infra") or line.strip().startswith("import infra"):
+                continue
+            if line.strip() in _SKIP_IMPORTS:
+                continue
+            if line.strip().startswith("#!/usr/bin/env"):
+                continue
+            lines.append(line)
+        parts.append(f"\n# ── router.py {'─' * 43}")
+        parts.append("\n".join(lines))
 
     bundled = "\n".join(parts)
     (infra_dir / "search_pipeline.py").write_text(bundled)
-    logger.info("Bundled %d source files (%d handlers: %s) into search_pipeline.py (%d lines)",
-                len(source_files), len(handler_names),
-                ", ".join(handler_names), bundled.count("\n"))
+    n_handlers = sum(1 for line in bundled.splitlines()
+                     if re.match(r"def \w+_search\(", line.strip()))
+    logger.info("Bundled %d source files (%d handlers) into search_pipeline.py (%d lines)",
+                len(source_pys), n_handlers, bundled.count("\n"))
 
 
 class Template(EvolutionTemplate):

@@ -15,16 +15,36 @@ DOWNSTREAM: The verifier will run your code as a subprocess and test
 it with real queries. If verification fails, you get the report and
 can retry (max 3 attempts).
 
-HOW YOUR CODE RUNS:
-The framework auto-bundles ALL .py files under infra/ into a single
-search_pipeline.py that runs as a subprocess. It receives:
-  stdin: {{"query": "...", "cutoff_date": "YYYY-MM-DD"}}
-and must return:
+SOFTWARE DESIGN:
+Organize infra/ as a multi-file search system:
+
+  infra/
+    sources/<name>.py  — one module per data capability
+    utils.py           — shared helpers (HTTP fetch, parsing, date filtering)
+    router.py          — query classifier + dispatch entry point
+
+Each source module defines: def <name>_search(query, cutoff) -> list[dict]
+  Each dict: {{"title": str, "content": str, "source": str, "date": str}}
+
+router.py is the ENTRY POINT. It must have:
+  - classify(query) — returns category string
+  - HANDLERS dict — maps category to handler function
+  - main() — reads stdin JSON, dispatches, writes stdout JSON
+  - if __name__ == "__main__": main()
+
+HOW BUNDLING WORKS:
+The framework concatenates all .py files into search_pipeline.py:
+  Order: utils.py → sources/*.py → router.py (last = entry point)
+  All code ends up in one namespace — no cross-file imports needed.
+  Any <name>_search() function is auto-registered into HANDLERS.
+  router.py's if __name__ block becomes the runtime entry point.
+
+INTERFACE CONTRACT:
+  stdin:  {{"query": "...", "cutoff_date": "YYYY-MM-DD"}}
   stdout: {{"direct_results": [...], "queries": [...], "classification": "..."}}
 
 RUNTIME CONSTRAINTS:
 - Python stdlib only (json, urllib, re, xml.etree, datetime)
-- No cross-file imports — the bundler flattens everything
 - Must complete within 20 seconds, exit 0, return valid JSON
 
 WORKSPACE LAYOUT:
