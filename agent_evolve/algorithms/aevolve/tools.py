@@ -168,12 +168,19 @@ class EvolverSandbox:
                 f"{self.trajectories_dir}:/trajectories:ro",
             ]
 
+        # Forward API keys so research agents can test external services.
+        env_args = ["-e", "HOME=/tmp"]
+        for key in ("SERPER_API_KEY", "JINA_API_KEY", "JINA_BASE_URL", "EXA_API_KEY"):
+            val = os.environ.get(key)
+            if val:
+                env_args.extend(["-e", f"{key}={val}"])
+
         result = subprocess.run(
             [
                 "docker", "run", "-d",
                 "--name", self.container_name,
                 "--user", uid_gid,
-                "-e", "HOME=/tmp",
+                *env_args,
                 "--network", self.network,
                 *mounts,
                 "-w", work_dir,

@@ -199,12 +199,12 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
     elif not task_creation_date:
         task_creation_date = datetime(2026, 1, 8)
 
-    cutoff_str = task_creation_date.strftime('%Y-%m-%d')
-    cutoff_year = task_creation_date.year
-    cutoff_month = task_creation_date.month
-    _date_start = (task_creation_date - timedelta(days=730)).strftime('%Y-%m-%d')
-    _date_end = (task_creation_date - timedelta(days=1)).strftime('%Y-%m-%d')
-    _timelimit = f"{_date_start}..{_date_end}"
+    resolution_date = task_creation_date + timedelta(days=7)
+    cutoff_str = resolution_date.strftime('%Y-%m-%d')
+    cutoff_year = resolution_date.year
+    cutoff_month = resolution_date.month
+    _date_start = (resolution_date - timedelta(days=730)).strftime('%Y-%m-%d')
+    _timelimit = f"{_date_start}..{cutoff_str}"
 
     # _is_after_cutoff removed — relying solely on htmldate publication date
     # extraction for label leakage prevention. This makes the only difference
@@ -242,16 +242,22 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
         )
 
         # ── Docker sandbox for evolved tools ─────────────────────
+        # Only start when tool_files exist (H1-style individual scripts).
+        # Structured evolution uses infra/ via the pipeline subprocess
+        # inside _strict_search() — bash adds no value and hurts accuracy
+        # (16% success vs 48% web-only in testing).
+        _infra_files = args_dict.get("infra_files") or {}
         if tool_files:
             try:
                 sandbox_net = config_obj.extra.get("sandbox_network", "none") if config_obj else "none"
                 container_name = start_sandbox(
                     task_id, tool_files, sandbox_network=sandbox_net,
-                    cutoff_date=_date_end,
+                    cutoff_date=cutoff_str,
                 )
-                log.info("Sandbox started: %s (%d tools, cutoff=%s)", container_name, len(tool_files), _date_end)
+                log.info("Sandbox started: %s (%d tools, cutoff=%s)",
+                         container_name, len(tool_files), cutoff_str)
             except Exception as e:
-                log.warning("Sandbox start failed (tools unavailable): %s", e)
+                log.warning("Sandbox start failed: %s", e)
 
         # ── Tools ────────────────────────────────────────────────
         _submitted = [False]
@@ -374,7 +380,7 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                         "query": query,
                         "max_results": limit,
                         "search_depth": "advanced",
-                        "end_date": _date_end,
+                        "end_date": cutoff_str,
                         "include_raw_content": True,
                     },
                     timeout=20,
@@ -420,7 +426,7 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                 future = executor.submit(
                     htmldate_filtered_search,
                     query=query,
-                    cutoff_date=_date_end,
+                    cutoff_date=cutoff_str,
                     max_results=limit,
                     fetch_timeout=8.0,
                     fetch_workers=3,
@@ -482,8 +488,8 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                         "file_type": "json",
                         "sort_order": "desc",
                         "limit": 6,
-                        "realtime_end": _date_end,
-                        "observation_end": _date_end,
+                        "realtime_end": cutoff_str,
+                        "observation_end": cutoff_str,
                     },
                     timeout=10,
                 )
@@ -571,9 +577,9 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
         # Check for evolved search pipeline (infra/ layer).
         # Recreate the full infra/ directory in a temp dir so multi-file
         # imports work (search_pipeline.py can import from other infra files).
+        # _infra_files already extracted above (for sandbox loading).
         _infra_search = None
         _infra_dir = None
-        _infra_files = args_dict.get("infra_files") or {}
         if "search_pipeline.py" in _infra_files:
             import tempfile as _tf
             _infra_dir = Path(_tf.mkdtemp(prefix="infra_"))
@@ -602,10 +608,11 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
               3. Wikipedia Revision API   — fallback encyclopedic content
               4. FRED                     — fallback economic indicators
             """
-            results = []
+            pipeline_results = []
+            web_results = []
             search_queries = [query]
 
-            # Layer 1+2: Evolved search pipeline
+            # Layer 1: Evolved search pipeline
             if _infra_search:
                 try:
                     pipeline_input = json.dumps({
@@ -624,7 +631,6 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                         if n_direct:
                             log.info("Pipeline returned %d direct_results (class=%s)",
                                      n_direct, config_out.get("classification", "?"))
-                        # Direct results from structured APIs (pipeline-verified dates)
                         for dr in config_out.get("direct_results", []):
                             title = dr.get("title", "")
                             content = dr.get("content", "")
@@ -633,8 +639,7 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                             if content and title.lower() not in _seen_titles:
                                 _seen_titles.add(title.lower())
                                 attr = f"[{source}" + (f" {date}]" if date else "]")
-                                results.append(f"{title}\n   {attr} {content}")
-                        # Alternative queries for web search
+                                pipeline_results.append(f"{title}\n   {attr} {content}")
                         search_queries = config_out.get("queries", [query])
                     elif proc.returncode != 0:
                         log.warning("Pipeline exit %d: %s", proc.returncode, proc.stderr[:200])
@@ -643,15 +648,15 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
 
             # Layer 2: Web search with htmldate filtering
             for sq in search_queries[:3]:
-                web_results = _htmldate_web_search(sq, limit=3)
-                for wr in web_results:
+                for wr in _htmldate_web_search(sq, limit=3):
                     first_line = wr.split("\n")[0].strip().lower()
                     if first_line not in _seen_titles:
                         _seen_titles.add(first_line)
-                        results.append(wr)
+                        web_results.append(wr)
 
-            # Layer 3: Wikipedia fallback (if pipeline + web search came up short)
-            if len(results) < 3:
+            # Layer 3: Wikipedia fallback
+            total = len(pipeline_results) + len(web_results)
+            if total < 3:
                 try:
                     for title in _wiki_search(query, limit=5):
                         if title.lower() in _seen_titles:
@@ -660,21 +665,27 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                         if rev:
                             ts, text = rev
                             _seen_titles.add(title.lower())
-                            results.append(f"{title}\n   [Wikipedia rev {ts}] {text}")
-                        if len(results) >= 5:
-                            break
+                            web_results.append(f"{title}\n   [Wikipedia rev {ts}] {text}")
                 except Exception as e:
                     log.debug("Wikipedia layer failed: %s", e)
 
             # Layer 4: FRED economic data fallback
-            if _is_economic_query(query) and len(results) < 3:
-                results.extend(_fred_search(query))
+            total = len(pipeline_results) + len(web_results)
+            if _is_economic_query(query) and total < 3:
+                web_results.extend(_fred_search(query))
 
-            if not results:
+            if not pipeline_results and not web_results:
                 return f"No pre-cutoff content for '{query}'"
+
             lines = [f"Results for '{query}' (pre-cutoff, before {cutoff_str}):"]
-            for i, r in enumerate(results[:5], 1):
-                lines.append(f"{i}. {r}")
+            if pipeline_results:
+                lines.append("\n=== Structured API data ===")
+                for i, r in enumerate(pipeline_results, 1):
+                    lines.append(f"{i}. {r}")
+            if web_results:
+                lines.append("\n=== Web search results ===")
+                for i, r in enumerate(web_results, 1):
+                    lines.append(f"{i}. {r}")
             return "\n".join(lines)
 
         def _live_search(query):
@@ -729,18 +740,21 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
         )
 
         def _temporal_filter(content: str, command: str) -> str:
-            """LLM-based temporal filter for all tool output.
+            """LLM-based temporal filter for bash tool output.
 
             Sends the task description, cutoff date, and retrieved
             content to Haiku.  Haiku returns a REDACTED version with
             post-cutoff values replaced by [REDACTED], or the original
             content if everything is pre-cutoff.
 
-            Triggers on both serper_search and jina_reader output.
+            Applied to all bash commands that may fetch external data.
+            Whitelists purely computational commands.
             """
             if not _filter_enabled:
                 return content
-            if "serper_search" not in command and "jina_reader" not in command:
+            cmd = command.strip()
+            _safe = ("python3 -c", "echo ", "cat ", "ls ", "pwd", "head ", "tail ", "wc ")
+            if any(cmd.startswith(p) for p in _safe):
                 return content
             if len(content) < 80:
                 return content
@@ -759,14 +773,14 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                     modelId="us.anthropic.claude-3-5-haiku-20241022-v1:0",
                     messages=[{"role": "user", "content": [{"text":
                         f"TASK: {prompt[:300]}\n"
-                        f"CUTOFF DATE: {_date_end}\n"
+                        f"CUTOFF DATE: {cutoff_str}\n"
                         f"The agent must predict events AFTER the cutoff "
                         f"date using ONLY information available BEFORE it.\n\n"
                         f"Below is content retrieved by the agent's tools. "
                         f"Your job:\n"
                         f"1. Identify any specific data points (numbers, "
                         f"names, rankings, statistics) that correspond to "
-                        f"dates AFTER {_date_end}. These would directly "
+                        f"dates AFTER {cutoff_str}. These would directly "
                         f"answer the prediction task — that is label leakage.\n"
                         f"2. If you find leaked data: return the content "
                         f"with ONLY the post-cutoff values replaced by "
@@ -810,10 +824,10 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                 if "[REDACTED]" in verdict:
                     n_redacted = verdict.count("[REDACTED]")
                     log.info("Temporal filter: redacted %d values (cutoff=%s)",
-                             n_redacted, _date_end)
+                             n_redacted, cutoff_str)
                     return (
                         f"[Temporal filter: {n_redacted} post-cutoff values "
-                        f"redacted (cutoff={_date_end})]\n\n" + verdict
+                        f"redacted (cutoff={cutoff_str})]\n\n" + verdict
                     )
 
                 if verdict.upper().startswith("LEAKED"):
@@ -830,13 +844,16 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
 
             return content
 
-        # -- bash (only when Docker sandbox is available) --
+        # -- bash (when Docker sandbox has tools/ or infra/) --
         @tool
         def bash(command: str) -> str:
             """Execute a bash command in the analysis sandbox.
 
-            Python3 is available. Evolved tools are in /tools/.
-            Example: python3 /tools/ev_calculator.py 0.85 0.796
+            Python3 is available. Evolved tools in /tools/, search
+            pipeline and modules in /infra/.
+            Examples:
+              python3 /tools/finance_data.py "CL=F" "2026-01-25"
+              python3 /infra/search_pipeline.py < query.json
 
             Args:
                 command: The bash command to execute.

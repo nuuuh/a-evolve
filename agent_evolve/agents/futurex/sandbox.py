@@ -85,23 +85,34 @@ def start_sandbox(task_id: str, tool_files: dict, sandbox_network: str = "none",
     if r.returncode != 0:
         raise RuntimeError(f"Failed to start sandbox: {r.stderr}")
 
-    subprocess.run(
-        ["docker", "exec", ctr, "mkdir", "-p", "/tools"],
-        capture_output=True, timeout=10,
-    )
-    for fname, content in tool_files.items():
-        with tempfile.NamedTemporaryFile(mode="w", suffix=f"_{fname}", delete=False) as tf:
+    # Create directories for all files. Flat names (e.g. "finance_data.py")
+    # go into /tools/; paths with "/" (e.g. "infra/sources/finance.py") are
+    # placed at their absolute path inside the container.
+    dirs_needed = {"/tools"}
+    for rel_path in tool_files:
+        if "/" in rel_path:
+            dirs_needed.add("/" + rel_path.rsplit("/", 1)[0])
+    for d in sorted(dirs_needed):
+        subprocess.run(
+            ["docker", "exec", ctr, "mkdir", "-p", d],
+            capture_output=True, timeout=10,
+        )
+
+    for rel_path, content in tool_files.items():
+        target = f"/{rel_path}" if "/" in rel_path else f"/tools/{rel_path}"
+        safe_suffix = "_" + rel_path.replace("/", "_")
+        with tempfile.NamedTemporaryFile(mode="w", suffix=safe_suffix, delete=False) as tf:
             tf.write(content)
             tmp = tf.name
         try:
             subprocess.run(
-                ["docker", "cp", tmp, f"{ctr}:/tools/{fname}"],
+                ["docker", "cp", tmp, f"{ctr}:{target}"],
                 capture_output=True, timeout=10,
             )
         finally:
             os.unlink(tmp)
         subprocess.run(
-            ["docker", "exec", ctr, "chmod", "+x", f"/tools/{fname}"],
+            ["docker", "exec", ctr, "chmod", "+x", target],
             capture_output=True, timeout=10,
         )
     return ctr

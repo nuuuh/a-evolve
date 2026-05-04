@@ -11,6 +11,12 @@ identify a gap as HIGH priority, a research agent will be assigned
 to discover data sources for it. Be specific about what data
 capability is missing — vague gaps lead to unfocused research.
 
+CRITICAL: Every gap MUST name a DATA DOMAIN (e.g., sports_scores,
+box_office_data, chinese_fund_prices), NOT a reasoning problem
+(e.g., "prediction_without_result", "question_misinterpretation").
+Research agents can find APIs and data sources. They cannot fix
+reasoning — that's the builder's job via prompt updates.
+
 WORKSPACE LAYOUT:
   /solver_workspace/                — the solver's workspace
     infra/                         — current evolved infrastructure
