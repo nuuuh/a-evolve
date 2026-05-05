@@ -1,0 +1,140 @@
+写作前 — 目标读者分析（写给作者自己）
+这一节不是 paper 的一部分，是 kick-off 之前必须先想清楚的事。任何写作的第一步是回答三个问题：reader 是谁？他们为什么会想看？他们看完应该带走什么 take-home？这三件事定下来之后，paper 每一段都应该可以追溯到"在为哪一类 reader 服务"。
+主要 Reader（决定 paper 整体 framing）
+Reader 1：Frontier-model 实验室的 capability / post-training researcher
+OpenAI、Anthropic、DeepMind、Meta FAIR、Amazon Nova 团队 
+Why：他们正在决定下一代 frontier model 应该在哪个 capability axis 上重点投入。Self-evolution loop 里的 model bottleneck 在哪边，直接对应到他们的 RFT / post-training data curation 决策。这是他们最关心的 actionable signal。
+Take-home：一个可操作的判断 —— 该 invest evolver-side capability 还是 solver-side capability，以及这两者在 frontier model 中是否 correlated（决定能不能用一个 general post-training objective 一并解决，还是必须 role-conditioned co-training）。
+Reader 2：Self-evolution / agentic system 的 method 开发者
+A-Evolve、SkillRL、GEPA、DSPy、Reflexion 这几条线上的人；以及内部其他 lab 准备做类似工作的 PhD
+Why：他们想知道自己设计的 method 里 evolver 部分和 solver 部分谁更 load-bearing —— 下一版本应该改哪一边。Paper 给出的 algorithm-agnostic 测量协议可以让他们直接 plug 自己的 method 跑一遍 N×N matrix。
+Take-home：一套 method-agnostic 的 measurement protocol，可以 directly adopt 来评估自己的 method 在 evolver/solver 两侧的 marginal contribution。
+Reader 3：Top venue（NeurIPS / ICML / ICLR）reviewer
+Agent / LLM 方向的 reviewer，已经看过 30+ 篇 self-evolution paper，对 generic motivation 完全免疫
+Why：他们在 7 分钟内决定 accept 还是 reject。会被吸引是因为 paper 同时做了三件没人做过的事：概念上显式化 evolver/solver decomposition，方法上提出 role-marginal tournament，实证上给出 quantitative asymmetry。
+Take-home：三个清晰可独立成立的 contribution —— conceptual（decomposition framework）+ methodological（measurement protocol）+ empirical（the asymmetry finding 本身，定量、跨 benchmark 一致）。
+次要 Reader（影响特定段落，不主导整体 framing）
+Reader 4：Agent benchmark 设计者
+SWE-bench、Terminal-Bench、AgentBench 等 benchmark 作者社群
+Why：他们关心自己的 benchmark 在 self-evolution 测量中扮演什么角色。
+Take-home：我们的 protocol 不 replace 他们的 benchmark，而是把他们的 benchmark amplify 成 self-evolution 测量的 substrate。
+Reader 5：内部 lab 同事 + 未来的 follow-up paper
+A-EVO Lab 其他几条线（Tianxwei 的 GT-regime work、Zewen 的 multi-agent work）以及未来接着做的 PhD
+Why：他们想知道这篇和 lab 其他工作怎么 fit、以及未来 follow-up 的 hooks 在哪。
+Take-home：清楚的边界划定（no-GT regime 是这篇的 scope，GT-regime 和 multi-agent 留给其他线），以及 explicit 的 future-work hooks。
+明确放弃的 Reader（不要为他们写）
+Self-evolution 入门读者 —— 我们不是综述。Background 一段带过，不展开 motivate 整个 field。
+关心特定 application domain 的读者（做 web agent / SQL agent / 某个 vertical 的人）—— 我们的 finding 是 model-level、跨 benchmark 的，不为单一 domain 写专门段落。
+关心 algorithm vs algorithm 对比的读者 —— 这篇不比较 A-Evolve vs SkillRL 谁更好，contribution 在 model 层面不在 algorithm 层面。
+写作时的自检 anchor
+每写一段，先问自己三个问题：
+Who —— 这一段服务的是哪一类 reader？
+Why —— 这一段帮他们答了什么"为什么读这一段"的问题？
+Take-home —— 这一段 contribute 到哪一个 take-home message？
+如果三个问题中任何一个答不上来，这段大概率应该删掉或重写。每写完一节回头检查一次：三类主要 reader 在这一节都拿到了他们要的东西吗？没有的话是结构问题，不是字数问题。
+
+Are foundation models that are good at building agents also good at being agents?
+— Decomposing Foundation Model Capability in Self-Evolving Agents
+
+Introduction
+Our key research question is:
+Are foundation models that are good at building agents also good at being agents?
+This decomposes into three concrete sub-questions:
+Within a self-evolving agent system, does the same foundation model exhibit equivalent capability when used as the evolver (the role that builds and improves the agent) versus when used as the solver (the role that is the agent being improved)?
+Which side — evolver or solver — is the binding capability bottleneck of the self-evolution loop?
+How does the relationship between evolver-capability and solver-capability vary across model families, model sizes, and benchmark domains?
+Why this is a benchmark, how it contributes to the future research community
+Existing self-evolution work asks "does my method improve a fixed agent" — a single-method, single-agent question. We propose a measurement protocol that turns established agentic benchmarks into a tool for measuring role-marginal foundation-model capability, enabling:
+a quantitative answer to where the foundation-model bottleneck lies in the self-evolution loop
+two scalar capability scores per foundation model (evolver-marginal and solver-marginal) that can be reported alongside standard agent benchmark scores
+a framework for cross-method comparison that decomposes contribution by role rather than aggregating into a single agent score
+
+Key Concept
+Concept
+Explanation
+Self-evolving agent system
+A system in which a deployed LLM agent improves over time via updates to its external workspace, rather than via parameter updates
+External workspace
+The set of editable artifacts that guide a frozen LLM agent at inference time — instructions, skills, memory, tool notes, workflows
+Evolver
+The role within a self-evolving system that reads execution experience and proposes updates to the external workspace; played by a foundation model. ("the model building the agent")
+Solver
+The role within a self-evolving system that uses the external workspace to act on tasks; the foundation-model base of the agent being evolved. ("the model being the agent")
+Evolver-marginal capability of model M
+M's effectiveness when occupying the evolver role, averaged over all solver models and benchmarks
+Solver-marginal capability of model M
+M's effectiveness when occupying the solver role, averaged over all evolver models and benchmarks
+Role-conditioned asymmetry
+The empirical question of whether evolver-marginal and solver-marginal capability are correlated within the same foundation model, or whether they are distinct capability dimensions
+
+
+Background
+Self-evolution is an active research area
+Self-evolving LLM agent systems — agents that improve after deployment by editing their external workspace from execution experience, without parameter updates — have become an active research direction over the past 12–18 months. Recent methods including A-Evolve, SkillRL, GEPA, Reflexion, Self-Refine, and Voyager all operate within this paradigm.
+We do not re-motivate the field here; readers familiar with the self-evolution literature already accept its premise. We focus instead on motivating the specific research question this paper addresses.
+Within self-evolution, two roles always exist — but have not been independently measured
+In any self-evolving system, two functional roles are present:
+A role that reads execution experience and proposes updates to the external workspace — i.e., the role that builds the agent
+A role that uses the external workspace to execute tasks — i.e., the role that is the agent
+Different methods physically realize this differently:
+Role-separated methods (A-Evolve, SkillRL): the two roles are played by distinct foundation-model instances, allowing each to be swapped independently.
+Role-collapsed methods (Reflexion, Self-Refine, Self-Critique): both roles are played by the same foundation model.
+Programmatic optimization (DSPy, GEPA): names the roles "optimizer" and "program," but the underlying decomposition is the same.
+We adopt the terms evolver and solver following established convention in the self-evolution literature. These names refer to the two roles, regardless of whether they are physically realized by the same model or different models.
+The crucial observation is that the role decomposition itself is universal, but no existing work has independently measured the foundation-model capability associated with each role. Existing self-evolution work treats role assignment as an implementation detail rather than as an explicit object of measurement.
+The bottleneck question is unanswered — and is directly actionable
+The fundamental question we ask is:
+Within a self-evolution loop, which side is the foundation-model capability bottleneck — the evolver or the solver?
+This is not an academic question. The answer determines concrete post-training and capability-investment decisions:
+If the bottleneck is the evolver, post-training and reinforcement fine-tuning should target reflective and constructive capability — reading trajectories, proposing structurally novel modifications, judging trade-offs in workspace edits.
+If the bottleneck is the solver, post-training should target robustness under under-specified or recently-evolved workspaces — instruction-following on novel skill formats, tool use under unfamiliar conventions.
+If evolver and solver are uncorrelated within a single model, role-conditioned co-training is required rather than a single general post-training objective.
+The answer therefore directly informs how the broader research community allocates capability investment.
+Why no one has measured this yet
+Three structural reasons:
+Compute scale. Independently varying evolver model and solver model across benchmarks requires running an N × N × K matrix of experiments (N foundation models, K benchmarks). At realistic per-experiment compute for self-evolution, this is feasible only at a small number of labs.
+Methodological gap. Existing self-evolution benchmarks measure single-method, single-agent improvement. None expose evolver and solver as independently swappable variables.
+Conceptual gap. The evolver/solver decomposition has not been articulated as an explicit measurement target — it has been treated as an implementation detail or as method-internal nomenclature.
+
+What we do
+Methodology: tournament-style role-marginal decomposition
+For each (evolver_model, solver_model, benchmark) triple:
+Run a self-evolution method as the experimental instrument (we use A-Evolve in the no-groundtruth regime; the protocol generalizes to any role-separated method).
+Measure pre-evolution and post-evolution agent performance on the benchmark.
+Record the post-evolution score S(e, s, b).
+For each foundation model M, compute two marginal scores:
+Evolver-marginal score of M: average of S(M, s, b) over all solver models s and benchmarks b
+Solver-marginal score of M: average of S(e, M, b) over all evolver models e and benchmarks b
+Plotting models in the (evolver-marginal, solver-marginal) plane then reveals:
+Diagonal regime → the same underlying capability drives both roles ("good models are good at both"); evolver and solver are not distinct measurement targets.
+Off-diagonal regime → evolver and solver are distinct capability dimensions; some models are systematically better builders, others systematically better agents.
+Variance decomposition over (E, S, B) quantifies what fraction of total performance variance is explained by evolver-side, solver-side, and interaction effects — directly answering the bottleneck question.
+Why we use A-Evolve as the experimental instrument
+We require a self-evolution method that (a) physically separates evolver and solver into distinct model instances, and (b) exposes both as independently swappable variables. A-Evolve satisfies both. The measurement protocol itself is method-agnostic — extension to SkillRL and GEPA is left to follow-up work.
+We additionally fix A-Evolve in its no-groundtruth feedback regime, because in this regime solver capability is most load-bearing (the solver must do its own self-assessment without external correctness signals), giving the cleanest measurement of role-conditioned asymmetry. The groundtruth-feedback regime is studied in a parallel project.
+Experimental setup
+N foundation models spanning frontier-class families available at the required per-experiment compute (Claude, Qwen, Kimi via AWS Bedrock).
+K agentic benchmarks spanning the task spectrum: SWE-bench Verified (software engineering), Terminal-Bench 2.0 (terminal operation), MCP-Atlas (tool use), WebArena (web), ARC-AGI (reasoning).
+Fixed self-evolution method: A-Evolve, no-groundtruth regime.
+N × N × K matrix run end-to-end with no per-task prompts and no curated solver data.
+
+Why introduce this benchmark
+Existing agent benchmarks measure static capability
+Established agent benchmarks — SWE-bench, Terminal-Bench, MCP-Atlas, WebArena, ARC-AGI — measure what an agent can solve under a fixed configuration. They are point-estimates of agent capability at a single workspace state, and cannot speak to capability under self-evolution.
+Existing self-evolution evaluations are single-method, single-agent
+Existing self-evolution evaluations ask whether a particular method improves a particular fixed agent. The evolver model and solver model are typically identical or fixed. Such evaluations cannot answer the bottleneck question because they do not independently vary the two roles.
+Our protocol fills this specific gap
+We propose a measurement protocol — not a new task dataset — that turns established agentic benchmarks into measurements of role-marginal foundation-model capability. The protocol is:
+Algorithm-agnostic. Any role-separated self-evolution method can serve as the instrument. We use A-Evolve; SkillRL and GEPA fit into the same protocol.
+Model-agnostic. Any pair of foundation models can be plugged in as evolver and solver. As new frontier models are released, they can be re-scored with the same protocol.
+Decomposable. Produces two scalar scores per foundation model (evolver-marginal, solver-marginal) and a variance decomposition over the joint space.
+Cumulative. Future work can extend the matrix without re-running prior cells, producing a growing public record of role-marginal capability across the model frontier.
+Long-term contribution to the research community
+If evolver-marginal and solver-marginal capability become reported alongside standard agent benchmark scores, this enables:
+Targeted post-training. Practitioners can identify which side of the self-evolution loop a given model is weak on, and direct RFT investment accordingly.
+Cross-method comparison. Self-evolution methods can be compared not on a single composite agent, but on how they aggregate evolver-side and solver-side capability — separating method contribution from foundation-model contribution.
+Theory development. Empirical role-conditioned asymmetry data provides an anchor for theoretical work on what evolver and solver capability are, whether they should be co-trained, and how they relate to existing capability dimensions (instruction-following, tool use, reflection, planning).
+
+References
+[1] A-Evolve: Self-Evolving Agents with Frontier Models as Researchers. arXiv:2602.00359 [2] SkillsBench: Benchmarking How Well Agent Skills Work Across Diverse Tasks. arXiv:2602.12670 [3] PostTrainBench: Can LLM Agents Automate LLM Post-Training? arXiv:2603.08640 [4] SEA-Eval: A Benchmark for Evaluating Self-Evolving Agents Beyond Episodic Assessment. arXiv:2604.08988 [5] Evo-Memory [6] StuLife [7] HELM [8] OpenCompass [9] AgentBench [10] DSPy / GEPA: Programmatic Optimization of LM Workflows [11] Reflexion: Language Agents with Verbal Reinforcement Learning [12] Voyager: An Open-Ended Embodied Agent with Large Language Models
+

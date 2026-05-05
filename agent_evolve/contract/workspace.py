@@ -205,6 +205,8 @@ class AgentWorkspace:
             src = dir_map[layer]
             if src.exists():
                 bak = src.with_suffix(".protect_bak")
+                if bak.exists():
+                    shutil.rmtree(bak)
                 shutil.copytree(src, bak)
                 backups[layer] = (src, bak)
             else:

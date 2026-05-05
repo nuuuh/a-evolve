@@ -599,6 +599,40 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                     _infra_search = _infra_path
                     _infra_dir = Path(_ws_root) / "infra"
 
+        _cutoff_date = datetime.strptime(cutoff_str, '%Y-%m-%d').date()
+        _RELATIVE_RE = re.compile(
+            r'(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago', re.I)
+        _ABSOLUTE_FMTS = [
+            (re.compile(r'(\d{4})-(\d{2})-(\d{2})'), lambda m: (int(m.group(1)), int(m.group(2)), int(m.group(3)))),
+            (re.compile(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+(\d{1,2}),?\s+(\d{4})', re.I),
+             lambda m: (int(m.group(3)), {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,
+                         'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12}[m.group(1).lower()[:3]], int(m.group(2)))),
+            (re.compile(r'(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+(\d{4})', re.I),
+             lambda m: (int(m.group(3)), {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,
+                         'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12}[m.group(2).lower()[:3]], int(m.group(1)))),
+        ]
+
+        def _is_after_cutoff(date_str: str) -> bool:
+            """Check if a date string refers to a time after cutoff_str."""
+            if not date_str:
+                return False
+            rm = _RELATIVE_RE.search(date_str)
+            if rm:
+                n, unit = int(rm.group(1)), rm.group(2).lower()
+                days = {'second': 0, 'minute': 0, 'hour': 0, 'day': 1,
+                        'week': 7, 'month': 30, 'year': 365}.get(unit, 0) * n
+                approx = datetime.now().date() - timedelta(days=days)
+                return approx > _cutoff_date
+            for pattern, extractor in _ABSOLUTE_FMTS:
+                m = pattern.search(date_str)
+                if m:
+                    try:
+                        y, mo, d = extractor(m)
+                        return datetime(y, mo, d).date() > _cutoff_date
+                    except (ValueError, KeyError):
+                        pass
+            return False
+
         def _strict_search(query):
             """Multi-source pre-cutoff search — guaranteed zero label leakage.
 
@@ -628,18 +662,22 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                     if proc.returncode == 0 and proc.stdout.strip():
                         config_out = json.loads(proc.stdout.strip())
                         n_direct = len(config_out.get("direct_results", []))
-                        if n_direct:
-                            log.info("Pipeline returned %d direct_results (class=%s)",
-                                     n_direct, config_out.get("classification", "?"))
+                        n_filtered = 0
                         for dr in config_out.get("direct_results", []):
                             title = dr.get("title", "")
                             content = dr.get("content", "")
                             source = dr.get("source", "API")
                             date = dr.get("date", "")
+                            if _is_after_cutoff(date):
+                                n_filtered += 1
+                                continue
                             if content and title.lower() not in _seen_titles:
                                 _seen_titles.add(title.lower())
                                 attr = f"[{source}" + (f" {date}]" if date else "]")
                                 pipeline_results.append(f"{title}\n   {attr} {content}")
+                        if n_direct:
+                            log.info("Pipeline returned %d direct_results (class=%s, filtered=%d)",
+                                     n_direct, config_out.get("classification", "?"), n_filtered)
                         search_queries = config_out.get("queries", [query])
                     elif proc.returncode != 0:
                         log.warning("Pipeline exit %d: %s", proc.returncode, proc.stderr[:200])
