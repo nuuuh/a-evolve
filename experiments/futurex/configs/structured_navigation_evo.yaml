@@ -1,29 +1,25 @@
-# FutureX navigation — starts with NO built-in search; evolution must
-# earn search capability by writing tools under /tools/*.py that the solver
-# invokes via the bash tool.
+# FutureX — structured_navigation template (4-phase + git branching).
 batch_size: 20
 max_cycles: 0
 holdout_ratio: 0.0
-
 evolve_prompts: true
 evolve_skills: true
 evolve_memory: true
 evolve_tools: true
-
 evolver_model: us.anthropic.claude-opus-4-6-v1
 evolver_max_tokens: 128000
-
 egl_threshold: 0.05
 egl_window: 3
-
-# FutureX-specific
 model_name: us.anthropic.claude-sonnet-4-6
 sort_by_timestamp: true
 builtin_search: "off"
 sandbox_network: bridge
 evolver_sandbox_network: bridge
-
-# Navigation: plan-driven orchestration with strategy tree
 navigation_enabled: true
-branch_confidence_threshold: 0.7
-orchestrator: plan_driven
+branch_confidence: 0.7
+orchestrator: structured_navigation
+structured_evolution:
+  prompts_dir: experiments/futurex/evolver_prompts
+  research_parallel: 3
+  build_verify_retries: 3
+  hitl_enabled: false

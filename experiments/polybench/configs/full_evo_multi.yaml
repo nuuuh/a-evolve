@@ -2,7 +2,7 @@
 # (no task routing — the analyst classifies batch failures and guides
 # the evolver, but every task still flows through main).
 batch_size: 100
-max_cycles: 20
+max_cycles: 0
 holdout_ratio: 0.0
 
 evolve_prompts: true

@@ -74,10 +74,14 @@ class NavigationEngine(AEvolveEngine):
         elif mode == "inline":
             from .templates.inline import InlineTemplate
             self._template = InlineTemplate(self)
+        elif mode == "structured_navigation":
+            from .templates.structured_navigation import StructuredNavigationTemplate
+            self._template = StructuredNavigationTemplate(self)
         else:
             raise ValueError(
                 f"Unknown evolution mode {mode!r} "
-                f"(expected 'inline' or 'orchestrated', or pass template=)"
+                f"(expected 'inline', 'orchestrated', or "
+                f"'structured_navigation', or pass template=)"
             )
 
     # ── Visualization ───────────────────────────────────────────
@@ -314,23 +318,6 @@ class NavigationEngine(AEvolveEngine):
                 "name": name,
                 "description": descriptions.get(name, ""),
             }
-            try:
-                summary["system_prompt"] = vc.show_file_at(name, "prompts/system.md")
-            except Exception:
-                summary["system_prompt"] = ""
-            try:
-                ls_out = vc._git("ls-tree", "--name-only", f"{name}:skills/")
-                summary["skills"] = [
-                    s for s in ls_out.strip().splitlines()
-                    if s and s != "_drafts"
-                ]
-            except Exception:
-                summary["skills"] = []
-            try:
-                summary["tools_registry"] = vc.show_file_at(
-                    name, "tools/registry.yaml")
-            except Exception:
-                summary["tools_registry"] = ""
             try:
                 summary["readme"] = vc.show_file_at(name, "README.md")
             except Exception:

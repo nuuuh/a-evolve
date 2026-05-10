@@ -142,7 +142,15 @@ run H4 navigation \
 # H4_multi: Structured evolution (4-phase: analyze → research → build → verify)
 run H4_multi structured_evo \
   --output-dir "results/polybench_structured_evo${SUFFIX}" \
-  --config experiments/polybench/configs/structured_evolution_evo.yaml
+  --config experiments/polybench/configs/structured_evolution_evo.yaml \
+  --batch-size 250
+
+# H4_multi_nav: Structured evolution + navigation (4-phase + git branching)
+run H4_multi_nav structured_nav \
+  --navigation \
+  --output-dir "results/polybench_structured_nav${SUFFIX}" \
+  --config experiments/polybench/configs/structured_navigation_evo.yaml \
+  --batch-size 250
 
 # ─── Summary ──────────────────────────────────────────────────────────
 echo ""

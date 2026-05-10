@@ -238,6 +238,16 @@ run H5_multi_nav navigation_multi_strict \
   --config experiments/futurex/configs/navigation_multi.yaml
 COMMON="$COMMON_SAVE"
 
+# H5_struct_nav: Structured evolution + navigation (4-phase + git branching)
+COMMON_SAVE="$COMMON"
+COMMON="${COMMON//--no-infra-evo/}"
+run H5_struct_nav structured_nav \
+  --max-turns 80 \
+  --navigation \
+  --output-dir results/futurex_structured_nav \
+  --config experiments/futurex/configs/structured_navigation_evo.yaml
+COMMON="$COMMON_SAVE"
+
 # ─── Summary ──────────────────────────────────────────────────────────
 echo ""
 echo "=== All requested experiments complete ==="

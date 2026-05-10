@@ -1,5 +1,5 @@
 batch_size: 100
-max_cycles: 20
+max_cycles: 0
 holdout_ratio: 0.0
 
 evolve_prompts: false

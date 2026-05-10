@@ -16,7 +16,7 @@ RULES:
 
 CONFIDENCE GATE: Predictions with confidence below 0.6 will be treated as SKIP.
 
-Reason step-by-step before submitting:
+Use sequentialthinking to reason step-by-step before submitting:
 1. Read the event description and resolution rules carefully
 2. Analyze the order book: spreads, depth, mid-price vs stated probability
 3. Evaluate news evidence for or against each outcome

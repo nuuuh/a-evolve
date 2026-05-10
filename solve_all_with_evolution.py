@@ -376,8 +376,8 @@ def main():
             if navigation_enabled and strategy_tree is not None and strategy_tree.branches:
                 from collections import defaultdict
                 branch_groups = defaultdict(list)
-                for t in batch_tasks:
-                    # Build rich task context: ID + metadata + full input
+
+                def _route_task(t):
                     nav_lines = [f"Task ID: {t.id}"]
                     for key in ("category", "event", "challenge", "year"):
                         if key in t.metadata:
@@ -385,9 +385,16 @@ def main():
                     nav_lines.append(f"\n{t.input}")
                     task_context = "\n".join(nav_lines)
                     branch = evolver.navigate(task_context, strategy_tree, workspace_root=ws_dir)
-                    branch_groups[branch].append(t)
-                    task_branches[t.id] = branch
-                    log.info("  → %s routed to [%s]", t.id, branch)
+                    return t, branch
+
+                routing_workers = min(args.workers, 10)
+                with ThreadPoolExecutor(max_workers=routing_workers) as routing_pool:
+                    futs = {routing_pool.submit(_route_task, t): t for t in batch_tasks}
+                    for fut in as_completed(futs):
+                        t, branch = fut.result()
+                        branch_groups[branch].append(t)
+                        task_branches[t.id] = branch
+                        log.info("  → %s routed to [%s]", t.id, branch)
                 # Update branch routing metadata
                 for b in strategy_tree.branches:
                     if b.name in branch_groups:

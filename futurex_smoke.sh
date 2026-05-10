@@ -165,6 +165,35 @@ run H5_multi_smoke navigation_multi_smoke \
   --output-dir results/futurex_smoke_navigation_multi \
   --config experiments/futurex/configs/navigation_multi.yaml
 
+# H5_struct_nav_smoke: Structured evolution + navigation (4-phase + git branching)
+COMMON_SAVE="$COMMON"
+COMMON="${COMMON//--no-infra-evo/}"
+run H5_struct_nav_smoke structured_nav_smoke \
+  --navigation \
+  --evolver-prompt experiments/futurex/evolver_prompt.md \
+  --output-dir results/futurex_smoke_structured_nav \
+  --config experiments/futurex/configs/structured_navigation_evo.yaml
+COMMON="$COMMON_SAVE"
+
+# B_gepa_lite_smoke: GEPA-lite baseline (reflective prompt evolution, prompts-only)
+run B_gepa_lite_smoke gepa_lite_smoke \
+  --output-dir results/futurex_smoke_gepa_lite \
+  --config experiments/futurex/configs/gepa_lite_evo.yaml
+
+# B_mh_lite_smoke: Meta-Harness-lite baseline (archive-based proposer, k=1)
+# Needs infra evolution — temporarily remove --no-infra-evo from COMMON
+COMMON_SAVE="$COMMON"
+COMMON="${COMMON//--no-infra-evo/}"
+run B_mh_lite_smoke meta_harness_lite_smoke \
+  --output-dir results/futurex_smoke_mh_lite \
+  --config experiments/futurex/configs/meta_harness_lite_evo.yaml
+COMMON="$COMMON_SAVE"
+
+# B_octo_smoke: OctoTools expert baseline (ACL 2026 oral — static harness, no evo)
+run B_octo_smoke octotools_expert_smoke \
+  --output-dir results/futurex_smoke_octo \
+  --config experiments/futurex/configs/octotools_expert_evo.yaml
+
 # ─── Summary ──────────────────────────────────────────────────────────
 echo ""
 echo "=== All requested smoke experiments complete ==="
@@ -176,6 +205,9 @@ echo "  H1_smoke         Naive evolution starting from H0a floor (builtin_search
 echo "  H1_multi_smoke   Multi-agent naive evolution, same floor"
 echo "  H5_smoke         Navigation (inline branching), same floor"
 echo "  H5_multi_smoke   Navigation + multi-agent, same floor"
+echo "  B_gepa_lite_smoke   GEPA-lite baseline (reflect+mutate, prompts only)"
+echo "  B_mh_lite_smoke     Meta-Harness-lite baseline (archive proposer, k=1)"
+echo "  B_octo_smoke        OctoTools expert baseline (ACL 2026 oral — static harness)"
 echo ""
 echo "All H1/H5 experiments start with NO built-in search — evolution must"
 echo "earn search capability by writing tools under /tools/*.py that the"
@@ -188,6 +220,9 @@ echo "  H1_smoke        vs H0b_smoke:     Can evolution match handwritten search
 echo "  H1_multi_smoke  vs H1_smoke:      Value of multi-agent (no navigation)"
 echo "  H5_smoke        vs H1_smoke:      Value of navigation"
 echo "  H5_multi_smoke  vs H5_smoke:      Value of multi-agent on top of navigation"
+echo "  B_gepa_lite     vs H1_smoke:      Ours vs reflective prompt evo (NeurIPS 2025)"
+echo "  B_mh_lite       vs H1_smoke:      Ours vs archive-proposer baseline (2026)"
+echo "  B_octo_smoke    vs H1_smoke:      Ours (evolving) vs static expert harness (ACL 2026)"
 echo ""
 echo "Analysis:"
 echo "  grep -h 'SUMMARY' logs/*_smoke_*_futurex_*.log"

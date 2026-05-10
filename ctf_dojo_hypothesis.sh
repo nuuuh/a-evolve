@@ -152,6 +152,12 @@ run H4_multi structured_evo \
   --output-dir results/ctf_dojo_structured_evo \
   --config experiments/ctf_dojo/configs/structured_evolution_evo.yaml
 
+# H4_multi_nav: Structured evolution + navigation (4-phase + git branching)
+run H4_multi_nav structured_nav \
+  --navigation \
+  --output-dir results/ctf_dojo_structured_nav \
+  --config experiments/ctf_dojo/configs/structured_navigation_evo.yaml
+
 # ─── Summary ──────────────────────────────────────────────────────────
 echo ""
 echo "=== All requested experiments complete ==="

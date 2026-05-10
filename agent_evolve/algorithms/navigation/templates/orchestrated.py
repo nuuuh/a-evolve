@@ -235,7 +235,7 @@ def build_planner_prompt(
     del trajectory_only  # now observer-driven
 
     summaries = []
-    for r in batch_results[:30]:  # cap to avoid prompt bloat
+    for r in batch_results[:50]:  # cap to keep planner prompt under context limit
         entry: dict[str, Any] = {
             "task_id": r.get("instance_id", r.get("task_id", "")),
             "turns": r.get("turns", 0),
@@ -247,7 +247,7 @@ def build_planner_prompt(
         if isinstance(task_input, dict):
             task_input = task_input.get("input", "")
         if task_input:
-            entry["task_preview"] = str(task_input)[:200]
+            entry["task_preview"] = str(task_input)[:300]
         # Liveness signal (not evaluation signal) for cancelled tasks.
         if r.get("status") == "cut_off":
             entry["status"] = "cut_off"
@@ -271,7 +271,12 @@ def build_planner_prompt(
         if "success" in r:
             entry["success"] = r["success"]
             if "detail" in r:
-                entry["detail"] = str(r["detail"])[:300]
+                entry["detail"] = str(r["detail"])[:500]
+        # Include solver behavioral fields (not labels — these are what
+        # the solver chose, not whether it was correct).
+        for field in ("decision", "confidence", "side", "gated"):
+            if field in r:
+                entry[field] = r[field]
         summaries.append(entry)
 
     if not batch_results:
@@ -442,14 +447,20 @@ class OrchestratedTemplate(EvolutionTemplate):
                 logger.warning("Checkout %s failed: %s", target, e)
                 continue
 
-            # Filter batch results to those the planner linked to this
-            # assignment (if any).
+            # The planner's assignment (focus + workload) already tells the
+            # evolver what to do — no need for full trajectory index.
+            # Pass minimal batch (just task_ids for reference) to keep the
+            # evolver's context under the 1M token limit.
             task_ids = set(assignment.get("task_ids", []) or [])
-            filtered = (
-                [r for r in batch_results
-                 if r.get("instance_id") in task_ids]
-                if task_ids else batch_results
-            )
+            if task_ids:
+                filtered = [
+                    {"instance_id": r.get("instance_id", r.get("task_id", "")),
+                     "turns": r.get("turns", 0)}
+                    for r in batch_results
+                    if r.get("instance_id") in task_ids
+                ][:10]
+            else:
+                filtered = []
 
             br_result = self._execute_plan_step(
                 solver_workspace, filtered, evo_number,

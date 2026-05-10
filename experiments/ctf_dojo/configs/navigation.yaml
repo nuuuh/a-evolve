@@ -1,5 +1,5 @@
 batch_size: 5
-max_cycles: 10
+max_cycles: 0
 holdout_ratio: 0.0
 
 evolve_prompts: true
@@ -15,6 +15,7 @@ solve_workers: 8
 egl_threshold: 0.05
 egl_window: 3
 
-# Navigation: decoupled evolution with strategy tree
+# Navigation: plan-driven orchestration with strategy tree
 navigation_enabled: true
 branch_confidence_threshold: 0.7
+orchestrator: plan_driven

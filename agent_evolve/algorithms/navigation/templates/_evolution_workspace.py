@@ -22,6 +22,7 @@ TASK_BOARD = "task_board.md"
 RESEARCH_LOG = "research_log.jsonl"
 ARCHITECTURE = "architecture.md"
 INSIGHTS = "insights.jsonl"
+STRATEGY_TREE = "strategy_tree.md"
 
 REQUIRED_RESEARCH_FIELDS = {
     "cycle", "regime", "approach", "endpoint", "tested", "works",
@@ -93,10 +94,14 @@ IGNORED_GAP_LABELS = {
 
 
 _PRIORITY_BULLET_RE = re.compile(
-    r"[-*]\s*\w[\w_]*:\s*\d+.*PRIORITY:\s*(HIGH|MEDIUM|LOW)", re.IGNORECASE,
+    r"[-*]\s*\w[\w_]*:\s*\d+.*PRIORITY:\s*(HIGH|MEDIUM|LOW)"
+    r"(\s*→\s*TARGET:\s*(main|branch/[\w-]+))?",
+    re.IGNORECASE,
 )
 _MALFORMED_PRIORITY_RE = re.compile(
-    r"[-*]\s*\w[\w_]*:.*PRIORITY:\s*(HIGH|MEDIUM|LOW)", re.IGNORECASE,
+    r"[-*]\s*\w[\w_]*:.*PRIORITY:\s*(HIGH|MEDIUM|LOW)"
+    r"(\s*→\s*TARGET:\s*(main|branch/[\w-]+))?",
+    re.IGNORECASE,
 )
 
 
@@ -265,3 +270,117 @@ def load_insights(ws_root: Path) -> list[dict[str, Any]]:
         except json.JSONDecodeError:
             logger.warning("Skipping malformed insight record: %s", line[:80])
     return records
+
+
+# ── Strategy Tree (for structured_navigation) ──────────────────────
+
+
+def load_strategy_tree(ws_root: Path) -> str:
+    """Read strategy_tree.md content."""
+    p = _ws_path(ws_root) / STRATEGY_TREE
+    if not p.exists():
+        return ""
+    return p.read_text()
+
+
+def update_strategy_tree(
+    ws_root: Path,
+    tree: Any,
+    routing_stats: dict[str, dict[str, int]],
+    evo_number: int,
+) -> None:
+    """Write strategy_tree.md from StrategyTree + routing performance data.
+
+    Args:
+        tree: StrategyTree with .branches list
+        routing_stats: {"main": {"routed": N, "passed": M}, "branch/X": {...}}
+        evo_number: current cycle number
+    """
+    lines = [f"## Strategy Tree (Cycle {evo_number})", ""]
+
+    # Main
+    main_stats = routing_stats.get("main", {})
+    routed = main_stats.get("routed", 0)
+    passed = main_stats.get("passed", 0)
+    pct = f"{100 * passed / routed:.0f}%" if routed > 0 else "N/A"
+    lines.append("### main")
+    lines.append("General-purpose root strategy. Handles all tasks by default.")
+    lines.append(f"- Routed: {routed} tasks, {passed} passed ({pct})")
+    lines.append("")
+
+    # Branches
+    for b in getattr(tree, "branches", []):
+        stats = routing_stats.get(b.name, {})
+        routed = stats.get("routed", 0)
+        passed = stats.get("passed", 0)
+        pct = f"{100 * passed / routed:.0f}%" if routed > 0 else "N/A"
+        lines.append(f"### {b.name}")
+        lines.append(b.description or "(no description)")
+        lines.append(f"- Created: cycle {b.created_at_cycle}")
+        lines.append(f"- Routed: {routed} tasks, {passed} passed ({pct})")
+        lines.append("")
+
+    p = _ws_path(ws_root) / STRATEGY_TREE
+    p.write_text("\n".join(lines))
+
+
+def parse_routing_stats(routing_log_path: Path | None) -> dict[str, dict[str, int]]:
+    """Parse routing_log.jsonl into per-branch stats.
+
+    Returns: {"main": {"routed": N, "passed": M}, "branch/X": {...}}
+    """
+    stats: dict[str, dict[str, int]] = {}
+    if not routing_log_path or not routing_log_path.exists():
+        return stats
+    for line in routing_log_path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        branch = rec.get("branch", "main") or "main"
+        if branch not in stats:
+            stats[branch] = {"routed": 0, "passed": 0}
+        stats[branch]["routed"] += 1
+        if rec.get("success"):
+            stats[branch]["passed"] += 1
+    return stats
+
+
+# ── TARGET parsing for structured_navigation ────────────────────────
+
+_TARGET_RE = re.compile(r"→\s*TARGET:\s*(main|branch/[\w-]+)", re.IGNORECASE)
+
+
+def extract_targets_from_task_board(content: str) -> dict[str, list[str]]:
+    """Parse task board bullets for TARGET annotations.
+
+    Returns: {"main": ["regime_a", ...], "branch/X": ["regime_b", ...]}
+    Regimes without explicit TARGET default to "main".
+    """
+    targets: dict[str, list[str]] = {}
+    in_failure = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if re.match(r"^##\s+Failure Patterns", stripped, re.IGNORECASE):
+            in_failure = True
+            continue
+        if stripped.startswith("## "):
+            in_failure = False
+            continue
+        if not in_failure:
+            continue
+        if not _PRIORITY_BULLET_RE.match(stripped.replace("`", "")):
+            continue
+        # Extract regime name
+        regime_match = re.match(r"[-*]\s*(\w[\w_]*):", stripped)
+        if not regime_match:
+            continue
+        regime = regime_match.group(1)
+        # Extract target
+        target_match = _TARGET_RE.search(stripped)
+        target = target_match.group(1) if target_match else "main"
+        targets.setdefault(target, []).append(regime)
+    return targets

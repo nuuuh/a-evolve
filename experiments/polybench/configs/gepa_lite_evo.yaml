@@ -1,0 +1,27 @@
+# PolyBench — GEPA-lite baseline (reflective prompt evolution, prompts-only).
+# Fair-comparison port of GEPA (Agrawal et al., NeurIPS 2025). See
+# agent_evolve/algorithms/navigation/templates/gepa_lite.py for details.
+batch_size: 100
+max_cycles: 0
+holdout_ratio: 0.0
+
+# Prompts-only edit surface (paper's framing).
+evolve_prompts: true
+evolve_skills: false
+evolve_memory: false
+evolve_tools: false
+
+# Solver backbone: Sonnet 4.6 (same as all other RQ1 baselines).
+model_name: us.anthropic.claude-sonnet-4-6
+
+evolver_model: us.anthropic.claude-opus-4-6-v1
+evolver_max_tokens: 128000
+
+solve_workers: 24
+
+egl_threshold: 0.05
+egl_window: 3
+
+orchestrator: gepa_lite
+gepa_lite:
+  recent_reflections: 3
