@@ -144,10 +144,14 @@ run H1_smoke full_evo_smoke \
   --config experiments/futurex/configs/full_evo.yaml
 
 # H1_multi_smoke: Structured evolution (4-phase: analyze → research → build → verify)
+# Needs infra evolution — temporarily remove --no-infra-evo from COMMON
+COMMON_SAVE="$COMMON"
+COMMON="${COMMON//--no-infra-evo/}"
 run H1_multi_smoke structured_evo_smoke \
   --evolver-prompt experiments/futurex/evolver_prompt.md \
   --output-dir results/futurex_smoke_structured_evo \
   --config experiments/futurex/configs/structured_evolution_evo.yaml
+COMMON="$COMMON_SAVE"
 
 # H5_smoke: Navigation — inline branching + task routing
 run H5_smoke navigation_smoke \

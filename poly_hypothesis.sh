@@ -71,7 +71,7 @@ COMMON="python solve_all_with_evolution.py
   --dataset $DB_PATH
   --seed-workspace experiments/polybench/seed
   --evolver-prompt experiments/polybench/evolver_prompt.md
-  --trajectory-only
+  --temporal-reveal
   --max-turns 30
   --task-timeout 300
   --workers 24
@@ -108,6 +108,16 @@ run H0 baseline \
   --output-dir "results/polybench_baseline${SUFFIX}" \
   --config experiments/polybench/configs/baseline.yaml
 
+# H0_ds: Baseline - DeepSeek V3.2
+run H0_ds baseline_deepseek \
+  --output-dir "results/polybench_baseline_deepseek${SUFFIX}" \
+  --config experiments/polybench/configs/baseline_deepseek.yaml
+
+# H0_kimi: Baseline - Kimi K2.5
+run H0_kimi baseline_kimi \
+  --output-dir "results/polybench_baseline_kimi${SUFFIX}" \
+  --config experiments/polybench/configs/baseline_kimi.yaml
+
 # H1: Full evolution - all layers (prompts + skills + memory + tools)
 run H1 full_evo \
   --output-dir "results/polybench_full_evo${SUFFIX}" \
@@ -129,18 +139,10 @@ run H4 navigation \
   --output-dir "results/polybench_navigation${SUFFIX}" \
   --config experiments/polybench/configs/navigation.yaml
 
-# H4_smoke: Navigation smoke test (~51 tasks spanning full timeline, small batches)
-run H4_smoke navigation_smoke \
-  --navigation \
-  --stride 237 --batch-size 10 \
-  --output-dir results/polybench_nav_smoke \
-  --config experiments/polybench/configs/navigation.yaml
-
-# H4_multi: Navigation + multi-agent orchestrated evolution
-run H4_multi navigation_multi \
-  --navigation \
-  --output-dir "results/polybench_navigation_multi${SUFFIX}" \
-  --config experiments/polybench/configs/navigation_multi.yaml
+# H4_multi: Structured evolution (4-phase: analyze → research → build → verify)
+run H4_multi structured_evo \
+  --output-dir "results/polybench_structured_evo${SUFFIX}" \
+  --config experiments/polybench/configs/structured_evolution_evo.yaml
 
 # ─── Summary ──────────────────────────────────────────────────────────
 echo ""

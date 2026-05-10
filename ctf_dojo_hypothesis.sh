@@ -72,7 +72,7 @@ COMMON="python solve_all_with_evolution.py
   --dataset $CATALOG
   --seed-workspace experiments/ctf_dojo/seed
   --evolver-prompt experiments/ctf_dojo/evolver_prompt.md
-  --trajectory-only
+  --temporal-reveal
   --max-turns 50
   --task-timeout 600
   --workers 5
@@ -109,6 +109,16 @@ run H0 baseline \
   --output-dir results/ctf_dojo_baseline \
   --config experiments/ctf_dojo/configs/baseline.yaml
 
+# H0_ds: Baseline - DeepSeek V3.2
+run H0_ds baseline_deepseek \
+  --output-dir results/ctf_dojo_baseline_deepseek \
+  --config experiments/ctf_dojo/configs/baseline_deepseek.yaml
+
+# H0_kimi: Baseline - Kimi K2.5
+run H0_kimi baseline_kimi \
+  --output-dir results/ctf_dojo_baseline_kimi \
+  --config experiments/ctf_dojo/configs/baseline_kimi.yaml
+
 # H1: Full evolution - all layers (prompts + skills + memory + tools)
 run H1 full_evo \
   --output-dir results/ctf_dojo_full_evo \
@@ -137,11 +147,10 @@ run H4_smoke navigation_smoke \
   --output-dir results/ctf_dojo_nav_smoke \
   --config experiments/ctf_dojo/configs/navigation.yaml
 
-# H4_multi: Navigation + multi-agent orchestrated evolution
-run H4_multi navigation_multi \
-  --navigation \
-  --output-dir results/ctf_dojo_navigation_multi \
-  --config experiments/ctf_dojo/configs/navigation_multi.yaml
+# H4_multi: Structured evolution (4-phase: analyze → research → build → verify)
+run H4_multi structured_evo \
+  --output-dir results/ctf_dojo_structured_evo \
+  --config experiments/ctf_dojo/configs/structured_evolution_evo.yaml
 
 # ─── Summary ──────────────────────────────────────────────────────────
 echo ""

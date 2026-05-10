@@ -14,7 +14,7 @@
 \usepackage{graphicx}
 \usepackage{url}
 
-\title{Agentic Navigation for Evolution under Temporal Distribution Shift}
+\title{Agentic Evolution under Long-Horizon, Non-Stationary, Open-Ended Task Streams}
 
 \author{
   % TODO: Add author list, affiliations, and contribution footnotes.
@@ -24,29 +24,37 @@
 \maketitle
 
 \begin{abstract}
-% Write a 4--5 sentence abstract.
-% Sentence 1: State the problem: agentic evolution adapts LLM agents from
-% deployment experience, but existing linear evolution assumes past experience
-% transfers monotonically; temporal benchmarks violate this assumption.
-% Sentence 2: Name the key failure mode: accumulated experience contains both
-% stationary capabilities and non-stationary, regime-local heuristics, and a
-% single evolved workspace cannot decide which to apply per task.
-% Sentence 3: Present the method: decoupled evolution with a git-backed
-% strategy tree, stationary artifacts on main, non-stationary artifacts on
-% branches, per-task LLM navigation, and optional multi-agent evolution
-% decomposition.
-% Sentence 4: Summarize the empirical setup: PolyBench, CTF-Dojo, and FutureX,
-% ordered by real chronology, with baseline, linear A-Evolve, early-freeze,
-% navigation, and orchestrated-navigation variants.
-% Sentence 5: Give the core result after final numbers are locked: navigation
-% improves or stabilizes performance under shift, reduces regressions from
-% over-evolution, and explains when evolution should branch, freeze, or deepen.
+% Write a 5--6 sentence abstract aligned with the three-dimensional frame.
+% Sentence 1: State the setting: agentic evolution on real-world deployments
+% where tasks are simultaneously long-horizon (D1), non-stationary (D2), and
+% open-ended (D3). Static/i.i.d. benchmarks omit all three.
+% Sentence 2: State the empirical puzzle and three challenges:
+% (C1) early-freeze beats full-evo on every temporal benchmark we test;
+% (C2) a single-agent prompt-level evolver cannot construct the infrastructure
+% real deployment requires;
+% (C3) harness size grows 18--60x across a short horizon, exceeding any bounded
+% solver context.
+% Sentence 3: Introduce the theoretical frame: regret decomposes into
+% evolution loss L_evo and navigation loss L_nav, which are orthogonal and
+% independently improvable.
+% Sentence 4: State the two contributions: multi-agent evolution (4-phase
+% structured pipeline with HITL) expands the evolver class and reduces L_evo
+% (C2); navigation via a git-backed strategy tree conditions the harness per
+% task and reduces L_nav (C1); both are jointly required for C3.
+% Sentence 5: Summarize empirical setup: PolyBench (5,075 markets / 16 days),
+% CTF-Dojo (261 challenges / 13 years), FutureX (332 tasks / 82 days);
+% four-cell ablation grid {single-agent, multi-agent} x {no-nav, nav}, plus a
+% temporally shuffled control that isolates non-stationarity as the mechanism.
+% Sentence 6: Core results after final numbers lock in.
 \end{abstract}
 
 \input{sections/introduction}
 \input{sections/method}
 \input{sections/experiment}
 \input{sections/conclusions}
+% Note: sections/conclusions.tex holds the Conclusions paragraph; sections/appendix.tex
+% (included below) holds Related Work + Limitations + Ethics + Reproducibility stubs that
+% currently live outside the main flow. Reshuffle before submission.
 
 % Uncomment these lines once references.bib contains real entries and the draft
 % has at least one \cite{...}. The current outline intentionally has no

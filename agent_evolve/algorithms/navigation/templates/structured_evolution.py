@@ -709,9 +709,15 @@ class Template(EvolutionTemplate):
             json.dumps(r) for r in verified
         )
 
+        cfg = self.engine.config
+        workspace_extras = ""
+        if cfg.evolve_skills:
+            workspace_extras += "  /solver_workspace/skills/       — domain strategy files (YAML frontmatter: name, description)\n"
+        if cfg.evolve_memory:
+            workspace_extras += "  /solver_workspace/memory/       — concise, actionable batch learnings\n"
         builder_system = _load_prompt(
             prompts_dir, "builder_system.md", "Builder.",
-        ).format(evo_number=evo_number)
+        ).format(evo_number=evo_number, workspace_extras=workspace_extras)
         builder_prompt = _load_prompt(
             prompts_dir, "builder.md", "Build from research.",
         ).format(

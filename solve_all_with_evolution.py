@@ -841,3 +841,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+    import sys
+    sys.stdout.flush()
+    sys.stderr.flush()
+    import os
+    os._exit(0)

@@ -1,140 +1,473 @@
-写作前 — 目标读者分析（写给作者自己）
-这一节不是 paper 的一部分，是 kick-off 之前必须先想清楚的事。任何写作的第一步是回答三个问题：reader 是谁？他们为什么会想看？他们看完应该带走什么 take-home？这三件事定下来之后，paper 每一段都应该可以追溯到"在为哪一类 reader 服务"。
-主要 Reader（决定 paper 整体 framing）
-Reader 1：Frontier-model 实验室的 capability / post-training researcher
-OpenAI、Anthropic、DeepMind、Meta FAIR、Amazon Nova 团队 
-Why：他们正在决定下一代 frontier model 应该在哪个 capability axis 上重点投入。Self-evolution loop 里的 model bottleneck 在哪边，直接对应到他们的 RFT / post-training data curation 决策。这是他们最关心的 actionable signal。
-Take-home：一个可操作的判断 —— 该 invest evolver-side capability 还是 solver-side capability，以及这两者在 frontier model 中是否 correlated（决定能不能用一个 general post-training objective 一并解决，还是必须 role-conditioned co-training）。
-Reader 2：Self-evolution / agentic system 的 method 开发者
-A-Evolve、SkillRL、GEPA、DSPy、Reflexion 这几条线上的人；以及内部其他 lab 准备做类似工作的 PhD
-Why：他们想知道自己设计的 method 里 evolver 部分和 solver 部分谁更 load-bearing —— 下一版本应该改哪一边。Paper 给出的 algorithm-agnostic 测量协议可以让他们直接 plug 自己的 method 跑一遍 N×N matrix。
-Take-home：一套 method-agnostic 的 measurement protocol，可以 directly adopt 来评估自己的 method 在 evolver/solver 两侧的 marginal contribution。
-Reader 3：Top venue（NeurIPS / ICML / ICLR）reviewer
-Agent / LLM 方向的 reviewer，已经看过 30+ 篇 self-evolution paper，对 generic motivation 完全免疫
-Why：他们在 7 分钟内决定 accept 还是 reject。会被吸引是因为 paper 同时做了三件没人做过的事：概念上显式化 evolver/solver decomposition，方法上提出 role-marginal tournament，实证上给出 quantitative asymmetry。
-Take-home：三个清晰可独立成立的 contribution —— conceptual（decomposition framework）+ methodological（measurement protocol）+ empirical（the asymmetry finding 本身，定量、跨 benchmark 一致）。
-次要 Reader（影响特定段落，不主导整体 framing）
-Reader 4：Agent benchmark 设计者
-SWE-bench、Terminal-Bench、AgentBench 等 benchmark 作者社群
-Why：他们关心自己的 benchmark 在 self-evolution 测量中扮演什么角色。
-Take-home：我们的 protocol 不 replace 他们的 benchmark，而是把他们的 benchmark amplify 成 self-evolution 测量的 substrate。
-Reader 5：内部 lab 同事 + 未来的 follow-up paper
-A-EVO Lab 其他几条线（Tianxwei 的 GT-regime work、Zewen 的 multi-agent work）以及未来接着做的 PhD
-Why：他们想知道这篇和 lab 其他工作怎么 fit、以及未来 follow-up 的 hooks 在哪。
-Take-home：清楚的边界划定（no-GT regime 是这篇的 scope，GT-regime 和 multi-agent 留给其他线），以及 explicit 的 future-work hooks。
-明确放弃的 Reader（不要为他们写）
-Self-evolution 入门读者 —— 我们不是综述。Background 一段带过，不展开 motivate 整个 field。
-关心特定 application domain 的读者（做 web agent / SQL agent / 某个 vertical 的人）—— 我们的 finding 是 model-level、跨 benchmark 的，不为单一 domain 写专门段落。
-关心 algorithm vs algorithm 对比的读者 —— 这篇不比较 A-Evolve vs SkillRL 谁更好，contribution 在 model 层面不在 algorithm 层面。
-写作时的自检 anchor
-每写一段，先问自己三个问题：
-Who —— 这一段服务的是哪一类 reader？
-Why —— 这一段帮他们答了什么"为什么读这一段"的问题？
-Take-home —— 这一段 contribute 到哪一个 take-home message？
-如果三个问题中任何一个答不上来，这段大概率应该删掉或重写。每写完一节回头检查一次：三类主要 reader 在这一节都拿到了他们要的东西吗？没有的话是结构问题，不是字数问题。
 
-Are foundation models that are good at building agents also good at being agents?
-— Decomposing Foundation Model Capability in Self-Evolving Agents
+Target reader -> Target RQ -> Proposal
+Target reader:
+self-evolving agent / agentic system researchers (primary)
+TLDR: 他们已经熟悉 A-Evolve、SkillRL、GEPA、Reflexion、Self-Refine 等工作，不需要我们重新讲 self-evolution 为什么重要。他们真正关心的是：现有方法通常只报告一个 end-to-end improvement score，但这个 score 混合了 builder/evolver、solver/agent 和 benchmark domain 的影响。我们的 paper 给他们一个 method-agnostic protocol，把 improvement 分解成不同 role 的 contribution。
 
-Introduction
-Our key research question is:
-Are foundation models that are good at building agents also good at being agents?
-This decomposes into three concrete sub-questions:
-Within a self-evolving agent system, does the same foundation model exhibit equivalent capability when used as the evolver (the role that builds and improves the agent) versus when used as the solver (the role that is the agent being improved)?
-Which side — evolver or solver — is the binding capability bottleneck of the self-evolution loop?
-How does the relationship between evolver-capability and solver-capability vary across model families, model sizes, and benchmark domains?
-Why this is a benchmark, how it contributes to the future research community
-Existing self-evolution work asks "does my method improve a fixed agent" — a single-method, single-agent question. We propose a measurement protocol that turns established agentic benchmarks into a tool for measuring role-marginal foundation-model capability, enabling:
-a quantitative answer to where the foundation-model bottleneck lies in the self-evolution loop
-two scalar capability scores per foundation model (evolver-marginal and solver-marginal) that can be reported alongside standard agent benchmark scores
-a framework for cross-method comparison that decomposes contribution by role rather than aggregating into a single agent score
+They have read 30+ self-evolution papers, and know the background of A-Evolve, SkillRL, GEPA, Reflexion, Self-Refine, and care about the role decomposition 
+Why consider them?
+They are the most direct audience of this paper and the most likely people to cite or build on it.
+They already care about how agent systems improve from experience, but most existing work evaluates improvement as one end-to-end score.
+They will immediately ask whether our contribution is just another self-evolution method, or whether we provide a more general measurement protocol.
+They will also challenge whether our findings are tied to A-Evolve, or whether they generalize to other self-evolution frameworks such as SkillRL / GEPA / DSPy-style optimizer-program systems.
+What can they get from our paper?
+A clearer decomposition of self-evolving systems into two roles:
+evolver = the model that builds / updates the agent;
+solver = the model that uses the updated workspace to solve tasks.
+A method-agnostic protocol to measure which role is more load-bearing in a self-evolution loop.
+A framework to ask: is the improvement limited by the update provider, the agent being improved, or the interaction between the two?
+Take-home message:
+Self-evolution should not only be evaluated as “does this method improve this agent?” It should also be evaluated by decomposing which foundation-model role contributes to the improvement: the evolver, the solver, or their interaction.
+Frontier-model lab researcher (primary)
+TLDR: 他们关心下一代 frontier model 应该提升什么能力。我们的 benchmark 可以告诉他们：会 solve task 的模型是否也会 improve other agents？如果 building agents 和 being agents 是两个不同 capability axis，那么 post-training / RFT data 可能需要 role-conditioned design。
 
-Key Concept
+Why consider them? 
+They are deciding what capabilities the next generation of frontier models should improve.
+Self-evolving agents expose a useful capability question: is “being a strong agent” the same as “being good at improving agents”?
+If the two capabilities are different, then post-training data and RL objectives may need to be role-conditioned.
+They care less about a specific self-evolution algorithm and more about whether our benchmark reveals a new capability axis.
+What can they get from our paper?
+Two model-level measurements:
+Evolver-marginal capability: how good a model is at improving other agents.
+Solver-marginal capability: how good a model is at using an improved workspace to solve tasks.
+Evidence about whether these two capabilities are correlated or asymmetric.
+Their likely take-home message
+Frontier models may need to be evaluated and trained along two distinct agentic capability axes: the capability to build / improve agents and the capability to act as the improved agent.
+
+Benchmark designer (secondary)
+TLDR: 他们关心现有 benchmark 怎么被使用。我们的 framing 应该是：我们不 replace existing agent benchmarks，而是 amplify them。SWE-bench、Terminal-Bench、MCP-Atlas 等仍然测 fixed-agent performance；我们的 protocol 用它们进一步测 self-evolution setting 下的 role-marginal capability。
+
+These include people who design or maintain benchmarks such as SWE-bench, Terminal-Bench, AgentBench, WebArena, MCP-Atlas, SkillsBench, etc.
+Why consider them?
+Our benchmark protocol uses existing agentic benchmarks as substrates.
+We are not trying to replace static agent benchmarks; we are extending what they can measure.
+Benchmark designers will care whether our protocol respects their benchmark assumptions, avoids contamination, and reports results in a way that does not hide benchmark-specific behavior.
+They will also care whether pooled scores across benchmarks are meaningful and reproducible.
+What can they get from our paper?
+A way to turn existing static agent benchmarks into tests of post-deployment improvement / self-evolution.
+A new use case for their benchmarks: measuring not only fixed-task performance, but also how much an agent can improve after workspace updates.
+Per-benchmark diagnostics showing whether evolver / solver bottlenecks differ across software engineering, terminal operation, tool use, web tasks, etc.
+A protocol that amplifies existing benchmarks rather than replacing them.
+Their likely take-home message
+Existing agent benchmarks remain important for measuring fixed-agent capability, but they can also serve as substrates for measuring role-marginal capability in self-evolving agents.
+
+Benchmark Gap: What existing benchmarks do not measure
+从evolution中我们可以发现一些现有的static benchmark没有测量的能力吗：
+Static agent benchmarks mainly evaluate a model as an agent executor under a fixed harness. 
+
+However, harness-level self-evolution exposes two distinct roles: 
+a builder/evolver that writes or updates the harness, and 
+a solver/agent that uses the evolved harness. 
+Existing evaluations usually collapse these roles into one end-to-end score, so they cannot tell whether self-evolution performance 
+comes from the model’s ability to build agents, 
+the model’s ability to act as the improved agent, or their interaction.
+
+This motivates our overall RQ:
+RQ:
+Overall
+Are models good at building agents also good at being agents?
+
+Target Readers
+Self-evolving agent / agentic system researchers
+Frontier-model lab researchers
+Benchmark / evaluation researchers
+
+RQ1: Builder-side capability
+How well can a model improve other agents by updating their harnesses?
+This answers:
+RQ1.1: Do different builder models differ in their ability to produce useful agent-harness updates? (不同 builder model 写 harness updates 的能力有多大差异？)
+Target readers and answered questions: 
+self-evolving agent / agentic system researchers
+我的 self-evolution gain 到底是不是来自更强的 updater / teacher / optimizer？
+frontier-model lab researchers
+“能改进 agent” 是否是一种独立的 model capability？
+RQ1.2: Does a stronger builder model actually lead to a better evolved agent? (更强 builder 是否真的带来更好的 evolved agent？)
+Target readers and answered questions: 
+frontier-model lab researchers & self-evolving agent / agentic system researchers
+model allocation / cost-performance tradeoff: self-evolution 一定需要最强的 frontier model 做 builder 吗？还是 weaker / cheaper model 也足够？
+如果更强 builder 显著更好，那么下一代 self-evolution system 应该 invest builder-side capability。
+如果强弱 builder 差异不大，那就说明 bottleneck 可能不在 builder，而在 agent/solver 或 benchmark domain。
+Initial findings:
+The difference between different evolvers is not too much. 强和弱的model在update harness方面差异不大
+Then can transit to RQ2:
+If builder-side variance is smaller than expected, then the next question is whether the agent being improved is the real bottleneck.
+
+RQ2: Agent-side capability (谁更会 be improved / use evolved harnesses？)
+How well can a model act as the agent being improved under an evolving harness?
+This answers:
+RQ2.1: Is “being improvable” a distinct agent-side capability? （“能被改进 / 能吸收 evolved harness” 是否是一种区别于 static task-solving 的 agent-side capability？）
+Target readers & answered questions
+frontier-model lab researchers & self-evolving agent / agentic system researchers
+self-evolution gain 是不是只由 update quality 决定？还是 recipient agent 本身也需要一种能力，才能 interpret、follow、use 这些 evolved artifacts？
+这对 frontier lab 很重要，因为如果 “being improvable” 是一种独立能力，那么 model post-training 不能只看 static benchmark performance，还要训练模型如何使用新写入的 skills、memory、instructions、tool notes、workflow constraints。
+RQ2.2: Are stronger static agents necessarily better at benefiting from self-evolution? (强模型会更容易被evolve吗？)
+Target readers & answered questions
+frontier-model lab researchers 
+static benchmark performance 是否足够预测一个 model 在 self-evolution setting 下的表现？ 
+如果 static 强的模型并不总是最容易被 improve，那么 post-training 不能只优化 fixed-harness task-solving，还需要训练模型使用新写入的 skills、memory、instructions、tool notes 和 workflow updates。
+self-evolving agent / agentic system researchers 
+设计 self-evolving system 时，是不是默认选择最强 solver 就够了？还是应该选择更容易吸收 harness updates 的 solver？
+benchmark / evaluation researchers
+我们的 benchmark 是否测到了 static benchmark 之外的新 signal，还是只是 general model strength 的重命名？
+RQ2.3: When self-evolution fails, can the bottleneck be the agent’s inability to use the update, rather than the builder’s inability to write the update? (SE失败的原因会不会更可能是solver不会使用evolved harness而不是evolver不会update harness)
+Target readers & answered questions
+Target readers & answered questions
+self-evolving agent / agentic system researchers
+failure debugging 应该只看 updater / teacher / optimizer 吗？还是也应该检查 solver 是否真正使用了 evolved skills、memory、instructions 和 workflows？
+如果 update 是合理的但 solver 不会用，那么下一步不应该只改 update algorithm，也要改 solver-side harness use / skill use / memory use。
+frontier-model lab researchers
+如果 solver-side update utilization 是瓶颈，那么 post-training 需要训练模型在 changing harness 下稳定执行，而不是只训练 fixed-prompt task solving。
+benchmark / evaluation researchers
+benchmark 能不能从 end-to-end score 进一步提供 failure attribution：失败来自 update generation，还是 update utilization？
+RQ3: Role asymmetry / correlation （这两种能力是不是同一种能力，还是两个不同的capability axis?）
+Are builder-side and agent-side capabilities correlated, or do they form distinct capability dimensions?
+or are foundation models that are good at building agents also good at being agents?
+Motivation of this RQ:
+RQ1 and RQ2 measures two marginal capability, 
+RQ1 wants to tell which model has better capability as a builder/evolver (哪个模型update harness更强，是否强模型就一定harness update 能力更强)
+RQ2 wants to tell which model is a better capability (哪个模型吸收更强/更容易被evolve，是否强模型就这个能力更强)
+But these two RQs alone cannot tell us their relationships (单独研究这两模型和这两个能力关系并不能知道这两个capability的关系)
+Thus, we need to study this RQ3:
+are foundation models that are good at building agents also good at being agents?
+If they are highly correlated, then “good models are good at both.” If they diverge, then building agents and being agents should be evaluated separately.
+
+This answers:
+RQ3.1: Are models that are strong builders also strong agents?
+Target readers & answered questions
+frontier-model lab researchers
+一个 general agent capability score 是否足够？还是需要分别评估 builder-side capability 和 agent-side capability？
+如果二者高度相关，那么下一代 frontier model 可能只需要 general agent post-training；如果二者不相关，则需要 role-conditioned post-training。
+self-evolving agent / agentic system researchers
+在设计 self-evolving systems 时，是否可以默认用同一个 strongest model 同时做 builder 和 solver？还是应该根据 role 分别选择模型？
+RQ3.2: Do builder-marginal and agent-marginal scores provide information beyond static benchmark performance?
+Target readers & answered questions
+benchmark / evaluation researchers
+我们的 benchmark 是否真的测到了 static benchmarks 没有测到的新 signal？还是只是 general model strength 的重命名？
+frontier-model lab researchers
+role-marginal capability 是否是一个新的 capability axis，值得作为模型评估和 post-training 的目标？
+RQ3.3: Are there off-diagonal model profiles?
+Target readers & answered questions
+frontier-model lab researchers
+是否存在 strong builder but weak agent，或者 strong agent but weak builder 的模型？
+如果存在，这说明 model family / post-training recipe 可能对不同 agentic role 有不同 bias。
+self-evolving agent / agentic system researchers
+是否应该根据 builder/solver role 做 model pairing，而不是简单选择 overall strongest model？
+RQ4: Bottleneck
+Which role explains more variance in self-evolution performance: builder, agent, domain, or builder-agent interaction?
+Motivation of this RQ:
+RQ1 and RQ2 identify the two role-marginal capabilities. RQ3 asks whether they are correlated. 
+RQ4 then asks which factor is actually most load-bearing in self-evolution performance.
+
+This answers:
+
+RQ4.1: Is the bottleneck primarily builder-side or agent-side?
+Target readers & answered questions
+frontier-model lab researchers
+下一代 post-training / RFT 应该重点提升 builder-side update generation，还是 solver-side use of evolved harnesses？
+self-evolving agent / agentic system researchers
+下一版 self-evolution method 应该主要改 updater / teacher / optimizer，还是改 solver-side harness use / skill use / memory use？
+
+RQ4.2: How much variance is explained by builder, agent, domain, and builder-agent interaction?
+Target readers & answered questions
+benchmark / evaluation researchers
+这个 benchmark 是否提供 rigorous attribution，而不是只报告几个 end-to-end numbers？
+performance variance 里到底有多少来自 builder choice、agent choice、benchmark domain、以及 pairwise interaction？
+
+RQ4.3: Are bottlenecks domain-specific?
+Target readers & answered questions
+benchmark designers
+SWE-bench / Terminal-Bench / MCP-Atlas 等不同 benchmark 是否暴露不同 bottleneck？
+existing benchmarks 是否仍然有 diagnostic value，而不是被 pooled score 淹没？
+self-evolving agent / agentic system researchers
+一个 self-evolution method 在某个 domain 有效，是否能泛化到其他 domain？
+
+RQ4.4: Do builder-agent interactions matter beyond marginal capability?
+Target readers & answered questions
+self-evolving agent / agentic system researchers
+是否可以简单选择 best builder + best solver？还是不同 builder 和 solver 之间存在 compatibility？
+frontier-model lab researchers
+如果 interaction 很强，是否说明需要 role-conditioned co-training 或 pair-specific adaptation？
+
+
+Key concept
+
 Concept
-Explanation
-Self-evolving agent system
-A system in which a deployed LLM agent improves over time via updates to its external workspace, rather than via parameter updates
-External workspace
-The set of editable artifacts that guide a frozen LLM agent at inference time — instructions, skills, memory, tool notes, workflows
+Explanation 
+Why
+Agent harness
+An agent harness is the external, editable scaffolding around a frozen LLM agent, including prompts, tools, memory, skills, workflow instructions, and environment-specific notes.
+原来叫external workspace, 现在叫agent harness.
+Harness-level self evolution
+We study harness-level self-evolution: a self-evolution setting in which model weights remain frozen, while the agent harness is updated from execution experience.
+原来叫workspace-based deployment time evolution, 现在叫harness-level self evolution. 
+更贴近 Anthropic / Meta-Harness / AHE 最近的词，也能表达“不更新 weights，只改 agent 周围的 scaffold”.
 Evolver
-The role within a self-evolving system that reads execution experience and proposes updates to the external workspace; played by a foundation model. ("the model building the agent")
+The evolver reads trajectories, failures, feedback, and prior harness states, then proposes updates to the agent harness.
+
+
 Solver
-The role within a self-evolving system that uses the external workspace to act on tasks; the foundation-model base of the agent being evolved. ("the model being the agent")
-Evolver-marginal capability of model M
-M's effectiveness when occupying the evolver role, averaged over all solver models and benchmarks
-Solver-marginal capability of model M
-M's effectiveness when occupying the solver role, averaged over all evolver models and benchmarks
-Role-conditioned asymmetry
-The empirical question of whether evolver-marginal and solver-marginal capability are correlated within the same foundation model, or whether they are distinct capability dimensions
+The solver, or agent, acts in the task environment using the current harness.
 
 
-Background
-Self-evolution is an active research area
-Self-evolving LLM agent systems — agents that improve after deployment by editing their external workspace from execution experience, without parameter updates — have become an active research direction over the past 12–18 months. Recent methods including A-Evolve, SkillRL, GEPA, Reflexion, Self-Refine, and Voyager all operate within this paradigm.
-We do not re-motivate the field here; readers familiar with the self-evolution literature already accept its premise. We focus instead on motivating the specific research question this paper addresses.
-Within self-evolution, two roles always exist — but have not been independently measured
-In any self-evolving system, two functional roles are present:
-A role that reads execution experience and proposes updates to the external workspace — i.e., the role that builds the agent
-A role that uses the external workspace to execute tasks — i.e., the role that is the agent
-Different methods physically realize this differently:
-Role-separated methods (A-Evolve, SkillRL): the two roles are played by distinct foundation-model instances, allowing each to be swapped independently.
-Role-collapsed methods (Reflexion, Self-Refine, Self-Critique): both roles are played by the same foundation model.
-Programmatic optimization (DSPy, GEPA): names the roles "optimizer" and "program," but the underlying decomposition is the same.
-We adopt the terms evolver and solver following established convention in the self-evolution literature. These names refer to the two roles, regardless of whether they are physically realized by the same model or different models.
-The crucial observation is that the role decomposition itself is universal, but no existing work has independently measured the foundation-model capability associated with each role. Existing self-evolution work treats role assignment as an implementation detail rather than as an explicit object of measurement.
-The bottleneck question is unanswered — and is directly actionable
-The fundamental question we ask is:
-Within a self-evolution loop, which side is the foundation-model capability bottleneck — the evolver or the solver?
-This is not an academic question. The answer determines concrete post-training and capability-investment decisions:
-If the bottleneck is the evolver, post-training and reinforcement fine-tuning should target reflective and constructive capability — reading trajectories, proposing structurally novel modifications, judging trade-offs in workspace edits.
-If the bottleneck is the solver, post-training should target robustness under under-specified or recently-evolved workspaces — instruction-following on novel skill formats, tool use under unfamiliar conventions.
-If evolver and solver are uncorrelated within a single model, role-conditioned co-training is required rather than a single general post-training objective.
-The answer therefore directly informs how the broader research community allocates capability investment.
-Why no one has measured this yet
-Three structural reasons:
-Compute scale. Independently varying evolver model and solver model across benchmarks requires running an N × N × K matrix of experiments (N foundation models, K benchmarks). At realistic per-experiment compute for self-evolution, this is feasible only at a small number of labs.
-Methodological gap. Existing self-evolution benchmarks measure single-method, single-agent improvement. None expose evolver and solver as independently swappable variables.
-Conceptual gap. The evolver/solver decomposition has not been articulated as an explicit measurement target — it has been treated as an implementation detail or as method-internal nomenclature.
+harness update
 
-What we do
-Methodology: tournament-style role-marginal decomposition
-For each (evolver_model, solver_model, benchmark) triple:
-Run a self-evolution method as the experimental instrument (we use A-Evolve in the no-groundtruth regime; the protocol generalizes to any role-separated method).
-Measure pre-evolution and post-evolution agent performance on the benchmark.
-Record the post-evolution score S(e, s, b).
-For each foundation model M, compute two marginal scores:
-Evolver-marginal score of M: average of S(M, s, b) over all solver models s and benchmarks b
-Solver-marginal score of M: average of S(e, M, b) over all evolver models e and benchmarks b
-Plotting models in the (evolver-marginal, solver-marginal) plane then reveals:
-Diagonal regime → the same underlying capability drives both roles ("good models are good at both"); evolver and solver are not distinct measurement targets.
-Off-diagonal regime → evolver and solver are distinct capability dimensions; some models are systematically better builders, others systematically better agents.
-Variance decomposition over (E, S, B) quantifies what fraction of total performance variance is explained by evolver-side, solver-side, and interaction effects — directly answering the bottleneck question.
-Why we use A-Evolve as the experimental instrument
-We require a self-evolution method that (a) physically separates evolver and solver into distinct model instances, and (b) exposes both as independently swappable variables. A-Evolve satisfies both. The measurement protocol itself is method-agnostic — extension to SkillRL and GEPA is left to follow-up work.
-We additionally fix A-Evolve in its no-groundtruth feedback regime, because in this regime solver capability is most load-bearing (the solver must do its own self-assessment without external correctness signals), giving the cleanest measurement of role-conditioned asymmetry. The groundtruth-feedback regime is studied in a parallel project.
-Experimental setup
-N foundation models spanning frontier-class families available at the required per-experiment compute (Claude, Qwen, Kimi via AWS Bedrock).
-K agentic benchmarks spanning the task spectrum: SWE-bench Verified (software engineering), Terminal-Bench 2.0 (terminal operation), MCP-Atlas (tool use), WebArena (web), ARC-AGI (reasoning).
-Fixed self-evolution method: A-Evolve, no-groundtruth regime.
-N × N × K matrix run end-to-end with no per-task prompts and no curated solver data.
 
-Why introduce this benchmark
-Existing agent benchmarks measure static capability
-Established agent benchmarks — SWE-bench, Terminal-Bench, MCP-Atlas, WebArena, ARC-AGI — measure what an agent can solve under a fixed configuration. They are point-estimates of agent capability at a single workspace state, and cannot speak to capability under self-evolution.
-Existing self-evolution evaluations are single-method, single-agent
-Existing self-evolution evaluations ask whether a particular method improves a particular fixed agent. The evolver model and solver model are typically identical or fixed. Such evaluations cannot answer the bottleneck question because they do not independently vary the two roles.
-Our protocol fills this specific gap
-We propose a measurement protocol — not a new task dataset — that turns established agentic benchmarks into measurements of role-marginal foundation-model capability. The protocol is:
-Algorithm-agnostic. Any role-separated self-evolution method can serve as the instrument. We use A-Evolve; SkillRL and GEPA fit into the same protocol.
-Model-agnostic. Any pair of foundation models can be plugged in as evolver and solver. As new frontier models are released, they can be re-scored with the same protocol.
-Decomposable. Produces two scalar scores per foundation model (evolver-marginal, solver-marginal) and a variance decomposition over the joint space.
-Cumulative. Future work can extend the matrix without re-running prior cells, producing a growing public record of role-marginal capability across the model frontier.
-Long-term contribution to the research community
-If evolver-marginal and solver-marginal capability become reported alongside standard agent benchmark scores, this enables:
-Targeted post-training. Practitioners can identify which side of the self-evolution loop a given model is weak on, and direct RFT investment accordingly.
-Cross-method comparison. Self-evolution methods can be compared not on a single composite agent, but on how they aggregate evolver-side and solver-side capability — separating method contribution from foundation-model contribution.
-Theory development. Empirical role-conditioned asymmetry data provides an anchor for theoretical work on what evolver and solver capability are, whether they should be co-trained, and how they relate to existing capability dimensions (instruction-following, tool use, reflection, planning).
+`
+Role-marginal capability.
+A model’s evolver-marginal capability is its average effectiveness as the builder across solvers and domains.
+A model’s solver-marginal capability is its average effectiveness as the solver across builders and domains.
 
-References
-[1] A-Evolve: Self-Evolving Agents with Frontier Models as Researchers. arXiv:2602.00359 [2] SkillsBench: Benchmarking How Well Agent Skills Work Across Diverse Tasks. arXiv:2602.12670 [3] PostTrainBench: Can LLM Agents Automate LLM Post-Training? arXiv:2603.08640 [4] SEA-Eval: A Benchmark for Evaluating Self-Evolving Agents Beyond Episodic Assessment. arXiv:2604.08988 [5] Evo-Memory [6] StuLife [7] HELM [8] OpenCompass [9] AgentBench [10] DSPy / GEPA: Programmatic Optimization of LM Workflows [11] Reflexion: Language Agents with Verbal Reinforcement Learning [12] Voyager: An Open-Ended Embodied Agent with Large Language Models
+
+
+
+
+Introduction  
+LLM agents increasingly rely on external harnesses
+→ self-evolving agents update these harnesses from experience
+→ any such system has two roles: one model builds/improves the harness, one model uses the harness to act
+→ existing work asks whether a method improves a fixed agent
+→ we ask whether models are equally good at these two roles
+→ introduce EvolvingBench to measure role-marginal capability.
+
+
+Background: LLM agents are increasingly built with harnesses (simple)
+This illustrate the background 从而下面能引申到为什么我们要考虑self evolving
+LLM agents are no longer just raw models. In real tasks such as software engineering, tool use, terminal operation, and workflow automation, their behavior depends heavily on an external agent harness: prompts, tools, memory, skills, workflow instructions, and environment-specific rules.
+Background: Self-evolving agents update the harness from experience 
+This discuss the motivation of self evolution: 现有的harness 手工设计不适应快速的deployment time环境变化，所以需要self evolution根据experience update harness
+A natural way to make agents improve is to update this harness from execution experience. When an agent fails, receives feedback, or discovers a useful procedure, the resulting lesson can be written back into the harness and reused in future tasks. This gives rise to self-evolving agents: frozen LLM agents whose external harness improves over time without updating model parameters.
+Prior work shows harness evolution can improve fixed agents & and limitations of existing methods/benchmarks
+现有的work证明了self evolution 这一个scheme的有效性：
+Existing works, such as A-Evolve, SkillRL, Reflexion, Self-Refine, GEPA, and Voyager, show that agents can improve by revising prompts, skills, memories, or workflows based on runtime behavior and feedback. 
+一些existing benchmarks也同样证明了harness-like artifacts can improve agents: 
+SkillsBench shows that curated Skills can substantially improve agent performance, while self-generated Skills often fail to provide the same benefit. PostTrainBench shows how an improvement benchmark can be structured around a bounded autonomous process, strict evaluation constraints, and held-out evaluation. SEA-Eval and Evo-Memory further show that agent evaluation is moving from isolated episodes toward sequential improvement and experience reuse. 
+Limitations of existing methods/benchmark -> Why we introduce this benchmark: 
+但是他们通常关注的是某一类特定方法的end-to-end效果：However, most of these works ask a single-method, single-agent question: does this update method improve this fixed agent?
+但 end-to-end 提升无法解释 source of improvement: This view is useful for showing that a method works, but it does not explain where the improvement comes from. Is the gain driven by the model that turns experience into better harness updates, or by the model that can effectively use the updated harness?
+引入self evolution two roles的概念（solver, evolver）：This end-to-end view hides a simple decomposition. A self-evolving agent must do two things. 
+First, it must turn experience into a better harness: read failures, feedback, or trajectories and write useful updates. 
+Second, it must act with the updated harness: use the revised prompts, skills, memories, or workflows to solve future tasks. These two operations need not require the same foundation-model capability.
+Missing question: building agents vs being agents
+现有的works和benchmark通常只关心self evolution 最后的end-to-end performance, 但是实际情况会比较复杂，他们可能需要不同的能力，没有work研究过分解这两个role下的foundation model的能力的区别
+This motivates our central questions:
+Are foundation models that are good at building agents also good at being agents?
+Our benchmark:
+ To address this gap, we introduce EvolvingBench, where each evaluation pairs a builder/evolver model with a solver/agent model on an existing agentic benchmark. The solver first interacts with experience tasks using an initial agent harness, producing trajectories, failures, and feedback. The builder then updates the harness under a fixed evolution budget. At the end of each run, the solver is evaluated on held-out tasks using the evolved harness.
+We enforce the minimal constraints necessary to preserve evaluation integrity: the builder may not access held-out evaluation tasks, may not modify the evaluation harness, may not update solver weights, and may only improve the agent through harness updates such as prompts, skills, memory, tool notes, or workflows.
+The goal is not to maximize one agent’s final score alone, but to decompose self-evolution performance into four components: the builder model’s ability to improve agents, the solver model’s ability to benefit from the evolved harness, domain effects, and builder–solver interaction.
+
+Our findings:
+The difference between different evolvers is not too much. 强和弱的model在update harness方面差异不大
+TODO
+
+
+Why this is a benchmark
+EvolvingBench is a benchmark not because it introduces a new task dataset, but because it defines a repeatable, comparable, and constrained evaluation protocol for a capability that existing benchmarks do not isolate.
+A benchmark needs to define what is evaluated, under what conditions, what is allowed, what is scored, and how results are compared. EvolvingBench does this through six components:.
+
+Our benchmark has 6 factors:
+Evaluation object
+我们不是泛泛评估 “A-Evolve 效果”，而是评估一个 self-evolution cell：
+builder/evolver model × solver/agent model × benchmark domain。
+Standardized input
+如果最后是train/test split, 我们可以说: 每个 cell 都有相同的 initial harness、experience task set、held-out evaluation set、evolution protocol 和 budget。
+如果是in-situ, 我们可以说：fixed task stream, fixed initial harness, fixed evolution protocol, fixed budget, fixed feedback format.
+Standardized input
+每个 cell 都有相同类型的 initial harness、experience tasks、held-out eval tasks、budget 和 protocol。
+Controlled autonomy
+如果是train/test split, 我们可以说：evolver 可以更新 harness，但不能看 held-out test、不能改 eval harness、不能改 solver weights。这保证 evaluation integrity，避免变成作弊或不可控的 open-ended experiment。
+如果是in-situ, 我们可以说：evolver 可以根据过去任务更新 harness，但不能看未来任务，不能改 solver weights，不能改 evaluation script。
+Standardized output
+输出的是 evolved harness，而不是任意 artifact。这让不同 runs 的结果可以被统一记录、比较和分析。
+Scoring
+如果是train/test split, 我们可以说：最终只在 held-out tasks 上测 solver + evolved harness。这保证我们测的是 generalizable improvement，而不是在 experience tasks 上 overfit。
+如果是in-situ, 我们可以说：we use online / in-situ score：
+each task is scored before its feedback can be used for future updates.
+Metrics
+不只报告 final score，还报告 builder-marginal、solver-marginal、role correlation、variance decomposition。
+这让 benchmark 能回答我们的核心问题：gain 到底来自 builder、solver、domain，还是 interaction。
+
+
+In short:
+PostTrainBench benchmarks whether agents can improve model weights; our benchmark measures whether foundation models can improve and use agent harnesses.
+
+
+Benchmark Setup
+We use an in-situ self-evolution protocol. For each benchmark domain (b), we define:
+
+a task stream (D_b = (x_1, x_2, \dots, x_T));
+an initial harness (H_b^0);
+a builder/evolver model (e);
+a solver/agent model (s);
+a fixed evolution budget (\beta).
+
+At step (t), the solver acts on task (x_t) using the current harness:
+
+[ (a_t, \tau_t) = \mathrm{Solve}(A(s, H_{e,s,b}^{t-1}), x_t) ]
+
+The task is scored immediately:
+
+[ r_t = \mathrm{Score}(a_t, x_t) ]
+
+Only after the task is scored can the builder observe the trajectory and feedback and update the harness for future tasks:
+
+[ H_{e,s,b}^{t} = U_e(H_{e,s,b}^{t-1}, \tau_t, r_t; \beta) ]
+
+The in-situ self-evolution score is:
+
+[ S(e,s,b) = \frac{1}{T}\sum_{t=1}^{T} r_t ]
+
+The no-evolution baseline is:
+
+[ S_0(s,b) = \frac{1}{T}\sum_{t=1}^{T}\mathrm{Score}(\mathrm{Solve}(A(s,H_b^0),x_t),x_t) ]
+
+The improvement is:
+
+[ \Delta(e,s,b)=S(e,s,b)-S_0(s,b) ]
+
+We then compute role-marginal capability:
+
+同一evolver在不同domain，不同solver下的average performance [ \mathrm{BuilderMarginal}(e)=\mathbb{E}_{s,b}[\Delta(e,s,b)] ]
+
+同solver在不同domain，不evolver下的average performance [ \mathrm{SolverMarginal}(s)=\mathbb{E}_{e,b}[\Delta(e,s,b)] ]
+
+Important clarification:
+
+We fix the task stream, initial harness, evolution protocol, budget, builder model, and solver model for each cell. We do not fix the resulting trajectories, because trajectories are generated by the solver interacting with the current harness and environment. This is intentional: in closed-loop self-evolution, the solver’s ability to expose informative failures is part of its agent-side capability.
+
+根据后续实验计划调整，看in-situ和train/test split哪个更好说明findings或者两个一起说
+Experimental Results
+
+RQ1: Does the builder matter?
+
+Question. How much does the builder/evolver model affect self-evolution performance?
+
+Setup. We vary approximately 8 builder/evolver models, ranging from smaller models such as Qwen-family 8B/9B models to frontier models such as Claude Opus, while evaluating them across a smaller fixed set of solvers and benchmark domains.
+
+Metric.
+
+[ \mathrm{BuilderMarginal}(e)=\mathbb{E}_{s,b}[\Delta(e,s,b)] ]，还有具体的每个setting下的actual performance
+
+This answers.
+
+Do different builder models differ in their ability to produce useful harness updates?
+Does a stronger or more expensive builder model actually lead to a better evolved agent?
+Is self-evolution bottlenecked by the update provider, or can weaker builders perform competitively?
+
+Initial findings:
+The difference between different evolvers is not too much. 强和弱的model在update harness方面差异不大
+
+RQ2: Does the agent being improved matter?
+
+
+Question. How much does the solver/agent model affect its ability to benefit from self-evolution?
+
+Setup. We vary approximately 8 solver models (e.g., Kimi, MiniMax, Qwen3-235B, GPT-OOS, Claude), while evaluating them under a smaller set of fixed solvers (e.g., Opus 4.6, Sonnet 4.6, Qwen3-235B).
+
+Metric.
+
+[ \mathrm{SolverMarginal}(s)=\mathbb{E}_{e,b}[\Delta(e,s,b)] ]，还有具体的每个setting下的actual performance
+
+This answers.
+
+Is “being improvable” a distinct agent-side capability?
+Are stronger static agents necessarily better at benefiting from self-evolution?
+When self-evolution fails, can the bottleneck be the solver’s inability to use the update rather than the builder’s inability to write it?
+
+How much does the solver/agent model affect its ability to benefit from self-evolution?
+
+Setup: We vary 8 solvers (e.g., Kimi, MiniMax, Qwen3-235B, GPT-OOS, Claude) with 3 evolvers (e.g., Opus 4.6, Sonnet 4.6, Qwen3-235B).
+
+
+
+
+RQ3: Are building agents and being agents the same capability?
+
+
+Are builder-side and solver-side capabilities correlated, or do they form distinct capability dimensions?
+or are foundation models that are good at building agents also good at being agents?
+
+We consider
+Evolver-solver compatibility diagnosis: 不同solver和evolver的performance有没有什么关系？是不是 “best builder + best solver” 就一定最好？
+Report:
+做 builder × solver heatmap。
+Take-home:
+If compatibility effects are large, self-evolving systems cannot simply choose the strongest builder and strongest solver independently. Model pairing matters.
+这里同时可以考虑分析一些case：是否存在 strong evolvers but weak solvers, or strong solvers but weak evolvers. 
+Take-home: 这个也证明了self evolution的role decomposition的必要性（是否要根据role （evolver/solvers））。
+Role geometry. 
+For each model (m), compare:
+[ \mathrm{BuilderMarginal}(m) ] and
+[ \mathrm{SolverMarginal}(m) ]
+Take-home:
+We plot models in a two-dimensional role-marginal plane. If models lie near the diagonal, then general model strength may explain both roles. If models fall off the diagonal, then building agents and being agents should be evaluated separately.
+Other Diagnosis Analysis
+After RQ1/RQ2 measure builder- and solver-marginal capability, and RQ3 tests whether they are correlated, we further diagnose where self-evolution gains and failures come from.
+
+These are not separate primary RQs. They are benchmark-style diagnostic analyses, similar in spirit to domain breakdowns, artifact analyses, and failure analyses in existing benchmark papers.
+
+We consider (if no more time, just select parts of them):
+Failure attribution diagnosis (case studies)： self-evolution 失败时，是 evolver 不会写 update，还是 solver 不会用 update？
+Artifact-level diagnosis：哪类 harness artifact 真正 carry gain？
+Question: Which harness artifacts carry the gain?
+Report: If possible, we categorize harness updates into:
+prompt;
+skills;
+memory;
+Take-home:
+This explains whether gains come from concrete reusable artifacts, rather than abstract “harness updates.”
+Cost / Evolve efficiency: 多花 evolution budget 是否值得？
+Report:
+token cost；
+number of evolution cycles；
+number of harness updates;
+gain per token / gain per cycle。
+Take-home:
+对 system builder 很有用：强 evolver 是否真的 cost-effective？
+In-situ evolution dynamics: Does self-evolution improve over time, or does it create path-dependent failures? 
+Role bottleneck diagnosis
+Report:
+比较 builder-marginal gain 和 solver-marginal gain 的 spread
+BuilderMarginal(e)=E_{s,b}​[Δ(e,s,b)]
+SolverMarginal(s)=E_{e,b}[Δ(e,s,b)]
+看哪个 variation 更大：
+builder spread 大：不同 evolver 写 harness update 能力差异大；
+solver spread 大：不同 solver 使用 evolved harness 的能力差异大；
+两者都小：可能 domain / task order / feedback signal 更重要。
+Take-home:
+告诉 frontier model lab / system builder 下一步该投 builder-side 还是 solver-side。`
+Domain bottleneck diagnosis: 
+Report:
+对每个 benchmark/domain 单独报告:Δ(e,s,b)
+以及 per-domain builder/solver marginal：
+BuilderMarginalb(e)=Es[Δ(e,s,b)]
+SolverMarginalb(s)=Ee[Δ(e,s,b)]
+Take-home:
+不要只报 pooled score。某些 benchmark 可能更考验 builder 写 update，某些更考验 solver 使用 update。
+
+Formally:
+
+Diagnostic 1: Role bottleneck diagnosis
+Question. Is self-evolution more sensitive to the builder or to the solver?
+
+Report.
+
+Spread of builder-marginal gains:
+
+[ \mathrm{spread}_e(\mathrm{BuilderMarginal}(e)) ]
+
+Spread of solver-marginal gains:
+
+[ \mathrm{spread}_s(\mathrm{SolverMarginal}(s)) ]
+
+Interpretation.
+
+Large builder spread: different evolvers vary substantially in harness-update ability.
+Large solver spread: different solvers vary substantially in their ability to use evolved harnesses.
+Both small: domain, feedback quality, task stream, or budget may dominate.
+
+Take-home. This tells frontier-model labs and system builders whether to invest more in builder-side update generation or solver-side harness utilization.
+
+
+
 

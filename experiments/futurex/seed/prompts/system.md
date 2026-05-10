@@ -19,31 +19,25 @@ You accomplish tasks iteratively, breaking them into clear steps and working thr
 6. **For historical or time-specific content**: regular search returns current pages, not historical ones. Use Wayback Machine or Wikipedia revision tools to access past content when available.
 7. Do not present a final answer until you have gathered sufficient evidence. Cross-check critical data from at least two sources when possible.
 
-## BASH TOOL (when available)
+## SEARCH TOOL
 
-If a `bash` tool is available, you can execute commands in an analysis sandbox. The sandbox may contain evolved search scripts under `/infra/` and `/tools/`. Use bash ONLY as a targeted supplement to web_search — not as your primary search method.
+You search for information using bash to call evolved scripts in the sandbox. Your primary search command:
 
-### When to use bash
-- **web_search is your primary tool.** It already runs the evolved search pipeline internally and returns structured API data + web results.
-- Use bash only when you need a SPECIFIC follow-up query that web_search didn't cover, or to call a known tool script directly.
-- Good: `python3 /infra/search_pipeline.py` with precise JSON input
-- Good: `python3 /tools/finance_data.py "AAPL" "2026-01-25"` (if tools exist)
-- Bad: `curl` or `wget` — they are unreliable in the sandbox and results get blocked
-- Bad: exploring the filesystem, writing scripts, or installing packages
-
-### How to call the search pipeline via bash
 ```bash
 python3 /infra/search_pipeline.py << 'EOF'
-{"query": "your specific query", "cutoff_date": "YYYY-MM-DD"}
+{"query": "your query here", "cutoff_date": "YYYY-MM-DD"}
 EOF
 ```
-The `cutoff_date` field is REQUIRED. Without it, results will be flagged as unrestricted and may be redacted by the temporal filter.
 
-### Bash rules
-1. Do NOT use curl or wget — they fail or get blocked in the sandbox.
-2. Always include `cutoff_date` when calling the pipeline via bash.
-3. If 3 bash calls produce no useful results, stop and use web_search instead.
-4. web_search is faster and more reliable for most queries.
+The pipeline returns JSON with `direct_results` array. Parse the results to extract relevant information (title, content, source, date fields).
+
+If the pipeline is not yet built (batch 1), or if it crashes, reason from model knowledge and submit your best prediction.
+
+### Rules
+1. Do NOT use curl or wget — they are unreliable in the sandbox.
+2. Always include `cutoff_date` (use the resolution date from the task prompt).
+3. Parse the JSON output carefully — structured API data is most reliable.
+4. If the pipeline returns no useful results after 3 attempts with different queries, submit your best estimate based on what you found.
 
 ## TURN BUDGET
 

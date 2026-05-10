@@ -241,21 +241,21 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
             ),
         )
 
-        # ── Docker sandbox for evolved tools ─────────────────────
-        # Only start when tool_files exist (H1-style individual scripts).
-        # Structured evolution uses infra/ via the pipeline subprocess
-        # inside _strict_search() — bash adds no value and hurts accuracy
-        # (16% success vs 48% web-only in testing).
+        # ── Docker sandbox for evolved tools + infra ────────────
         _infra_files = args_dict.get("infra_files") or {}
-        if tool_files:
+        sandbox_files = dict(tool_files)
+        for rel_path, content in _infra_files.items():
+            sandbox_files[f"infra/{rel_path}"] = content
+
+        if sandbox_files:
             try:
                 sandbox_net = config_obj.extra.get("sandbox_network", "none") if config_obj else "none"
                 container_name = start_sandbox(
-                    task_id, tool_files, sandbox_network=sandbox_net,
+                    task_id, sandbox_files, sandbox_network=sandbox_net,
                     cutoff_date=cutoff_str,
                 )
-                log.info("Sandbox started: %s (%d tools, cutoff=%s)",
-                         container_name, len(tool_files), cutoff_str)
+                log.info("Sandbox started: %s (%d files, cutoff=%s)",
+                         container_name, len(sandbox_files), cutoff_str)
             except Exception as e:
                 log.warning("Sandbox start failed: %s", e)
 
@@ -808,7 +808,7 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
 
                 snippet = content[:4000]
                 resp = _filter_client.converse(
-                    modelId="us.anthropic.claude-3-5-haiku-20241022-v1:0",
+                    modelId="us.anthropic.claude-sonnet-4-6",
                     messages=[{"role": "user", "content": [{"text":
                         f"TASK: {prompt[:300]}\n"
                         f"CUTOFF DATE: {cutoff_str}\n"
@@ -844,9 +844,13 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                         "Maoer FM, Dongchedi) WITHOUT per-row dates: CLEAN\n"
                         "- If ALL content is on/before cutoff or undated "
                         "rankings: reply exactly CLEAN\n"
-                        "- Otherwise: return content with post-cutoff values "
-                        "replaced by [REDACTED]\n"
-                        "- Be strict: Apr 10 data is AFTER an Apr 8 cutoff"
+                        "- Otherwise: return ONLY the content with post-cutoff "
+                        "values replaced by [REDACTED]\n"
+                        "- Be strict: Apr 10 data is AFTER an Apr 8 cutoff\n\n"
+                        "CRITICAL: Output ONLY the filtered content or CLEAN.\n"
+                        "NEVER explain what you found. NEVER describe the leaked "
+                        "values. NEVER say what was redacted. Just output the "
+                        "content with [REDACTED] in place of post-cutoff values."
                     }],
                     inferenceConfig={"maxTokens": 4096, "temperature": 0},
                 )
@@ -860,6 +864,10 @@ def solve_one(task_data: Dict[str, Any], args_dict: Dict[str, Any]) -> Dict[str,
                     return content
 
                 if "[REDACTED]" in verdict:
+                    # Strip any explanation preamble before actual content
+                    json_start = verdict.find('{"')
+                    if json_start > 0:
+                        verdict = verdict[json_start:]
                     n_redacted = verdict.count("[REDACTED]")
                     log.info("Temporal filter: redacted %d values (cutoff=%s)",
                              n_redacted, cutoff_str)

@@ -1,128 +1,243 @@
 % !TEX root = ../main.tex
 
-\section{Experimental Setup}
-\subsection{Research Questions}
-% Introduce RQs before any result subsections. Each following experimental or
-% analysis subsection should explicitly answer one RQ.
-%
-% RQ1: Does temporal ordering create non-monotonic evolution, where more linear
-% evolution can underperform early stopping despite additional compute?
-%
-% RQ2: Can decoupling stationary and non-stationary experience via navigation
-% reduce regressions while preserving transferable gains?
-%
-% RQ3: Does per-task branch routing select meaningfully different strategies for
-% shifted regimes, rather than merely adding capacity or prompt length?
-%
-% RQ4: Does multi-agent orchestration improve the evolution process beyond
-% single-call branching, especially on domains requiring tool/infra changes?
-%
-% RQ5: What failure modes remain: navigator misrouting, branch proliferation,
-% stale branches, label-delay effects, and evolver overfitting to local history?
+\section{Experiments}
 
-\subsection{Benchmarks}
-% Describe PolyBench, CTF-Dojo, FutureX in one paragraph each.
-% For PolyBench include traded accuracy, F1, ECE, CWR return, Sharpe, gating.
-% For CTF-Dojo include 261 tasks, categories, year order, pass/fail via flag
-% hash, bash/submit tools, sandbox limits.
-% For FutureX include 332 tasks, domain categories, difficulty levels, search
-% modes, temporal resolution windows, and strict vs live search distinction.
+\subsection{Setup}
 
-\subsection{Systems Compared}
-% Define variants cleanly:
-% H0: baseline, no evolution.
-% H1: full linear A-Evolve, single path, evolves every cycle.
-% Early-freeze: linear A-Evolve for early cycles then freeze workspace.
-% H5: navigation/branching with inline branch-aware evolution.
-% H5_multi: navigation plus planner/evolver orchestration.
-% Include additional controls as available: no-search/live-search for FutureX,
-% late-start, flat multi-agent without navigation if runs exist.
+\subsubsection{Benchmarks and Data}
+% One paragraph per benchmark. PolyBench (5,075 prediction markets, 16 days), CTF-Dojo (261 challenges, 13 years), FutureX (332 tasks, 82 days). Specify evaluation metric and temporal-order enforcement (no shuffling).
 
-\subsection{Metrics}
-% Primary metrics by benchmark:
-% PolyBench: traded accuracy and CWR return, with F1/ECE/Sharpe as secondary.
-% CTF-Dojo/FutureX: accuracy/pass rate, plus turns, elapsed time, token cost.
-% Cross-benchmark metrics:
-% regression count vs baseline, improvement count, net task-level change,
-% artifact growth (skills/tools/memories/prompt chars), evolution time, number
-% of branches, routing entropy, branch utilization, stale branch rate.
+% TABLE 3: Benchmark statistics.
+\begin{table}[t]
+\centering
+\caption{Benchmark statistics. \textbf{Placeholder.}}
+\label{tab:bench_stats}
+\begin{tabular}{lrrrll}
+\toprule
+Benchmark & \#Tasks & Time span & Batch size & Shift signature & Metric \\
+\midrule
+PolyBench & --- & --- & --- & --- & --- \\
+CTF-Dojo  & --- & --- & --- & --- & --- \\
+FutureX   & --- & --- & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\subsection{Implementation Details}
-% Name the base model, temperature, batch size, max turns/timeouts, workers,
-% evolution cycles, and config files used for each benchmark. Cite scripts:
-% solve_all_with_evolution.py and experiments/*/configs/*.yaml.
-% State that all variants use the same seed workspace and benchmark ordering
-% unless explicitly controlled.
+\subsubsection{Evolver Configurations}
+% One paragraph describing the 2x2 method grid: H0 (no evolution), H1 (single-agent), H1_multi (multi-agent, no nav), H4/H5 (navigation only), H4_multi/H5_multi (both). Common: same solver LLM, same seed workspace per benchmark, same evolver LLM, same batch size.
 
-\section{Main Results}
-\subsection{RQ1: Linear Evolution is Non-Monotonic under Temporal Shift}
-% Use Table~\ref{tab:main-results}. Show H0, H1/full_evo, early-freeze, H5,
-% H5_multi for each benchmark. If final H5 numbers are still in progress,
-% leave placeholders but write the claim pattern expected from locked runs.
-% The paragraph should not oversell: emphasize that early-freeze beating
-% full_evo shows accumulated experience can become harmful, motivating
-% decoupling rather than rejecting evolution.
+% TABLE 4: Method configurations.
+\begin{table}[t]
+\centering
+\caption{Method configurations in the 2$\times$2 grid. \textbf{Placeholder.}}
+\label{tab:methods}
+\begin{tabular}{lccc}
+\toprule
+Method & Evolver class & Navigation & Notes \\
+\midrule
+H0          & none          & no  & --- \\
+H1          & single-agent  & no  & --- \\
+H1\_multi   & multi-agent   & no  & --- \\
+H4 / H5     & single-agent  & yes & --- \\
+H4\_multi / H5\_multi & multi-agent  & yes & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\subsection{RQ2: Navigation Preserves Transfer while Isolating Local Heuristics}
-% Compare task-level improvements/regressions against baseline and against
-% full_evo. Use net gain and regression rate. The key reviewer concern is
-% whether branches merely add noise; answer by showing fewer regressions or
-% better late-stream performance at comparable compute.
+\subsubsection{Research Questions}
+% One sentence per RQ:
+% RQ1: Do the three challenges (C1, C2, C3) hold up under controlled experiments?
+% RQ2: Does multi-agent evolution reduce L_evo? (C2)
+% RQ3: Does navigation reduce L_nav? (C1)
+% RQ4: Is the joint effect required for long-horizon accumulation? (C3)
 
-\subsection{RQ3: Routing Tracks Strategy-Relevant Shift}
-% Analyze routing logs. Show branch utilization over time and by properties:
-% PolyBench liquidity/uncertainty; CTF year/category/runtime dependency;
-% FutureX language/searchability/difficulty. Demonstrate that the navigator
-% uses branches for coherent regimes and falls back to main for general tasks.
+\subsection{RQ1: Do the Three Challenges Hold Up Under Controlled Experiments?}
+% One sentence: validates that C1, C2, and C3 are real, measurable, and orthogonal phenomena rather than artifacts of one benchmark or method.
 
-\subsection{RQ4: Multi-Agent Orchestration Improves Evolution Quality}
-% Compare H5 and H5_multi. Focus on evolution-side diagnostics: number of
-% independent assignments, mutation success rate, tool/infra creation,
-% branch README quality, fewer malformed branches/checkouts, better downstream
-% accuracy or lower regressions. If gains are mixed, report where orchestration
-% helps and where it adds overhead.
+% TABLE 5: Early-freeze vs full-evo vs late-start vs baseline.
+\begin{table}[t]
+\centering
+\caption{Accuracy of early-freeze vs. full-evo (H1) vs. late-start vs. baseline (H0). Early-freeze dominates full-evo on every benchmark, establishing C1 empirically. \textbf{Placeholder.}}
+\label{tab:c1_empirical}
+\begin{tabular}{lrrrr}
+\toprule
+Benchmark & H0 (baseline) & H1 (full-evo) & Early-freeze & Late-start \\
+\midrule
+PolyBench & --- & --- & --- & --- \\
+CTF-Dojo  & --- & --- & --- & --- \\
+FutureX   & --- & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\section{Analysis}
-\subsection{Distribution Shift Diagnostics}
-% This section should justify the paper's premise independently of method
-% results. Use one compact table or figure showing early vs late property
-% shifts from challenges.md:
-% PolyBench: market certainty, uncertainty, liquidity.
-% CTF-Dojo: text/script format, files per challenge, runtime dependencies.
-% FutureX: Chinese-language tasks, unsearchable platform data, L3--L4
-% difficulty, baseline late accuracy.
+% FIGURE 5: Per-batch accuracy curves for H1.
+\begin{figure}[t]
+\centering
+\rule{0.45\textwidth}{4cm}
+\caption{Per-batch accuracy of H1 across three benchmarks, with early-freeze baseline overlaid. The non-monotonic shape is the empirical signature of C1. \textbf{Placeholder.}}
+\label{fig:h1_curves}
+\end{figure}
 
-\subsection{Stationary vs Non-Stationary Artifact Audit}
-% Manually inspect evolved artifacts. Classify examples:
-% stationary: flag verification, temporal disambiguation, API validation,
-% source freshness checks, output formatting.
-% non-stationary: old crypto heuristics, Oscar/result memorization, consensus
-% following in prediction markets, platform-specific ranking shortcuts.
-% Show 6--10 examples in a table with artifact path, classification, evidence,
-% and expected routing behavior.
+% FIGURE 6: Harness size over cycles for H1.
+\begin{figure}[t]
+\centering
+\rule{0.45\textwidth}{4cm}
+\caption{Harness size (bytes of prompt + skills + tools + memory) over cycles for H1 on each benchmark. Monotone growth is the signature of C3. \textbf{Placeholder.}}
+\label{fig:h1_size}
+\end{figure}
 
-\subsection{Ablation: What Must Be Agentic?}
-% Include ablations if available or proposed:
-% no branch leaf inspection (route by branch names only);
-% random/static routing;
-% branches without README;
-% branch creation disabled but navigator enabled;
-% flat multi-agent planner without navigation.
-% Explain what each ablation isolates and which RQ it supports.
+% TABLE 6: Artifact-type counts per evolver tier.
+\begin{table}[t]
+\centering
+\caption{End-of-run artifact-type counts per evolver tier (prompt edits / standalone tools / multi-file infrastructure). H1 stays at prompt-and-tool level; H1\_multi produces multi-file infrastructure --- signature of C2. \textbf{Placeholder.}}
+\label{tab:c2_artifacts}
+\begin{tabular}{llrrr}
+\toprule
+Benchmark & Method & Prompt edits & Tools & Multi-file infra \\
+\midrule
+PolyBench & H1        & --- & --- & --- \\
+          & H1\_multi & --- & --- & --- \\
+CTF-Dojo  & H1        & --- & --- & --- \\
+          & H1\_multi & --- & --- & --- \\
+FutureX   & H1        & --- & --- & --- \\
+          & H1\_multi & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\subsection{Cost, Complexity, and Scaling}
-% Report token cost, elapsed time, number of LLM evolution calls, prompt length,
-% skills/tools/memories, and branch count. Discuss the tradeoff: navigation adds
-% routing calls and git operations, but may save downstream solver cost by
-% avoiding bloated all-purpose prompts or bad global heuristics.
+% Discussion paragraph: all three challenges hold as orthogonal empirical phenomena.
 
-\subsection{Failure Cases}
-% Required for a strong ACL paper. Analyze concrete failures:
-% navigator chooses a stale/missing branch;
-% branch names reflect topics rather than strategy;
-% branches over-specialize and starve;
-% planner creates too many assignments;
-% temporal reveal delays make the evolver infer from incomplete signals;
-% FutureX live-search inconsistencies confound evolution.
-% For each, state whether it is a method limitation, implementation issue, or
-% benchmark/data issue.
+\subsection{RQ2: Does Multi-Agent Evolution Reduce $L_{\text{evo}}$?}
+% One sentence: expanding Phi from prompt-level single-agent to multi-agent produces qualitatively better harnesses and higher accuracy, strongest on D3-heavy slices.
+
+% FIGURE 7: H1_multi vs H1 bar chart.
+\begin{figure}[t]
+\centering
+\rule{0.45\textwidth}{3cm}
+\caption{End-of-run accuracy of H1\_multi vs. H1 across three benchmarks. \textbf{Placeholder.}}
+\label{fig:multi_vs_single}
+\end{figure}
+
+% TABLE 7: Qualitative artifact case studies.
+\begin{table}[t]
+\centering
+\caption{Case studies: infrastructure artifacts produced by H1\_multi that are structurally out-of-class for $\Phi_{\text{single}}$ (H1). \textbf{Placeholder.}}
+\label{tab:artifact_cases}
+\begin{tabular}{lll}
+\toprule
+Case & H1\_multi artifact & H1 corresponding attempt \\
+\midrule
+--- & --- & --- \\
+--- & --- & --- \\
+--- & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% TABLE 8: HITL ablation on severe-shift slice.
+\begin{table}[t]
+\centering
+\caption{HITL ablation on severe-shift slice per benchmark. Addresses C2(b) direction gap. \textbf{Placeholder.}}
+\label{tab:hitl_ablation}
+\begin{tabular}{llrr}
+\toprule
+Benchmark & Severe-shift slice & H1\_multi & H1\_multi + HITL \\
+\midrule
+PolyBench & --- & --- & --- \\
+CTF-Dojo  & --- & --- & --- \\
+FutureX   & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Discussion paragraph: validates Theorem 4 empirically; HITL handles the C2(b) subset where experience alone is insufficient.
+
+\subsection{RQ3: Does Navigation Reduce $L_{\text{nav}}$?}
+% One sentence: per-task conditioning closes or reverses the early-freeze > full-evo gap, with effect concentrated on high-D2 slices; shuffled-order control confirms the mechanism is shift, not horizon length.
+
+% FIGURE 8: Per-regime slice showing H4 gain concentration.
+\begin{figure}[t]
+\centering
+\rule{0.45\textwidth}{3.5cm}
+\caption{Per-regime accuracy of H4 vs. H1 (e.g., CTF era buckets, FutureX language buckets, PolyBench certainty bins). Navigation gain concentrates on high-shift regions. \textbf{Placeholder.}}
+\label{fig:nav_per_regime}
+\end{figure}
+
+% TABLE 9: Shuffled-order control.
+\begin{table}[t]
+\centering
+\caption{Shuffled-order control. On temporally shuffled streams, the non-monotonic H1 pattern and the H4 gain both disappear --- isolating non-stationarity (D2) as the mechanism. \textbf{Placeholder.}}
+\label{tab:shuffled_control}
+\begin{tabular}{llrr}
+\toprule
+Benchmark & Order & H1 & H4 \\
+\midrule
+PolyBench & temporal & --- & --- \\
+          & shuffled & --- & --- \\
+CTF-Dojo  & temporal & --- & --- \\
+          & shuffled & --- & --- \\
+FutureX   & temporal & --- & --- \\
+          & shuffled & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% TABLE 10: Routing analysis.
+\begin{table}[t]
+\centering
+\caption{Routing analysis: per-branch task count and routed-branch vs. best-alternative-branch accuracy proxy. \textbf{Placeholder.}}
+\label{tab:routing_quality}
+\begin{tabular}{llrrr}
+\toprule
+Benchmark & Branch & \#Tasks routed & Acc (routed) & Acc (best-alt) \\
+\midrule
+--- & --- & --- & --- & --- \\
+--- & --- & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Discussion paragraph: empirically validates Theorem 3; shuffled-order control rules out horizon length; per-regime analysis validates the D1/D2/D3 frame.
+
+\subsection{RQ4: Is the Joint Effect Required for Long-Horizon Accumulation?}
+% One sentence: H4_multi strictly beats max(H1_multi, H4) with gap widening over horizon; harness size stays bounded in H4_multi while H1 grows unboundedly.
+
+% FIGURE 9: Harness size over cycles for all 4 cells.
+\begin{figure}[t]
+\centering
+\rule{0.45\textwidth}{4cm}
+\caption{Harness size over cycles for H1, H1\_multi, H4, H4\_multi. Multi-agent distills (H1\_multi $<$ H1); navigation partitions (H4 per-branch $<$ H1 global); jointly bounded in H4\_multi. \textbf{Placeholder.}}
+\label{fig:harness_size_all}
+\end{figure}
+
+% FIGURE 10: Early vs late subset gap.
+\begin{figure}[t]
+\centering
+\rule{0.45\textwidth}{3.5cm}
+\caption{Accuracy gap between H4\_multi and $\max$(H1\_multi, H4) on first-30\% vs. last-30\% of stream, three benchmarks. Gap widens with horizon --- signature of joint effect for C3. \textbf{Placeholder.}}
+\label{fig:joint_gap}
+\end{figure}
+
+% TABLE 11: Full 2x2 grid.
+\begin{table}[t]
+\centering
+\caption{Full 2$\times$2 grid: \{H1, H1\_multi, H4, H4\_multi\} $\times$ three benchmarks, split into full-stream and late-30\% accuracy. Interaction term is the joint-effect magnitude. \textbf{Placeholder.}}
+\label{tab:joint_grid}
+\begin{tabular}{lrrrr}
+\toprule
+Benchmark & H1 & H1\_multi & H4 & H4\_multi \\
+\midrule
+\multicolumn{5}{l}{\emph{Full stream}} \\
+PolyBench & --- & --- & --- & --- \\
+CTF-Dojo  & --- & --- & --- & --- \\
+FutureX   & --- & --- & --- & --- \\
+\midrule
+\multicolumn{5}{l}{\emph{Last 30\%}} \\
+PolyBench & --- & --- & --- & --- \\
+CTF-Dojo  & --- & --- & --- & --- \\
+FutureX   & --- & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Discussion paragraph: confirms C3 requires both contributions; harness-size evidence directly maps to the capacity-pressure argument in Section 2.

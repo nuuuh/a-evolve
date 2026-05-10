@@ -1,64 +1,57 @@
 % !TEX root = ../main.tex
 
-\section{Method: Decoupled Evolution with Agentic Navigation}
-\subsection{Overview}
-% First paragraph: Give the method name and one-sentence thesis: replace the
-% single linear workspace chain with a strategy tree whose main branch stores
-% stationary improvements and whose side branches store non-stationary regimes.
-% Second paragraph: Present the two phases per cycle:
-% (1) inference: navigator routes each task to main or a branch, solver runs on
-% that checked-out workspace;
-% (2) evolution: batch trajectories update main, existing branches, or new
-% branches depending on whether evidence is stationary or regime-specific.
-% Include Figure~\ref{fig:framework}: architecture diagram.
+\section{Method}
 
-\subsection{Strategy Tree State}
-% Define the state formally:
-% T_t is a git-backed tree of workspaces; each node/branch contains prompts,
-% skills, memory, tools, and optional infra. main is the stationary trunk.
-% Branch metadata stores description, routing statistics, last routed cycle,
-% failures/checkouts, and task counts. Note that the implementation uses git
-% branches and StrategyTree/BranchInfo.
+\subsection{Problem Setting}
+% One paragraph: bounded-harness history-conditioned formulation. Define task stream x_1...x_T with x_t ~ P_t, history H_t, harness C_t = phi(H_t) with |C_t| <= K, action a_t ~ pi(a | x_t, C_t).
 
-\subsection{Per-Task Navigation}
-% Describe F_Navigate. The navigator receives the full task description plus
-% actual branch leaf content read via git: README.md, prompts/system.md, skills
-% listing, and tools/registry.yaml. It outputs a JSON branch decision.
-% Stress the reviewer-relevant detail: routing is based on branch capabilities,
-% not ground-truth labels or branch names alone. Labels are optionally hidden by
-% trajectory-only and temporal-reveal gates.
-%
-% Add algorithm pseudocode:
-% For each task x_i: read viable leaves; build task context; call navigator;
-% resolve branch name; checkout branch; reload agent; solve; log routing.
+\subsection{Theoretical Framework}
 
-\subsection{Branch-Aware Evolution}
-% Explain inline H5 mode. The evolver gets the batch and tree summary in one
-% sandboxed call with git access. It may commit main improvements, create or
-% update branch/<slug>, write branch README.md, and return to main. The pipeline
-% validates/discovers branches afterward.
-%
-% Make clear what counts as stationary vs non-stationary:
-% stationary = recurrent across branches/tasks, helps all future tasks;
-% non-stationary = tied to a property region and would pollute other regimes.
+\subsubsection{Harness and Regret}
+% One paragraph: define utility V(C, x) and regret of the harness relative to full-history utility.
 
-\subsection{Multi-Agent Orchestration}
-% Explain H5_multi mode. The planner/analyst reads batch trajectories and emits
-% a JSON plan with assignments: target, focus, workload, task_ids. The evolver
-% then executes one sandboxed branch-cycle per assignment. This decomposes
-% analysis/classification/planning from mutation.
-%
-% Map implementation names to method concepts:
-% OrchestratedTemplate, build_planner_prompt, branch_cycle activity,
-% ActivityRuntime, ExpansionRegion, git_realise_branches.
-%
-% Clarify that this addresses C3 and is orthogonal to navigation: navigation
-% solves which artifacts to use for each task; orchestration improves the
-% quality of evolution decisions and edits.
+\subsubsection{Regret Decomposition}
+% One paragraph: state E[Regret] = L_evo(Phi, K) + L_nav(phi) and interpret each term (evolver-class limitation vs. conditioning limitation).
 
-\subsection{Privacy and Temporal Validity}
-% Reviewers will worry about label leakage. State the exact policy:
-% trajectory-only evolution hides success/score; temporal-reveal reveals labels
-% only when the task resolution date is at or before the batch watermark. Routing
-% logs contain task_id, properties, branch, cycle but not score/pass/fail.
-% Include this in the method or experimental setup depending on space.
+\subsubsection{When Each Loss Matters}
+% One paragraph: L_nav = 0 under stationarity; L_nav >= Sigma_t / 4 under shift - maps to C1. This is why static benchmarks do not surface the issue.
+
+\subsubsection{Reducing Each Loss}
+% One paragraph: expanding Phi reduces L_evo (Theorem 4); conditioning the harness reduces L_nav; the two are orthogonal (Theorem 5), motivating the two contributions as composable.
+
+% FIGURE 2: Regime table placeholder.
+\begin{figure}[t]
+\centering
+\rule{0.45\textwidth}{3cm}
+\caption{Regime table: which contribution matters under which (stationarity $\times$ complexity) combination. \textbf{Placeholder.}}
+\label{fig:regime_table}
+\end{figure}
+
+\subsection{Contribution 1: Multi-Agent Evolution}
+% One paragraph: 4-phase structured evolution (Analyst -> Researchers -> Builder -> Verifier) with persistent cross-cycle state (task_board.md, research_log.jsonl, architecture.md).
+% Addresses C2(a) construction gap and C3 distillation. HITL hooks at credential and task-board stages address C2(b) direction gap under severe shift.
+
+% FIGURE 3: Multi-agent orchestration flow diagram.
+\begin{figure}[t]
+\centering
+\rule{0.45\textwidth}{4cm}
+\caption{Multi-agent evolution pipeline: Analyst $\to$ Researchers (parallel) $\to$ Builder $\to$ Verifier, with HITL integration points. \textbf{Placeholder.}}
+\label{fig:multi_agent_flow}
+\end{figure}
+
+\subsection{Contribution 2: Navigation via Strategy Tree}
+% One paragraph: git-backed strategy tree; F_Navigate reads each branch's workspace (README, system prompt, skills, tools) via git show; routes task to best-fit branch.
+% Inline mode (single sandboxed evolver LLM call with agentic branching) and orchestrated mode (plan-driven).
+% Addresses C1 directly and C3 capacity-partitioning.
+
+% FIGURE 4: Strategy tree + per-task routing.
+\begin{figure}[t]
+\centering
+\rule{0.45\textwidth}{4cm}
+\caption{Strategy tree: main + specialized branches. F\_Navigate reads each branch's workspace via git and routes each task; solver runs on the selected branch workspace. \textbf{Placeholder.}}
+\label{fig:strategy_tree}
+\end{figure}
+
+\subsection{Joint Architecture}
+% One paragraph: how multi-agent and navigation compose end-to-end (navigation engine hosts the structured-evolution template).
+% Each contribution handles its own failure mode alone; C3 requires both jointly - multi-agent distills across cycles, navigation partitions across branches.

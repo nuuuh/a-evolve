@@ -117,10 +117,10 @@ run H1_smoke full_evo_smoke \
   --output-dir results/ctf_dojo_smoke_full_evo \
   --config experiments/ctf_dojo/configs/full_evo.yaml
 
-# H1_multi_smoke: Multi-agent naive evolution (plan-driven, no routing)
-run H1_multi_smoke full_evo_multi_smoke \
-  --output-dir results/ctf_dojo_smoke_full_evo_multi \
-  --config experiments/ctf_dojo/configs/full_evo_multi.yaml
+# H1_multi_smoke: Structured evolution (4-phase: analyze → research → build → verify)
+run H1_multi_smoke structured_evo_smoke \
+  --output-dir results/ctf_dojo_smoke_structured_evo \
+  --config experiments/ctf_dojo/configs/structured_evolution_evo.yaml
 
 # H4_smoke: Navigation — inline branching + task routing
 run H4_smoke navigation_smoke \

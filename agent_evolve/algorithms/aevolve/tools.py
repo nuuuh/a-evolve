@@ -181,6 +181,8 @@ class EvolverSandbox:
                 "--name", self.container_name,
                 "--user", uid_gid,
                 *env_args,
+                "--add-host", "datasets-server.huggingface.co:127.0.0.1",
+                "--add-host", "huggingface.co:127.0.0.1",
                 "--network", self.network,
                 *mounts,
                 "-w", work_dir,

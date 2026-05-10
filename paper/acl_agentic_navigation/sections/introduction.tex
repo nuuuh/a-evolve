@@ -1,66 +1,65 @@
 % !TEX root = ../main.tex
 
 \section{Introduction}
-% Paragraph 1: Open with deployment-time adaptation for LLM agents. Explain
-% A-Evolve's premise: agents should improve by mutating prompts, skills,
-% memory, tools, and infrastructure from observed trajectories. Avoid marketing
-% language; frame it as a general solve-observe-evolve loop over a filesystem
-% workspace.
-%
-% Paragraph 2: Introduce temporal distribution shift. In static benchmarks,
-% task order can be shuffled and more evolution usually has a monotonic
-% interpretation. In PolyBench, CTF-Dojo, and FutureX, task order is fixed by
-% real time; market regimes, challenge formats, available information, and API
-% requirements drift across batches.
-%
-% Paragraph 3: State the central empirical anomaly motivating the paper:
-% early-freeze can outperform full linear evolution on temporally ordered
-% streams. Use the numbers from paper/challenges.md and final reports:
-% PolyBench, CTF-Dojo, FutureX. Emphasize that this is not ``evolution fails'';
-% full evolution can still beat baseline in some domains, so the issue is
-% selecting what experience transfers.
-%
-% Paragraph 4: Define the conceptual decomposition: stationary experience
-% should persist globally; non-stationary experience should be isolated and
-% invoked only for matching regimes. State that the paper's hypothesis is that
-% agentic evolution needs agentic navigation over its own evolving artifacts.
-%
-% Paragraph 5: Summarize the method in one concrete example. A CTF branch may
-% specialize in old crypto/text-only challenges while main retains general flag
-% verification and sandbox inspection. A PolyBench branch may specialize in
-% high-uncertainty/low-liquidity markets while main keeps source-validation
-% and calibration hygiene.
-%
-% Paragraph 6: Contributions. Keep to 3--4 bullets in final prose:
-% (1) diagnose temporal distribution shift as a coupled stationary/non-
-% stationary experience problem for agentic evolution;
-% (2) propose decoupled evolution with a git-backed strategy tree and per-task
-% LLM navigation;
-% (3) add a multi-agent orchestration template that separates analysis/planning
-% from mutation;
-% (4) provide experiments and analyses across three temporal agent benchmarks.
 
-\section{Background and Problem Setting}
-\subsection{Agentic Evolution}
-% Define a base agent with frozen model parameters and mutable workspace state:
-% prompts, skills, memory, tools, and infrastructure. Describe the standard
-% A-Evolve loop: solve a batch, observe trajectories and feedback, call an
-% evolver LLM with sandboxed file access, commit mutations, reload the agent.
-% Mention the repository implementation: AgentWorkspace contract, VersionControl
-% git tags, AEvolveEngine, and config flags for prompts/skills/memory/tools/infra.
+\subsection{Opening: Agentic Evolution and the ``More Evolution Is Not Better'' Puzzle}
+% One paragraph: standard A-Evolve pitch; headline puzzle — early-freeze beats full-evo on all three temporal benchmarks; this does not happen on i.i.d. benchmarks.
 
-\subsection{Temporal Agent Benchmarks}
-% Define temporally ordered benchmark streams. Contrast with iid/static splits.
-% Add a compact table listing PolyBench, CTF-Dojo, FutureX: domain, number of
-% tasks, time span, evaluation metric, primary source of drift, and solver tools.
-% This can become Table~\ref{tab:benchmarks}.
+\subsection{Three Dimensions of Real-World Difficulty}
+% One paragraph: introduce D1 (long-horizon), D2 (non-stationarity), D3 (open-endedness); state they are orthogonal; our three benchmarks exercise all three.
 
-\subsection{Why Linear Evolution Breaks under Shift}
-% Explain the three challenges from paper/challenges.md.
-% C1: fixed chronological order creates systematic shift, so batch score
-% confounds agent capability and batch difficulty.
-% C2: accumulated experience is coupled: some artifacts transfer globally and
-% others are regime-local or harmful outside their origin.
-% C3: the evolver capability bottleneck: building robust tools/infra from
-% trajectories requires sustained analysis, planning, implementation, and
-% verification that is too much for a single overloaded call.
+% TABLE 1: Benchmark x dimension coverage.
+\begin{table}[t]
+\centering
+\caption{Benchmark coverage of the three difficulty dimensions. \textbf{Placeholder.}}
+\label{tab:benchmarks_dims}
+\begin{tabular}{lccc}
+\toprule
+Benchmark & D1 (Horizon) & D2 (Non-stationarity) & D3 (Open-endedness) \\
+\midrule
+PolyBench   & --- & --- & --- \\
+CTF-Dojo    & --- & --- & --- \\
+FutureX     & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Three Challenges: Preliminary Evidence}
+% One paragraph introducing the three challenges, each grounded in one preliminary experiment.
+% C1 (D2) - Non-monotonic evolution. Signature: accuracy curve inverts across cycles.
+% C2 (D3) - Evolver capability bottleneck. Signature: artifact-type distribution (prompts vs tools vs infrastructure).
+% C3 (D1) - Harness accumulation exceeds capacity. Signature: 18-60x size growth end-of-run under H1.
+
+% TABLE 2: Preliminary evidence per challenge.
+\begin{table}[t]
+\centering
+\caption{Preliminary evidence that each challenge is real. \textbf{Placeholder.}}
+\label{tab:prelim_evidence}
+\begin{tabular}{llll}
+\toprule
+Challenge & Benchmark & Signature metric & Value (H1) \\
+\midrule
+C1 (non-monotonic)  & --- & --- & --- \\
+C2 (capability)     & --- & --- & --- \\
+C3 (accumulation)   & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% FIGURE 1: Three signature curves side-by-side.
+\begin{figure}[t]
+\centering
+\rule{0.45\textwidth}{4cm}
+\caption{Three empirical signatures of the three challenges: (a) per-batch accuracy for H1 showing non-monotonic shape (C1); (b) artifact-type mix by evolver tier (C2); (c) harness size over cycles (C3). \textbf{Placeholder.}}
+\label{fig:three_signatures}
+\end{figure}
+
+\subsection{Our Approach: What Each Contribution Fixes}
+% One paragraph: multi-agent evolution expands the evolver class Phi (addresses C2); navigation conditions the harness on the task (addresses C1); both are jointly required to handle long-horizon accumulation (C3). Forward-reference Section 2.
+
+\subsection{Contributions}
+% Four-bullet list:
+% (i) three-dimensional difficulty frame + three challenges with empirical signatures;
+% (ii) regret decomposition L_evo + L_nav clarifying what each axis can improve;
+% (iii) multi-agent evolution template (C2) and navigation via strategy-tree branching (C1), with joint-effect story for C3;
+% (iv) evaluation across three temporal benchmarks.

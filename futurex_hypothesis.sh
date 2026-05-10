@@ -97,7 +97,7 @@ COMMON="python solve_all_with_evolution.py
   --benchmark futurex
   --seed-workspace experiments/futurex/seed
   --evolver-prompt experiments/futurex/evolver_prompt.md
-  --trajectory-only
+  --temporal-reveal
   --task-timeout 300
   --workers $WORKERS
   $EXTRA_ARGS"
@@ -152,9 +152,21 @@ run H0c baseline_live_search \
   --output-dir results/futurex_baseline_live_search \
   --config experiments/futurex/configs/baseline_live_search.yaml
 
+# H0c_ds: Baseline - DeepSeek V3.2, strict search
+run H0c_ds baseline_deepseek \
+  --max-turns 80 \
+  --output-dir results/futurex_baseline_deepseek \
+  --config experiments/futurex/configs/baseline_deepseek.yaml
+
+# H0c_kimi: Baseline - Kimi K2.5, strict search
+run H0c_kimi baseline_kimi \
+  --max-turns 80 \
+  --output-dir results/futurex_baseline_kimi \
+  --config experiments/futurex/configs/baseline_kimi.yaml
+
 # H1: Full evolution, strict search (Wikipedia)
 run H1 full_evo_strict \
-  --max-turns 50 \
+  --max-turns 80 \
   --output-dir results/futurex_full_evo \
   --config experiments/futurex/configs/full_evo.yaml
 
@@ -199,27 +211,32 @@ run H4 online_eval \
   --output-dir results/futurex_online_eval \
   --config experiments/futurex/configs/baseline.yaml
 
-# H5: Navigation - inline branching + task routing (strict search, no multi-agent)
-run H5 navigation_strict \
-  --max-turns 50 \
+# H5_nav: Navigation - inline branching + task routing (strict search, no multi-agent)
+run H5_nav navigation_strict \
+  --max-turns 80 \
   --navigation \
   --output-dir results/futurex_navigation \
   --config experiments/futurex/configs/navigation.yaml
 
-# H5_smoke: Navigation smoke test (~56 tasks spanning full timeline, small batches)
-run H5_smoke navigation_smoke \
-  --max-turns 50 \
-  --navigation \
-  --stride 6 --batch-size 10 \
-  --output-dir results/futurex_nav_smoke \
-  --config experiments/futurex/configs/navigation.yaml
+# H5_multi: Structured evolution (4-phase: analyze → research → build → verify)
+COMMON_SAVE="$COMMON"
+COMMON="${COMMON//--no-infra-evo/}"
+run H5_multi structured_evo \
+  --max-turns 80 \
+  --evolver-prompt experiments/futurex/evolver_prompt.md \
+  --output-dir results/futurex_structured_evo \
+  --config experiments/futurex/configs/structured_evolution_evo.yaml
+COMMON="$COMMON_SAVE"
 
-# H5_multi: Navigation + multi-agent orchestrated evolution (strict search)
-run H5_multi navigation_multi_strict \
-  --max-turns 50 \
+# H5_multi_nav: Navigation + multi-agent orchestrated evolution (strict search)
+COMMON_SAVE="$COMMON"
+COMMON="${COMMON//--no-infra-evo/}"
+run H5_multi_nav navigation_multi_strict \
+  --max-turns 80 \
   --navigation \
   --output-dir results/futurex_navigation_multi \
   --config experiments/futurex/configs/navigation_multi.yaml
+COMMON="$COMMON_SAVE"
 
 # ─── Summary ──────────────────────────────────────────────────────────
 echo ""

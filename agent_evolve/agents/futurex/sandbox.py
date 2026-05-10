@@ -70,6 +70,8 @@ def start_sandbox(task_id: str, tool_files: dict, sandbox_network: str = "none",
     ctr = f"fx-{task_id.replace('/', '_')}-{os.getpid()}"
     subprocess.run(["docker", "rm", "-f", ctr], capture_output=True)
     cmd = ["docker", "run", "-d", "--name", ctr,
+           "--add-host", "datasets-server.huggingface.co:127.0.0.1",
+           "--add-host", "huggingface.co:127.0.0.1",
            "--network", sandbox_network]
     for key in _FORWARD_ENV_KEYS:
         val = os.environ.get(key)
