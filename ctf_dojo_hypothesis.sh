@@ -33,6 +33,14 @@ BRANCH_CONFIDENCE=0.7
 SUFFIX=""
 NO_INFRA_EVO=false
 MAX_TASKS=0
+# Solver + evolver inference profiles. Default: GLOBAL cross-region
+# profiles. This isolates CTF-Dojo traffic from PolyBench / FutureX runs
+# (which default to the US profile) so the two sets of experiments do not
+# contend for the same cross-region Bedrock quota pool. Override with
+# ``--model-id us.anthropic.claude-sonnet-4-6`` and
+# ``--evolver-model us.anthropic.claude-opus-4-6-v1`` if needed.
+MODEL_ID="global.anthropic.claude-sonnet-4-6"
+EVOLVER_MODEL="global.anthropic.claude-opus-4-6-v1"
 TARGETS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -43,6 +51,8 @@ while [ $# -gt 0 ]; do
     --suffix)              SUFFIX="$2"; shift 2 ;;
     --no-infra-evo)        NO_INFRA_EVO=true; shift ;;
     --limit)               MAX_TASKS="$2"; shift 2 ;;
+    --model-id)            MODEL_ID="$2"; shift 2 ;;
+    --evolver-model)       EVOLVER_MODEL="$2"; shift 2 ;;
     *)                     TARGETS+=("$1"); shift ;;
   esac
 done
@@ -72,11 +82,15 @@ COMMON="python solve_all_with_evolution.py
   --dataset $CATALOG
   --seed-workspace experiments/ctf_dojo/seed
   --evolver-prompt experiments/ctf_dojo/evolver_prompt.md
+  --model-id $MODEL_ID
   --temporal-reveal
   --max-turns 50
   --task-timeout 600
   --workers 5
   $EXTRA_ARGS"
+if [ -n "$EVOLVER_MODEL" ]; then
+  COMMON="$COMMON --evolver-model $EVOLVER_MODEL"
+fi
 if [ "$NO_INFRA_EVO" = true ]; then
   COMMON="$COMMON --no-infra-evo"
 fi
@@ -140,12 +154,6 @@ run H4 navigation \
   --output-dir results/ctf_dojo_navigation \
   --config experiments/ctf_dojo/configs/navigation.yaml
 
-# H4_smoke: Navigation smoke test (~53 tasks spanning 2011-2024, small batches)
-run H4_smoke navigation_smoke \
-  --navigation \
-  --stride 5 --batch-size 10 \
-  --output-dir results/ctf_dojo_nav_smoke \
-  --config experiments/ctf_dojo/configs/navigation.yaml
 
 # H4_multi: Structured evolution (4-phase: analyze → research → build → verify)
 run H4_multi structured_evo \

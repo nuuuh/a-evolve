@@ -161,6 +161,9 @@ def main():
                    help="Solver LLM temperature")
     p.add_argument("--evolver-temp", type=float, default=None,
                    help="Evolver LLM temperature (overrides config)")
+    p.add_argument("--evolver-model", type=str, default=None,
+                   help="Evolver Bedrock model-id (e.g. 'global.anthropic.claude-opus-4-6-v1'); "
+                        "overrides the YAML config's evolver_model.")
     p.add_argument("--verbose", action="store_true", default=False,
                    help="Print evolver conversation in real-time during evolution")
     p.add_argument("--navigation", action="store_true", default=False,
@@ -238,6 +241,8 @@ def main():
             config.temporal_reveal = True
         if args.evolver_temp is not None:
             config.evolver_temperature = args.evolver_temp
+        if args.evolver_model:
+            config.evolver_model = args.evolver_model
         if args.branch_confidence is not None:
             config.branch_confidence_threshold = args.branch_confidence
         if args.no_infra_evo:
@@ -613,7 +618,7 @@ def main():
                         score=r.get("score", 0.0),
                         cycle=evo_cycle,
                     ))
-                # Persist routing log to disk (no ground-truth score)
+                # Persist routing log to disk (include success only if revealed)
                 with open(routing_log_path, "a") as f:
                     for r in batch_results:
                         iid = r["instance_id"]
@@ -623,6 +628,8 @@ def main():
                             "branch": task_branches.get(iid, "main"),
                             "cycle": evo_cycle,
                         }
+                        if "success" in r:
+                            entry["success"] = r["success"]
                         f.write(json.dumps(entry) + "\n")
 
             # ── Build observations ────────────────────────────────

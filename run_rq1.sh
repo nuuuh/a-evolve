@@ -24,14 +24,18 @@ bash poly_hypothesis.sh H4          > "$LOG_DIR/pb_nav.log" 2>&1 &
 wait
 echo "PolyBench done at $(date)"
 
-# CTF-Dojo — all experiments parallel within benchmark
+# CTF-Dojo — all experiments parallel within benchmark.
+# ctf_dojo_hypothesis.sh defaults to the GLOBAL cross-region inference
+# profile for both solver (Sonnet 4.6) and evolver (Opus 4.6 V1), which
+# isolates CTF traffic from the PolyBench / FutureX runs (which use the
+# US profile). Nothing extra to pass here.
 echo "=== CTF-Dojo ==="
-bash ctf_dojo_hypothesis.sh H0      > "$LOG_DIR/ctf_h0.log" 2>&1 &
+bash ctf_dojo_hypothesis.sh H0       > "$LOG_DIR/ctf_h0.log"    2>&1 &
 # bash ctf_dojo_hypothesis.sh H0_ds   > "$LOG_DIR/ctf_h0_ds.log" 2>&1 &
 # bash ctf_dojo_hypothesis.sh H0_kimi > "$LOG_DIR/ctf_h0_kimi.log" 2>&1 &
-bash ctf_dojo_hypothesis.sh H1      > "$LOG_DIR/ctf_h1.log" 2>&1 &
+bash ctf_dojo_hypothesis.sh H1       > "$LOG_DIR/ctf_h1.log"    2>&1 &
 bash ctf_dojo_hypothesis.sh H4_multi > "$LOG_DIR/ctf_multi.log" 2>&1 &
-bash ctf_dojo_hypothesis.sh H4      > "$LOG_DIR/ctf_nav.log" 2>&1 &
+bash ctf_dojo_hypothesis.sh H4       > "$LOG_DIR/ctf_nav.log"   2>&1 &
 wait
 echo "CTF-Dojo done at $(date)"
 

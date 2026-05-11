@@ -252,21 +252,20 @@ class StructuredNavigationTemplate(EvolutionTemplate):
                 continue
             branch = rec.get("branch", "main") or "main"
             if branch not in branch_results:
-                branch_results[branch] = {"routed": 0, "passed": 0, "failed": 0}
+                branch_results[branch] = {"routed": 0, "revealed": 0, "passed": 0}
             branch_results[branch]["routed"] += 1
-            if rec.get("success"):
-                branch_results[branch]["passed"] += 1
-            else:
-                branch_results[branch]["failed"] += 1
+            if "success" in rec:
+                branch_results[branch]["revealed"] += 1
+                if rec["success"]:
+                    branch_results[branch]["passed"] += 1
 
         if not branch_results:
             return "(no routing data for this batch)"
 
         lines = []
         for branch, stats in sorted(branch_results.items()):
-            lines.append(
-                f"- {stats['routed']} tasks → {branch} "
-                f"({stats['passed']} passed, {stats['failed']} failed)"
+            from ._evolution_workspace import _format_branch_stats
+            lines.append(f"- {branch}: {_format_branch_stats(stats).lstrip('- ')}"
             )
         return "\n".join(lines)
 

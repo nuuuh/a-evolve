@@ -30,10 +30,21 @@ export PYTHONDONTWRITEBYTECODE=1
 #   ctf_dojo  (261 challenges, 13 years, cybersecurity)
 #   futurex   (503 tasks, 82 days, temporal forecasting)
 #
+# When invoked with no target args, all 9 cells run in 3 phases:
+#   Phase 1: FutureX  (3 cells in parallel — fastest, validates pipeline)
+#   Phase 2: CTF-Dojo (3 cells in parallel — medium)
+#   Phase 3: PolyBench (3 cells in parallel — longest, run last)
+# Cells within a phase run concurrently; phases run sequentially so that
+# each benchmark completes before the next one starts (resource
+# isolation + early exit on catastrophic bug).
+#
+# When invoked with explicit targets, only the named targets run, still
+# grouped into their benchmark phase.
+#
 # Usage:
-#   bash baselines_hypothesis.sh                          # run all 6 (2 baselines × 3 benchmarks)
-#   bash baselines_hypothesis.sh gepa_poly                # one specific run
-#   bash baselines_hypothesis.sh gepa_poly mh_poly        # multiple specific runs
+#   bash baselines_hypothesis.sh                          # all 9 cells, phased
+#   bash baselines_hypothesis.sh gepa_poly                # one specific cell
+#   bash baselines_hypothesis.sh gepa_poly mh_poly        # subset of cells
 #   bash baselines_hypothesis.sh --suffix _run2 mh_futurex
 #
 # Targets:
@@ -55,6 +66,13 @@ MAX_TASKS=0
 EVOLVER_TEMP=0
 SOLVER_TEMP=0
 BRANCH_CONFIDENCE=0.7
+# Solver + evolver inference profiles. Default: GLOBAL cross-region
+# profiles, which isolate baseline traffic from the US-profile PolyBench /
+# FutureX navigation experiments that consume most of the US bucket.
+# Override per-call with ``--model-id us.anthropic.claude-sonnet-4-6`` and
+# ``--evolver-model us.anthropic.claude-opus-4-6-v1`` if needed.
+MODEL_ID="global.anthropic.claude-sonnet-4-6"
+EVOLVER_MODEL="global.anthropic.claude-opus-4-6-v1"
 TARGETS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -63,6 +81,8 @@ while [ $# -gt 0 ]; do
     --evolver-temp)        EVOLVER_TEMP="$2"; shift 2 ;;
     --solver-temp)         SOLVER_TEMP="$2"; shift 2 ;;
     --branch-confidence)   BRANCH_CONFIDENCE="$2"; shift 2 ;;
+    --model-id)            MODEL_ID="$2"; shift 2 ;;
+    --evolver-model)       EVOLVER_MODEL="$2"; shift 2 ;;
     *)                     TARGETS+=("$1"); shift ;;
   esac
 done
@@ -104,6 +124,8 @@ run_polybench() {
     --dataset "$DB_PATH" \
     --seed-workspace experiments/polybench/seed \
     --evolver-prompt experiments/polybench/evolver_prompt.md \
+    --model-id "$MODEL_ID" \
+    --evolver-model "$EVOLVER_MODEL" \
     --temporal-reveal \
     --max-turns 30 \
     --task-timeout 300 \
@@ -150,6 +172,8 @@ run_ctf_dojo() {
     --dataset "$catalog" \
     --seed-workspace experiments/ctf_dojo/seed \
     --evolver-prompt experiments/ctf_dojo/evolver_prompt.md \
+    --model-id "$MODEL_ID" \
+    --evolver-model "$EVOLVER_MODEL" \
     --temporal-reveal \
     --max-turns 50 \
     --task-timeout 600 \
@@ -209,6 +233,8 @@ except Exception:
     --benchmark futurex \
     --seed-workspace experiments/futurex/seed \
     --evolver-prompt experiments/futurex/evolver_prompt.md \
+    --model-id "$MODEL_ID" \
+    --evolver-model "$EVOLVER_MODEL" \
     --temporal-reveal \
     --max-turns 80 \
     --task-timeout 300 \
@@ -243,58 +269,115 @@ should_run() {
 }
 
 echo "================================================================"
-echo "RQ1 baselines — GEPA-lite & Meta-Harness-lite across 3 benchmarks"
+echo "RQ1 baselines — GEPA-lite & Meta-Harness-lite & OctoTools across 3 benchmarks"
 echo "================================================================"
-echo "Suffix: ${SUFFIX:-<none>}  |  max_tasks: ${MAX_TASKS}  |  evolver_temp: ${EVOLVER_TEMP}  solver_temp: ${SOLVER_TEMP}"
-echo "Targets: ${TARGETS[*]:-all}"
+echo "Suffix:         ${SUFFIX:-<none>}"
+echo "Max tasks:      ${MAX_TASKS}"
+echo "Evolver temp:   ${EVOLVER_TEMP}"
+echo "Solver temp:    ${SOLVER_TEMP}"
+echo "Model-id:       ${MODEL_ID}"
+echo "Evolver-model:  ${EVOLVER_MODEL}"
+echo "Targets:        ${TARGETS[*]:-all (phased: FutureX -> CTF-Dojo -> PolyBench)}"
 echo ""
 
-# gepa_poly — GEPA-lite on PolyBench
-if should_run gepa_poly; then
-  run_polybench gepa_poly experiments/polybench/configs/gepa_lite_evo.yaml gepa_lite
-fi
+# Background-launcher wrapper: runs a cell in the background and echoes
+# the PID so the orchestrator can wait on it.
+run_bg() {
+  local runner_fn="$1"; shift
+  "$runner_fn" "$@" &
+  local pid=$!
+  echo "  launched pid=$pid  $runner_fn $*"
+}
 
-# mh_poly — Meta-Harness-lite on PolyBench
-if should_run mh_poly; then
-  run_polybench mh_poly experiments/polybench/configs/meta_harness_lite_evo.yaml mh_lite
-fi
+# ─── Phase 1 — FutureX (smallest / cheapest first) ───────────────────
+# 3 cells in parallel on the `global.` Bedrock profile. Each uses 5
+# workers; combined concurrency <= 15 Sonnet calls = well within quota.
+phase_futurex() {
+  echo ""
+  echo "============================================================"
+  echo "Phase 1 — FutureX (gepa_futurex / mh_futurex / octo_futurex)"
+  echo "============================================================"
+  local launched=0
+  if should_run gepa_futurex; then
+    run_bg run_futurex gepa_futurex experiments/futurex/configs/gepa_lite_evo.yaml gepa_lite
+    launched=$((launched+1))
+  fi
+  if should_run mh_futurex; then
+    run_bg run_futurex mh_futurex experiments/futurex/configs/meta_harness_lite_evo.yaml mh_lite
+    launched=$((launched+1))
+  fi
+  if should_run octo_futurex; then
+    run_bg run_futurex octo_futurex experiments/futurex/configs/octotools_expert_evo.yaml octo_expert
+    launched=$((launched+1))
+  fi
+  if [ "$launched" -gt 0 ]; then
+    echo "  waiting for $launched FutureX cell(s)..."
+    wait
+    echo "Phase 1 complete."
+  else
+    echo "  (no FutureX targets requested — skipping)"
+  fi
+}
 
-# gepa_ctf — GEPA-lite on CTF-Dojo
-if should_run gepa_ctf; then
-  run_ctf_dojo gepa_ctf experiments/ctf_dojo/configs/gepa_lite_evo.yaml gepa_lite
-fi
+# ─── Phase 2 — CTF-Dojo ─────────────────────────────────────────────
+phase_ctf_dojo() {
+  echo ""
+  echo "============================================================"
+  echo "Phase 2 — CTF-Dojo (gepa_ctf / mh_ctf / octo_ctf)"
+  echo "============================================================"
+  local launched=0
+  if should_run gepa_ctf; then
+    run_bg run_ctf_dojo gepa_ctf experiments/ctf_dojo/configs/gepa_lite_evo.yaml gepa_lite
+    launched=$((launched+1))
+  fi
+  if should_run mh_ctf; then
+    run_bg run_ctf_dojo mh_ctf experiments/ctf_dojo/configs/meta_harness_lite_evo.yaml mh_lite
+    launched=$((launched+1))
+  fi
+  if should_run octo_ctf; then
+    run_bg run_ctf_dojo octo_ctf experiments/ctf_dojo/configs/octotools_expert_evo.yaml octo_expert
+    launched=$((launched+1))
+  fi
+  if [ "$launched" -gt 0 ]; then
+    echo "  waiting for $launched CTF-Dojo cell(s)..."
+    wait
+    echo "Phase 2 complete."
+  else
+    echo "  (no CTF-Dojo targets requested — skipping)"
+  fi
+}
 
-# mh_ctf — Meta-Harness-lite on CTF-Dojo
-if should_run mh_ctf; then
-  run_ctf_dojo mh_ctf experiments/ctf_dojo/configs/meta_harness_lite_evo.yaml mh_lite
-fi
+# ─── Phase 3 — PolyBench (longest, run last) ────────────────────────
+phase_polybench() {
+  echo ""
+  echo "============================================================"
+  echo "Phase 3 — PolyBench (gepa_poly / mh_poly / octo_poly)"
+  echo "============================================================"
+  local launched=0
+  if should_run gepa_poly; then
+    run_bg run_polybench gepa_poly experiments/polybench/configs/gepa_lite_evo.yaml gepa_lite
+    launched=$((launched+1))
+  fi
+  if should_run mh_poly; then
+    run_bg run_polybench mh_poly experiments/polybench/configs/meta_harness_lite_evo.yaml mh_lite
+    launched=$((launched+1))
+  fi
+  if should_run octo_poly; then
+    run_bg run_polybench octo_poly experiments/polybench/configs/octotools_expert_evo.yaml octo_expert
+    launched=$((launched+1))
+  fi
+  if [ "$launched" -gt 0 ]; then
+    echo "  waiting for $launched PolyBench cell(s)..."
+    wait
+    echo "Phase 3 complete."
+  else
+    echo "  (no PolyBench targets requested — skipping)"
+  fi
+}
 
-# gepa_futurex — GEPA-lite on FutureX (prompts-only)
-if should_run gepa_futurex; then
-  run_futurex gepa_futurex experiments/futurex/configs/gepa_lite_evo.yaml gepa_lite
-fi
-
-# mh_futurex — Meta-Harness-lite on FutureX (infra-evo disabled for fair baseline parity)
-if should_run mh_futurex; then
-  run_futurex mh_futurex experiments/futurex/configs/meta_harness_lite_evo.yaml mh_lite
-fi
-
-# octo_poly — OctoTools static expert baseline on PolyBench
-if should_run octo_poly; then
-  run_polybench octo_poly experiments/polybench/configs/octotools_expert_evo.yaml octo_expert
-fi
-
-# octo_ctf — OctoTools static expert baseline on CTF-Dojo
-if should_run octo_ctf; then
-  run_ctf_dojo octo_ctf experiments/ctf_dojo/configs/octotools_expert_evo.yaml octo_expert
-fi
-
-# octo_futurex — OctoTools static expert baseline on FutureX (search variant).
-# Static harness; the seed's infra/search_pipeline.py stays in place and the
-# solver invokes it via workspace_bash.
-if should_run octo_futurex; then
-  run_futurex octo_futurex experiments/futurex/configs/octotools_expert_evo.yaml octo_expert
-fi
+phase_futurex
+phase_ctf_dojo
+phase_polybench
 
 # ─── Summary ─────────────────────────────────────────────────────────
 echo ""

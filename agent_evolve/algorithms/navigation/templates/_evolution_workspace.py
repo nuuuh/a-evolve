@@ -283,6 +283,22 @@ def load_strategy_tree(ws_root: Path) -> str:
     return p.read_text()
 
 
+def _format_branch_stats(stats: dict[str, int]) -> str:
+    """Format per-branch stats truthfully (pending vs revealed)."""
+    routed = stats.get("routed", 0)
+    revealed = stats.get("revealed", 0)
+    passed = stats.get("passed", 0)
+    if routed == 0:
+        return "- Routed: 0 tasks"
+    if revealed == 0:
+        return f"- Routed: {routed} tasks (labels pending reveal)"
+    pending = routed - revealed
+    pct = f"{100 * passed / revealed:.0f}%"
+    if pending:
+        return f"- Routed: {routed} tasks, {passed}/{revealed} passed ({pct}, {pending} pending)"
+    return f"- Routed: {routed} tasks, {passed}/{revealed} passed ({pct})"
+
+
 def update_strategy_tree(
     ws_root: Path,
     tree: Any,
@@ -293,31 +309,23 @@ def update_strategy_tree(
 
     Args:
         tree: StrategyTree with .branches list
-        routing_stats: {"main": {"routed": N, "passed": M}, "branch/X": {...}}
+        routing_stats: {"main": {"routed": N, "revealed": M, "passed": K}, ...}
         evo_number: current cycle number
     """
     lines = [f"## Strategy Tree (Cycle {evo_number})", ""]
 
     # Main
-    main_stats = routing_stats.get("main", {})
-    routed = main_stats.get("routed", 0)
-    passed = main_stats.get("passed", 0)
-    pct = f"{100 * passed / routed:.0f}%" if routed > 0 else "N/A"
     lines.append("### main")
     lines.append("General-purpose root strategy. Handles all tasks by default.")
-    lines.append(f"- Routed: {routed} tasks, {passed} passed ({pct})")
+    lines.append(_format_branch_stats(routing_stats.get("main", {})))
     lines.append("")
 
     # Branches
     for b in getattr(tree, "branches", []):
-        stats = routing_stats.get(b.name, {})
-        routed = stats.get("routed", 0)
-        passed = stats.get("passed", 0)
-        pct = f"{100 * passed / routed:.0f}%" if routed > 0 else "N/A"
         lines.append(f"### {b.name}")
         lines.append(b.description or "(no description)")
         lines.append(f"- Created: cycle {b.created_at_cycle}")
-        lines.append(f"- Routed: {routed} tasks, {passed} passed ({pct})")
+        lines.append(_format_branch_stats(routing_stats.get(b.name, {})))
         lines.append("")
 
     p = _ws_path(ws_root) / STRATEGY_TREE
@@ -327,7 +335,8 @@ def update_strategy_tree(
 def parse_routing_stats(routing_log_path: Path | None) -> dict[str, dict[str, int]]:
     """Parse routing_log.jsonl into per-branch stats.
 
-    Returns: {"main": {"routed": N, "passed": M}, "branch/X": {...}}
+    Returns: {"main": {"routed": N, "revealed": M, "passed": K}, ...}
+    Entries without 'success' field are pending (label not yet revealed).
     """
     stats: dict[str, dict[str, int]] = {}
     if not routing_log_path or not routing_log_path.exists():
@@ -342,10 +351,12 @@ def parse_routing_stats(routing_log_path: Path | None) -> dict[str, dict[str, in
             continue
         branch = rec.get("branch", "main") or "main"
         if branch not in stats:
-            stats[branch] = {"routed": 0, "passed": 0}
+            stats[branch] = {"routed": 0, "revealed": 0, "passed": 0}
         stats[branch]["routed"] += 1
-        if rec.get("success"):
-            stats[branch]["passed"] += 1
+        if "success" in rec:
+            stats[branch]["revealed"] += 1
+            if rec["success"]:
+                stats[branch]["passed"] += 1
     return stats
 
 
