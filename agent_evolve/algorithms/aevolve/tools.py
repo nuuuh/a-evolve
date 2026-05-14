@@ -15,7 +15,11 @@ BASH_TOOL_SPEC = {
     "name": "workspace_bash",
     "description": (
         "Execute a bash command in the agent workspace directory. "
-        "Use this to read/write skills, prompts, memory files, and inspect git history."
+        "Use this to read/write skills, prompts, memory files, and inspect "
+        "git history. Command output is capped at 100 KB per call "
+        "(first 50 KB + last 50 KB, middle elided): when inspecting large "
+        "trajectory JSON files, prefer `jq`, `grep`, `head`, or `tail` over "
+        "raw `cat` to keep your context focused."
     ),
     "input_schema": {
         "type": "object",
@@ -53,6 +57,33 @@ HUMAN_TOOL_SPEC = {
         "required": ["message"],
     },
 }
+
+# Cap per-bash-observation size to keep the evolver's context window
+# bounded.  A single `cat trajectory_*.json` on CTF can return 200 KB of
+# shell output; accumulated across a multi-phase Analyst run this blows
+# past the 1M-token Bedrock limit (observed: 10M+ tokens on CTF cycle 5).
+# 50 KB head + 50 KB tail ≈ 30K tokens per observation, enough to
+# see structure and errors while keeping total prompt bounded.
+WORKSPACE_BASH_MAX_OUTPUT_BYTES = 100_000
+_WORKSPACE_BASH_HEAD_BYTES = 50_000
+_WORKSPACE_BASH_TAIL_BYTES = 50_000
+
+
+def _truncate_bash_output(output: str) -> str:
+    if len(output) <= WORKSPACE_BASH_MAX_OUTPUT_BYTES:
+        return output
+    head = output[:_WORKSPACE_BASH_HEAD_BYTES]
+    tail = output[-_WORKSPACE_BASH_TAIL_BYTES:]
+    elided = len(output) - _WORKSPACE_BASH_HEAD_BYTES - _WORKSPACE_BASH_TAIL_BYTES
+    return (
+        f"{head}\n"
+        f"... [TRUNCATED: {elided} bytes elided between head and tail; "
+        f"total output {len(output)} bytes exceeds "
+        f"{WORKSPACE_BASH_MAX_OUTPUT_BYTES}-byte cap. "
+        f"Use head/tail/grep/jq to filter if you need the middle.] ...\n"
+        f"{tail}"
+    )
+
 
 SANDBOX_IMAGE = "evolver-sandbox:latest"
 _SANDBOX_BASE = "alpine:latest"
@@ -217,7 +248,9 @@ class EvolverSandbox:
                 capture_output=True, text=True, timeout=60,
             )
             output = (result.stdout + result.stderr).strip()
-            return output if output else "(no output)"
+            if not output:
+                return "(no output)"
+            return _truncate_bash_output(output)
         except subprocess.TimeoutExpired:
             return "ERROR: Command timed out."
         except Exception as e:

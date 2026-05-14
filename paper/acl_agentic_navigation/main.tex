@@ -1,65 +1,59 @@
 \documentclass[11pt]{article}
 
-% ACL submission skeleton.
-% Replace this with the official ACL style files when drafting:
-%   \usepackage[review]{acl}
-% Keep section bodies in sections/*.tex. This entrance file should contain
-% only the preamble, title/author block, abstract, and section includes.
+% Official ACL style files (acl-org/acl-style-files, master branch).
+% Change "review" to "final" for camera-ready, or "preprint" for a
+% non-anonymous preprint with page numbers.
+\usepackage[review]{acl}
 
-\usepackage{times}
+% acl.sty already loads times + T1 fontenc + inputenc + microtype +
+% inconsolata, so we do not re-declare them here (doing so causes minor
+% font-double-load warnings on some TeX Live installs).
 \usepackage{latexsym}
+
+% Extra packages used by our draft (tables/math/figures).
 \usepackage{booktabs}
 \usepackage{multirow}
 \usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
 \usepackage{graphicx}
 \usepackage{url}
+\usepackage{xcolor}
+\usepackage{array}
+\usepackage{makecell}
 
-\title{Agentic Evolution under Long-Horizon, Non-Stationary, Open-Ended Task Streams}
+% Proposition environments for the theoretical framework.
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}
 
-\author{
-  % TODO: Add author list, affiliations, and contribution footnotes.
-}
+% Macros for the theoretical terms so prose stays consistent.
+\newcommand{\Levo}{L_{\text{evo}}}
+\newcommand{\Lnav}{L_{\text{nav}}}
+\newcommand{\Hist}{\mathcal{H}_t}
+\newcommand{\Shift}{\Sigma_t}
+\newcommand{\Phimulti}{\Phi_{\text{multi}}}
+\newcommand{\Phisingle}{\Phi_{\text{single}}}
+
+\title{Agentic Evolution under Long-Horizon, Non-Stationary, Open-Ended Task Streams:\\
+A Regret Decomposition and Three Composable Architectural Remedies}
+
+\author{Anonymous ACL submission}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-% Write a 5--6 sentence abstract aligned with the three-dimensional frame.
-% Sentence 1: State the setting: agentic evolution on real-world deployments
-% where tasks are simultaneously long-horizon (D1), non-stationary (D2), and
-% open-ended (D3). Static/i.i.d. benchmarks omit all three.
-% Sentence 2: State the empirical puzzle and three challenges:
-% (C1) early-freeze beats full-evo on every temporal benchmark we test;
-% (C2) a single-agent prompt-level evolver cannot construct the infrastructure
-% real deployment requires;
-% (C3) harness size grows 18--60x across a short horizon, exceeding any bounded
-% solver context.
-% Sentence 3: Introduce the theoretical frame: regret decomposes into
-% evolution loss L_evo and navigation loss L_nav, which are orthogonal and
-% independently improvable.
-% Sentence 4: State the two contributions: multi-agent evolution (4-phase
-% structured pipeline with HITL) expands the evolver class and reduces L_evo
-% (C2); navigation via a git-backed strategy tree conditions the harness per
-% task and reduces L_nav (C1); both are jointly required for C3.
-% Sentence 5: Summarize empirical setup: PolyBench (5,075 markets / 16 days),
-% CTF-Dojo (261 challenges / 13 years), FutureX (332 tasks / 82 days);
-% four-cell ablation grid {single-agent, multi-agent} x {no-nav, nav}, plus a
-% temporally shuffled control that isolates non-stationarity as the mechanism.
-% Sentence 6: Core results after final numbers lock in.
+Self-evolving agents are typically evaluated on i.i.d.\ benchmarks that omit three properties of real-world deployment: \textbf{long-horizon} (D1), \textbf{non-stationarity} (D2), and \textbf{open-endedness} (D3). On three temporal benchmarks that exercise all three --- PolyBench, CTF-Dojo, FutureX --- we characterise three task-intrinsic challenges: \textbf{C1} \emph{non-monotonic evolution} (early-freeze beats full-evo under shift); \textbf{C2} \emph{construction bottleneck} (prompt-level evolvers cannot build multi-file infrastructure); \textbf{C3} \emph{experience insufficiency} (under severe shift, history carries no signal). We partition regret as \emph{evolution loss} $\Levo(\Phi, K)$ (what the evolver class can construct at capacity~$K$) plus \emph{navigation loss} $\Lnav(\varphi)$ (whether the harness is conditioned on the task); experience availability sits outside the decomposition as a third axis. Three composable architectural contributions follow: agentic navigation via a git-backed strategy tree conditions the harness per task and reduces $\Lnav$; multi-agent evolution with persistent cross-cycle state expands the constructible harness class and reduces $\Levo$; and human-in-the-loop integration supplies external direction when history is insufficient. Each is independently effective in ablation, and together they close most of the gap to a hand-designed expert reference on all three benchmarks.
 \end{abstract}
 
 \input{sections/introduction}
+\input{sections/related_work}
 \input{sections/method}
 \input{sections/experiment}
 \input{sections/conclusions}
-% Note: sections/conclusions.tex holds the Conclusions paragraph; sections/appendix.tex
-% (included below) holds Related Work + Limitations + Ethics + Reproducibility stubs that
-% currently live outside the main flow. Reshuffle before submission.
 
-% Uncomment these lines once references.bib contains real entries and the draft
-% has at least one \cite{...}. The current outline intentionally has no
-% citations, so enabling BibTeX now makes latexmk fail on a missing .bbl file.
-% \bibliographystyle{plain}
+% Uncomment once references.bib is populated with real entries.
+% \bibliographystyle{acl_natbib}
 % \bibliography{references}
 
 \appendix

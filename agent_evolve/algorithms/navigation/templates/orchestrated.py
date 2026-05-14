@@ -73,10 +73,11 @@ Look at the batch behaviour and the current tree. For each distinct gap or
 opportunity you see, decide:
 
 1. **Target** — where does this change belong?
-   - ``"main"``: domain-generalizable improvements (would help every task).
-   - ``"branch/<descriptive-name>"``: regime-specific improvements that
-     would *hurt* other tasks if applied globally.  Pick an existing branch
-     or propose a new one.
+   - ``"main"``: improvements that apply equally to all task types.
+   - ``"branch/<descriptive-name>"``: when you observe a cluster of tasks
+     that would benefit from a specialized approach different from main's
+     general strategy (e.g., different search depth, reasoning style, or
+     domain knowledge).  Pick an existing branch or propose a new one.
 
 2. **Focus** — a short label (2-6 words) naming the concrete area of the
    workspace this assignment is about.  Examples:
@@ -118,11 +119,27 @@ Rules:
 - Use ``"main"`` verbatim for the main branch.
 - Branch names MUST start with ``branch/`` and use lowercase hyphenated
   slugs (``branch/binary-analysis``).
-- Only propose a new branch when there is genuine evidence of distribution
-  shift — something that would make other tasks worse if applied globally.
+- Create a branch when you see a task cluster (2+ tasks) that needs a
+  different strategy from the majority. Do NOT create a branch that would
+  cover all tasks — that's just main.
 - You may assign multiple focused workloads to the same target in one cycle.
 - If no changes are warranted, return ``"assignments": []``.
-- Output ONLY the JSON plan.
+- After emitting the JSON plan, do NOT make further tool calls.
+
+Workspace access
+----------------
+You have ``workspace_bash`` to inspect trajectories and workspace state:
+- ``/trajectories/batch_NNNN/index.txt`` — lightweight per-task summary
+  (task_id, category, year, turns, elapsed, outcome). READ THIS FIRST.
+- ``/solver_workspace/`` — current evolved workspace (prompts, skills, tools)
+- ``/evolver_workspace/strategy_tree.md`` — branch descriptions + stats
+
+NEVER read full trajectory_*.json files with cat — they are 500+ lines
+and will crash your context window. If you need detail on a specific task,
+use: head -50 /trajectories/batch_NNNN/trajectory_<id>.json
+
+Start by reading index.txt to identify regime patterns (category clusters,
+turn-count distributions, pass/fail by type).
 
 Reading the batch
 -----------------
@@ -248,6 +265,11 @@ def build_planner_prompt(
             task_input = task_input.get("input", "")
         if task_input:
             entry["task_preview"] = str(task_input)[:300]
+        # Task metadata (category, domain, year) for regime identification
+        for field in ("category", "domain", "year", "difficulty_level", "event"):
+            val = r.get(field) or r.get("metadata", {}).get(field)
+            if val:
+                entry[field] = val
         # Liveness signal (not evaluation signal) for cancelled tasks.
         if r.get("status") == "cut_off":
             entry["status"] = "cut_off"
@@ -388,6 +410,7 @@ class OrchestratedTemplate(EvolutionTemplate):
         plan = self._run_planner(
             batch_results, routing_history, tree.branch_names(),
             navigation_enabled=nav_enabled,
+            workspace_root=solver_workspace.root,
         )
         assignments = list(plan.get("assignments", []) or [])
         trajectory.append({
@@ -504,8 +527,9 @@ class OrchestratedTemplate(EvolutionTemplate):
         branch_names: list[str],
         *,
         navigation_enabled: bool,
+        workspace_root: Any = None,
     ) -> dict[str, Any]:
-        """Run the planner LLM with the mode-appropriate system prompt."""
+        """Run the planner LLM with bash access to read trajectories."""
         cfg = self.engine.config
         system_prompt = (
             PLANNER_SYSTEM_PROMPT_NAV if navigation_enabled
@@ -516,6 +540,49 @@ class OrchestratedTemplate(EvolutionTemplate):
             navigation_enabled=navigation_enabled,
             trajectory_only=cfg.trajectory_only,
         )
+
+        # Use _run_llm for bash access (planner can read trajectories)
+        if workspace_root is not None:
+            try:
+                from ._evolution_workspace import get_evolver_workspace_path
+                evo_ws = get_evolver_workspace_path(workspace_root)
+                # Use compact prompt for bash mode — planner discovers details
+                # via bash rather than receiving everything in the initial message.
+                # This prevents context overflow from large task previews.
+                compact_prompt = build_planner_prompt(
+                    batch_results[:20], evolution_history, branch_names,
+                    navigation_enabled=navigation_enabled,
+                    trajectory_only=cfg.trajectory_only,
+                )
+                result = self.engine._run_llm(
+                    compact_prompt, workspace_root,
+                    system_prompt=system_prompt,
+                    evolver_workspace=evo_ws if evo_ws.exists() else None,
+                )
+                content = result.get("content", "")
+                plan = _parse_plan(content, navigation_enabled)
+                plan["_trajectory"] = {
+                    "prompt": compact_prompt,
+                    "response": content,
+                }
+                return plan
+            except Exception as e:
+                logger.warning("Planner with bash failed: %s", e)
+
+        # Fallback: no-tool single call with index embedded
+        # Append batch index so planner sees regime info without bash
+        index_lines = []
+        for r in batch_results:
+            cat = r.get("category", "")
+            yr = r.get("year", "")
+            turns = r.get("turns", 0)
+            tid = r.get("instance_id", r.get("task_id", ""))
+            outcome = ("PASS" if r.get("success") else "FAIL") if "success" in r else "pending"
+            if cat or yr:
+                index_lines.append(f"{tid} | {cat} | {yr} | {turns}t | {outcome}")
+        if index_lines:
+            prompt += "\n\n## Batch Index (task | category | year | turns | outcome)\n```\n"
+            prompt += "\n".join(index_lines) + "\n```\n"
 
         llm = getattr(self.engine, "llm", None)
         if llm is None:

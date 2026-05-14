@@ -21,4 +21,8 @@ WORKSPACE LAYOUT:
 
 Output: VERDICT: PASS or FAIL, then list each test with its result.
 
+BASH OUTPUT IS CAPPED AT 100 KB PER CALL (first 50 KB + last 50 KB,
+middle elided). Prefer `jq`, `grep`, `head`, `tail` over raw `cat`
+when inspecting large files.
+
 {benchmark_context}

@@ -742,8 +742,31 @@ def main():
                     t = _task_by_id.get(r.get("instance_id"))
                     if t and t.metadata:
                         r.setdefault("task_metadata", t.metadata)
-                        r.setdefault("difficulty_level", t.metadata.get("difficulty_level"))
-                        r.setdefault("domain", t.metadata.get("domain"))
+                        for _mkey in ("difficulty_level", "domain", "category",
+                                      "year", "event"):
+                            if t.metadata.get(_mkey) is not None:
+                                r.setdefault(_mkey, t.metadata[_mkey])
+                # Write trajectory index for planner (lightweight summary)
+                _idx_dir = evo_dir / "trajectories" / f"batch_{batch_num:04d}"
+                _idx_dir.mkdir(parents=True, exist_ok=True)
+                _idx_lines = ["task_id | category | year | turns | elapsed | outcome"]
+                for r in batch_results:
+                    _iid = r.get("instance_id", "")
+                    _t = _task_by_id.get(_iid)
+                    _cat = _t.metadata.get("category", "") if _t and _t.metadata else ""
+                    _yr = _t.metadata.get("year", "") if _t and _t.metadata else ""
+                    _turns = r.get("turns", 0)
+                    _elapsed = f"{r.get('elapsed', 0):.0f}s"
+                    if "success" in r:
+                        _out = "PASS" if r["success"] else "FAIL"
+                    else:
+                        _out = "pending"
+                    if r.get("max_turns_hit"):
+                        _out += " (max turns)"
+                    elif r.get("timed_out"):
+                        _out += " (timeout)"
+                    _idx_lines.append(f"{_iid} | {_cat} | {_yr} | {_turns} | {_elapsed} | {_out}")
+                (_idx_dir / "index.txt").write_text("\n".join(_idx_lines) + "\n")
                 try:
                     evo_result = evolver.evolve_with_navigation(
                         solver_workspace=agent.workspace,

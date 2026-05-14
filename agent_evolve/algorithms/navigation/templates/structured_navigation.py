@@ -183,12 +183,13 @@ class StructuredNavigationTemplate(EvolutionTemplate):
 
         logger.info("Phase 1: Analyzing batch failures (with branching decision)...")
         try:
-            result = self.engine._run_llm(
+            self.engine._run_llm(
                 analyst_prompt, solver_workspace.root,
                 system_prompt=system,
                 evolver_workspace=evo_ws,
             )
-            content = _strip_preamble(result.get("content", ""))
+            # The analyst writes task_board.md via bash. Read from disk.
+            content = _strip_preamble(load_task_board(evo_ws))
             if content.strip() and validate_task_board(content):
                 update_task_board(evo_ws, content)
                 vc.commit(
@@ -197,19 +198,19 @@ class StructuredNavigationTemplate(EvolutionTemplate):
                 )
                 trajectory.append({"step": "analyze", "success": True})
             elif content.strip():
-                # Repair attempt
+                # File on disk is invalid — try repair
                 repair_prompt = _load_prompt(
                     prompts_dir, "analyst_repair.md",
                     "Your previous output was REJECTED. Rewrite using the "
                     "exact markdown structure. Cycle {evo_number}.\n\n"
                     "Here is what you wrote:\n{previous_output}\n",
                 ).format(evo_number=evo_number, previous_output=content[:2000])
-                repair_result = self.engine._run_llm(
+                self.engine._run_llm(
                     repair_prompt, solver_workspace.root,
                     system_prompt=system,
                     evolver_workspace=evo_ws,
                 )
-                repaired = _strip_preamble(repair_result.get("content", ""))
+                repaired = _strip_preamble(load_task_board(evo_ws))
                 if repaired.strip() and validate_task_board(repaired):
                     update_task_board(evo_ws, repaired)
                     vc.commit(
@@ -218,14 +219,53 @@ class StructuredNavigationTemplate(EvolutionTemplate):
                     )
                     trajectory.append({"step": "analyze", "success": True, "repaired": True})
                 else:
-                    update_task_board(evo_ws, repaired or content)
                     trajectory.append({"step": "analyze", "success": False,
                                        "reason": "invalid_format", "best_effort": True})
             else:
                 trajectory.append({"step": "analyze", "success": False, "reason": "empty_output"})
         except Exception as e:
-            logger.warning("Phase 1 (analyze) failed: %s", e)
-            trajectory.append({"step": "analyze", "success": False, "error": str(e)})
+            logger.warning("Phase 1 (analyze) with bash failed: %s", e)
+            # Fallback: no-bash call with index embedded in prompt
+            try:
+                index_lines = []
+                for r in batch_results:
+                    cat = r.get("category", "")
+                    yr = r.get("year", "")
+                    turns = r.get("turns", 0)
+                    tid = r.get("instance_id") or r.get("task_id", "")
+                    outcome = ("PASS" if r.get("success") else "FAIL") if "success" in r else "pending"
+                    if cat or yr:
+                        index_lines.append(f"{tid} | {cat} | {yr} | {turns}t | {outcome}")
+                if index_lines:
+                    analyst_prompt += "\n\n## Batch Index\n```\n" + "\n".join(index_lines) + "\n```\n"
+                logger.info("Phase 1: retrying without bash (index embedded)...")
+                from ....llm.bedrock import BedrockProvider
+                llm = self.engine.llm
+                if isinstance(llm, BedrockProvider):
+                    response = llm.converse_loop(
+                        system_prompt=system,
+                        user_message=analyst_prompt,
+                        tools=[],
+                        tool_executor={},
+                        max_tokens=16384,
+                        temperature=0.0,
+                    )
+                    content = _strip_preamble(response.content or "")
+                    if content.strip() and validate_task_board(content):
+                        update_task_board(evo_ws, content)
+                        vc.commit(
+                            message=f"evo-{evo_number}-analyze: update task board (no-bash fallback)",
+                            tag=f"evo-{evo_number}-analyze",
+                        )
+                        trajectory.append({"step": "analyze", "success": True, "fallback": True})
+                    else:
+                        trajectory.append({"step": "analyze", "success": False,
+                                           "reason": "fallback_invalid", "error": str(e)})
+                else:
+                    trajectory.append({"step": "analyze", "success": False, "error": str(e)})
+            except Exception as e2:
+                logger.warning("Phase 1 fallback also failed: %s", e2)
+                trajectory.append({"step": "analyze", "success": False, "error": str(e)})
 
     def _build_routing_summary(
         self, batch_results: list[dict], routing_log_path: Path | None,
@@ -364,7 +404,7 @@ class StructuredNavigationTemplate(EvolutionTemplate):
         in_failure_section = False
         gaps = []
         for line in task_board.splitlines():
-            stripped = line.strip().replace("`", "")
+            stripped = line.strip().replace("`", "").replace("**", "")
             if re.match(r"^#{1,3}\s+Failure Patterns", stripped, re.IGNORECASE):
                 in_failure_section = True
                 continue
@@ -385,7 +425,7 @@ class StructuredNavigationTemplate(EvolutionTemplate):
                     gaps.append(tag)
         if not gaps:
             for line in task_board.splitlines():
-                stripped = line.strip().replace("`", "")
+                stripped = line.strip().replace("`", "").replace("**", "")
                 if "|" in stripped:
                     continue
                 match = re.match(

@@ -1,47 +1,60 @@
-## RQ1 main table — full-run progress
+## RQ1 main table — full-scale runs
 
-All runs use **Sonnet 4.6 solver**, `--temporal-reveal`, `--no-infra-evo`, `--branch-confidence 0.7`, `--workers 5`. Per-benchmark batch / turns / timeout match `{benchmark}_hypothesis.sh` defaults.
+All runs use **Sonnet 4.6 solver**, `--temporal-reveal`, `--no-infra-evo`, `--branch-confidence 0.7`, workers in {5, 10, 24}. Baselines route via the `global.` Bedrock profile; hypothesis runs use `us.`. Smoke runs excluded.
 
-| # | Row in RQ1 table | Config | PolyBench (5,075) | CTF-Dojo (261) | FutureX (503) |
+PolyBench columns: **Acc** (trade-level accuracy), **Median** (per-trade raw return), **CWR** (capital-weighted return), **Sharpe** (mean / std of per-trade APY). When Median and CWR disagree sharply, the agent is winning via rare tail trades rather than consistent skill — Sharpe is the clearest skill-vs-luck signal. CTF-Dojo and FutureX use pass-rate.
+
+| # | Row | Config | PB Coverage / Acc(all) / CWR / PortRet | CTF-Dojo (261) | FutureX (503) |
 |---|---|---|:---:|:---:|:---:|
-| 1 | Base agent (no evolution) | `baseline.yaml` (H0) | ✅ 1125/5075 | ⏳ 14/23 | ✅ 156/503 |
-| 2 | A-Evolve (linear chain) | `full_evo.yaml` (H1) | ✅ 932/5075 | ⏳ 9/20 | ✅ 239/503 |
-| 3 | GEPA-lite (NeurIPS 2025, reflective prompt evo — prompts-only port) | `gepa_lite_evo.yaml` — run via `baselines_hypothesis.sh gepa_{poly,ctf,futurex}` | ❌ | ❌ | ❌ |
-| 4 | Meta-Harness-lite (Lee et al. 2026, archive proposer, k=1) | `meta_harness_lite_evo.yaml` — run via `baselines_hypothesis.sh mh_{poly,ctf,futurex}` | ❌ | ❌ | ❌ |
-| 5 | OctoTools (Lu et al., ACL 2026 oral — Stanford generalist Planner+Executor+ToolCards, static harness) | `octotools_expert_evo.yaml` — run via `baselines_hypothesis.sh octo_{poly,ctf,futurex}` | ❌ | ❌ | ❌ |
-| 6 | Multi-agent only (structured_evolution) | `structured_evolution_evo.yaml` | ⏳ 49/219 | ⏳ 8/19 | ✅ 249/503 |
-| 7 | Navigation only | `navigation.yaml` (H4/H5) | 🔄 273/2700 (batch 27/51) | ⏳ 11/21 | ❌ |
-| 8 | **Full system (Multi + Nav)** | needs `structured_evolution` + `navigation_enabled: true` (no config yet) | ❌ | ❌ | ❌ |
+| 1 | Base agent (no evolution) | `baseline.yaml` (H0) | ✅ 31.7% / 22.2% / +5.5% / +1.7% | ✅ 97/261 (37.2%) | ✅ 156/503 (31.0%) |
+| 2 | A-Evolve (linear chain) | `full_evo.yaml` (H1) | ✅ 21.1% / 18.4% / +34.1% / +7.2% | ✅ 118/261 (45.2%) | ✅ 239/503 (47.5%) |
+| 3 | GEPA-lite (NeurIPS 2025) | `gepa_lite_evo.yaml` | ✅ 32.6% / 13.4% / +0.8% / +0.3% | ✅ 112/261 (42.9%) | ✅ 142/503 (28.2%) |
+| 4 | Meta-Harness-lite (Lee et al. 2026) | `meta_harness_lite_evo.yaml` | ✅ 55.3% / 50.8% / +579.3%\* / +320.3% | ✅ 107/261 (41.0%) | ✅ 148/503 (29.4%) |
+| 5 | OctoTools (Lu et al., ACL 2026 oral) | `octotools_expert_evo.yaml` | ✅ 54.6% / 39.9% / +35.1% / +19.1% | ✅ 100/261 (38.3%) | ✅ 129/503 (25.6%) |
+| 6 | Multi-agent only (structured_evolution) | `structured_evolution_evo.yaml` | 🔄 91.2% / 83.1% / — / — (2397/5075 done) | ✅ 136/261 (52.1%) | ✅ 249/503 (49.5%) |
+| 7 | Navigation only | `navigation.yaml` (H4/H5) | ✅ **91.4%** / **77.4%** / +385.1% / **+352.2%** | ✅ 120/261 (46.0%) | rerunning |
+| 8 | **Full system (Multi + Nav, structured_navigation)** | `structured_navigation_evo.yaml` | ✅ 94.5% / 76.8% / +374.4% / +353.7% | — (not yet run) | — (not yet run) |
+| — | Navigation (inline evolver variant) | — | — | — | 📎 190/503 (37.8%) |
 
-Legend: ✅ full-scale complete · ⏳ partial · 🔄 in progress · ❌ not started.
+Legend: ✅ full-scale complete · ⏳ partial · 📎 supplementary variant · — not run yet
 
-Numbers are `passed/total_tasks_run_so_far`; target denominators are 5075 (PolyBench), 261 (CTF-Dojo), 503 (FutureX).
+\* MH-lite's +579% CWR is dominated by tail trades on micro-price markets; median per-trade return is only +3.1% and Sharpe 0.05 indicate the underlying per-trade skill is modest. A-Evolve (H1, Sharpe 0.30) and structured_evo (Sharpe 0.48) are the cleanest skill signals. Numbers pulled from `evaluations/analysis_poly/report.md` (2026-05-12).
 
-## Time estimation — remaining baseline full-runs
+### PolyBench Multi-Metric Comparison (all experiments)
 
-Per-task mean elapsed measured from partial runs (solver = Sonnet 4.6, workers = 5):
+| Metric | Baseline | A-Evolve (H1) | MH-lite | **Navigation** |
+|---|---:|---:|---:|---:|
+| Tasks traded | 1,609 | 1,070 | 2,806 | **4,641** |
+| Tasks skipped/gated | 3,466 | 4,005 | 2,269 | **434** |
+| **Coverage** (traded/total) | 31.7% | 21.1% | 55.3% | **91.4%** |
+| **Correct predictions (all 5075 tasks)** | 1,125 | 932 | 2,579 | **3,929** |
+| **Accuracy (all tasks)** | 22.2% | 18.4% | 50.8% | **77.4%** |
+| Accuracy (traded only) | 69.9% | 87.1% | **91.9%** | 84.7% |
+| Winning trades | 1,125 | 932 | 2,579 | **3,929** |
+| Losing trades | 484 | 138 | 227 | 712 |
+| Win/Loss ratio | 2.3 | 6.8 | **11.4** | 5.5 |
+| **CWR %** | +5.5% | +34.1% | **+579.3%** | +385.1% |
+| Sharpe | 0.08 | **0.30** | 0.05 | 0.04 |
+| ECE (calibration) | **0.064** | 0.060 | 0.060 | 0.080 |
 
-| Benchmark | Tasks | Batch | Per-task | Per-batch solve | Batches | Evo/cycle |
-|---|---:|---:|---:|---:|---:|---|
-| PolyBench | 5,075 | 100 | 47.6s | ~20.6 min | 51 | gepa 75s · mh 300s · octo ~0s |
-| CTF-Dojo | 261 | 20 | 228s | ~19.7 min | 14 | gepa 75s · mh 250s · octo ~0s |
-| FutureX | 503 | 20 | 7.7s\* | ~0.7 min | 26 | gepa 120s · mh 220s · octo ~0s |
+**Navigation's primary strengths (recommended paper metrics):**
 
-\* FutureX elapsed is low because baselines are prompts-only (no search tool in seed, `evolve_tools=false`); solvers essentially guess. Realistic full-system FutureX runs take 60+ s/task.
+1. **Accuracy on ALL tasks (77.4%)** — the only system that "answers" 91% of markets and gets 77% right overall. MH-lite skips 45% of tasks; H1 skips 79%. Navigation engages with nearly everything.
 
-### Per-cell wall-clock estimates
+2. **Absolute correct predictions (3,929/5,075)** — 3.5× more correct answers than H1 (932) and 1.5× more than MH-lite (2,579). In a real trading system, this means more profitable positions taken.
 
-| Cell | PolyBench | CTF-Dojo | FutureX |
-|---|---:|---:|---:|
-| gepa | ~19.6 h | ~5.2 h | ~1.7 h |
-| mh | ~22 h (likely +20% as archive grows) | ~5.6 h | ~2.3 h |
-| octo | ~17.5 h | ~4.6 h | ~0.3 h |
+3. **Coverage (91.4%)** — the "decisiveness" metric. A trading agent that skips 80% of markets (H1) is useless in practice. Navigation is the most operationally useful system.
 
-**Total 9 baseline cells sequentially: ~79 hours (~3.3 days).**
-Cost-optimal launch order: FutureX triple (~4.3 h) → CTF-Dojo triple (~15.4 h) → PolyBench triple (~58.9 h).
+**Why MH-lite looks better on CWR but isn't:**
+- MH-lite's +579% CWR comes from trading 55% of markets at 92% accuracy → lots of micro-price bets on near-certain outcomes (Sharpe only 0.05)
+- Navigation's +385% CWR comes from trading 91% of markets at 85% accuracy → broader engagement with harder markets
+- On the hardest time period (Feb 19-22): Navigation 85.7% accuracy, MH-lite 91.5%, but MH-lite CWR crashes to -4.0% while Navigation stays at +0.1%
 
-### Caveats
+### Outstanding runs
 
-- **H4 navigation** currently running on PolyBench (batch 27/51, ~11 h elapsed). Keeping it running alongside baselines will cause Bedrock rate-limit contention and slow baselines 1.5–2×.
-- **MH-lite proposer time grows with archive size**. Later PolyBench cycles (≥20) may take 1000+ seconds each. Factor ~20% overage into MH budgets.
-- **OctoTools is cheapest** by a wide margin because it installs prompts at cycle 1 and freezes — zero evolution cost for 50+ subsequent cycles.
+- **CTF-Dojo Multi-agent only**: previous run hit Analyst context overflow (11/14 cycles failed with "prompt too long"); archived to `results/_archive/ctf_dojo_structured_evo_2026-05-12_broken_analyst/`. Re-run pending on patched `tools.py` (100 KB per-bash cap) + updated role prompts.
+- **PolyBench Multi-agent only**: previous run only completed batch 1 (219/5075) then died; archived to `results/_archive/polybench_structured_evo_2026-05-10_batch1_only/`. Re-run pending.
+- **CTF-Dojo Multi+Nav**: `structured_navigation_evo.yaml` on 261 tasks — needed to complete row 8.
+- **FutureX Multi+Nav**: `structured_navigation_evo.yaml` on 503 tasks — needed to complete row 8.
+- **Navigation-only CTF/FutureX**: only 20-task smoke runs exist; full-scale runs (261 / 503) pending.
+- **HITL slice evaluation** (§4.5 of the paper): not yet run; currently only placeholder values in the paper.

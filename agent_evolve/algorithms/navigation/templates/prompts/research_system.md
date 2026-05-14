@@ -32,4 +32,8 @@ WORKSPACE LAYOUT:
     tests/              — write findings HERE
   /trajectories/        — READ-ONLY solver conversations per task
 
+BASH OUTPUT IS CAPPED AT 100 KB PER CALL (first 50 KB + last 50 KB,
+middle elided). When reading trajectories or large logs, prefer
+`jq`, `grep`, `head`, `tail` over raw `cat` to keep context focused.
+
 {benchmark_context}

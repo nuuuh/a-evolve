@@ -1,65 +1,28 @@
 % !TEX root = ../main.tex
 
 \section{Introduction}
+\label{sec:intro}
 
-\subsection{Opening: Agentic Evolution and the ``More Evolution Is Not Better'' Puzzle}
-% One paragraph: standard A-Evolve pitch; headline puzzle — early-freeze beats full-evo on all three temporal benchmarks; this does not happen on i.i.d. benchmarks.
+Self-evolving agents update their own harness --- prompts, skills, memory, tools, and infrastructure --- based on execution feedback. Recent systems (A-Evolve, GEPA, Meta-Harness, structured-evolution variants) report consistent gains on static benchmarks such as SWE-bench and MATH. Yet when we deploy the same systems on three temporally ordered benchmarks that mirror real deployment --- PolyBench, CTF-Dojo, and FutureX --- a reproducible puzzle emerges: \textbf{stopping evolution early outperforms continuing it}. An early-freeze variant that halts evolution after 40\% of the stream beats the full-evolution run on all three benchmarks (PolyBench $87.1\% \to 89.3\%$; CTF-Dojo $45.2\% \to 53.3\%$; FutureX $47.5\% \to 50.4\%$, identical evolver, solver, and task order). This gap does not appear in the i.i.d.\ benchmarks these systems were originally tuned on. The remainder of this paper asks what structural property of real-world deployment produces this inversion, and what architectural changes restore the expected ``more evolution $\Rightarrow$ better'' behaviour.
 
-\subsection{Three Dimensions of Real-World Difficulty}
-% One paragraph: introduce D1 (long-horizon), D2 (non-stationarity), D3 (open-endedness); state they are orthogonal; our three benchmarks exercise all three.
+\noindent\textbf{Three task-intrinsic dimensions.}
+We argue the inversion is driven by three orthogonal properties of real deployment that static benchmarks omit. \textbf{D1 Long-horizon:} tasks arrive sequentially and the harness accumulates state across them. \textbf{D2 Non-stationarity:} the task distribution $P_t$ shifts over the horizon, so past experience does not uniformly transfer. \textbf{D3 Open-endedness:} the vocabulary of capabilities required at deployment is not pre-enumerable; new APIs, tools, or domain rules may be needed that were unknown at design time. These dimensions are orthogonal: stream-without-shift (D1 only) is covered by repeated static benchmarks, shift-without-horizon (D2 only) is one-shot covariate shift, and open-endedness without horizon (D3 only) is a single hard task. Real deployment exercises all three simultaneously; PolyBench (5{,}075 markets over 16d, certainty/liquidity drift), CTF-Dojo (261 challenges over 13y, era shift from classical crypto to binary RE to modern web), and FutureX (503 forecasts over 82d, EN$\to$ZH source/language shift) were chosen because each one does.
 
-% TABLE 1: Benchmark x dimension coverage.
-\begin{table}[t]
-\centering
-\caption{Benchmark coverage of the three difficulty dimensions. \textbf{Placeholder.}}
-\label{tab:benchmarks_dims}
-\begin{tabular}{lccc}
-\toprule
-Benchmark & D1 (Horizon) & D2 (Non-stationarity) & D3 (Open-endedness) \\
-\midrule
-PolyBench   & --- & --- & --- \\
-CTF-Dojo    & --- & --- & --- \\
-FutureX     & --- & --- & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
+\noindent\textbf{Three task-intrinsic challenges.}
+Each dimension produces a distinct challenge in the evolution pipeline. \textbf{C1 (D2) non-monotonic evolution:} accumulated experience contains both stationary signal (useful across regimes) and regime-specific signal (helpful only in the originating regime), so a single unconditional harness must compromise; the signature is early-freeze beating full-evo. \textbf{C2 (D3) construction bottleneck:} the required capability vocabulary is not pre-enumerable, so the evolver must construct multi-file infrastructure (research $\to$ API integration $\to$ tool $\to$ pipeline) rather than merely editing prompts; the signature is weak evolvers plateauing at prompt-level artifacts. \textbf{C3 (D2 severe) experience insufficiency:} under shift to a regime with no prior signal in $\Hist$, no evolver can extract direction from absent data; the signature is repeated failures localised on novel-regime task slices whose rate does not improve with more cycles.
 
-\subsection{Three Challenges: Preliminary Evidence}
-% One paragraph introducing the three challenges, each grounded in one preliminary experiment.
-% C1 (D2) - Non-monotonic evolution. Signature: accuracy curve inverts across cycles.
-% C2 (D3) - Evolver capability bottleneck. Signature: artifact-type distribution (prompts vs tools vs infrastructure).
-% C3 (D1) - Harness accumulation exceeds capacity. Signature: 18-60x size growth end-of-run under H1.
-
-% TABLE 2: Preliminary evidence per challenge.
-\begin{table}[t]
-\centering
-\caption{Preliminary evidence that each challenge is real. \textbf{Placeholder.}}
-\label{tab:prelim_evidence}
-\begin{tabular}{llll}
-\toprule
-Challenge & Benchmark & Signature metric & Value (H1) \\
-\midrule
-C1 (non-monotonic)  & --- & --- & --- \\
-C2 (capability)     & --- & --- & --- \\
-C3 (accumulation)   & --- & --- & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-% FIGURE 1: Three signature curves side-by-side.
 \begin{figure}[t]
 \centering
-\rule{0.45\textwidth}{4cm}
-\caption{Three empirical signatures of the three challenges: (a) per-batch accuracy for H1 showing non-monotonic shape (C1); (b) artifact-type mix by evolver tier (C2); (c) harness size over cycles (C3). \textbf{Placeholder.}}
+\rule{0.45\textwidth}{4.5cm}
+\caption{Empirical signatures of the three challenges: (a) non-monotonic per-batch accuracy under full evolution on PolyBench (C1); (b) end-of-run artifact-type distribution by evolver tier (C2); (c) novel-regime failure rate on the zh-finance slice of FutureX versus evolver cycles (C3).}
 \label{fig:three_signatures}
 \end{figure}
 
-\subsection{Our Approach: What Each Contribution Fixes}
-% One paragraph: multi-agent evolution expands the evolver class Phi (addresses C2); navigation conditions the harness on the task (addresses C1); both are jointly required to handle long-horizon accumulation (C3). Forward-reference Section 2.
+\noindent\textbf{Our approach.}
+We introduce a conceptual framework (\S\ref{sec:method}) that partitions the agent's regret into two additive losses,
+\[
+\mathbb{E}[\text{Regret}] \;=\; \underbrace{\Levo(\Phi, K)}_{\text{evolver class limit}} \;+\; \underbrace{\Lnav(\varphi)}_{\text{conditioning limit}},
+\]
+where $\Phi$ is the evolver class, $K$ is the harness capacity, and $\varphi$ is the harness-construction function. A third axis --- experience availability --- sits outside the decomposition: when $\Hist$ carries no signal for the current task's regime, neither a stronger $\Phi$ nor a better-conditioned $\varphi$ helps. Three composable architectural contributions follow, each targeting one challenge. \textbf{Agentic Navigation} (\S\ref{sec:method-nav}) is a git-backed strategy tree with per-task routing over branch workspaces; it conditions the harness on $x_t$, reducing $\Lnav$ and addressing C1. \textbf{Multi-Agent Evolution} (\S\ref{sec:method-multi}) is a 4-phase pipeline (Analyst $\to$ parallel Researchers $\to$ Builder $\to$ Verifier) with persistent cross-cycle state (\texttt{task\_board.md}, \texttt{research\_log.jsonl}, \texttt{architecture.md}); it expands the constructible harness class, reducing $\Levo$ and addressing C2. \textbf{HITL Integration} (\S\ref{sec:method-hitl}) adds triggered hooks at credential-request and task-board stages that supply external direction when history is insufficient, addressing C3.
 
-\subsection{Contributions}
-% Four-bullet list:
-% (i) three-dimensional difficulty frame + three challenges with empirical signatures;
-% (ii) regret decomposition L_evo + L_nav clarifying what each axis can improve;
-% (iii) multi-agent evolution template (C2) and navigation via strategy-tree branching (C1), with joint-effect story for C3;
-% (iv) evaluation across three temporal benchmarks.
+\noindent\textbf{Contributions.} We contribute (i) a three-dimensional difficulty frame (D1/D2/D3) and three corresponding task-intrinsic challenges (C1/C2/C3), each with a concrete empirical signature that static benchmarks cannot surface; (ii) a conceptual framework decomposing regret as $\Levo + \Lnav$, plus an experience-availability axis outside the decomposition, with the $\Lnav$ side admitting falsifiable predictions we test empirically and the $\Levo$ side providing diagnostic vocabulary for architectural changes; (iii) three composable architectural contributions --- agentic navigation, multi-agent evolution, HITL integration --- each independently effective in ablation, together closing most of the gap to a hand-designed reference; (iv) empirical evaluation on three temporal benchmarks (PolyBench, CTF-Dojo, FutureX) against seven baselines spanning linear chain evolution (A-Evolve), reflective prompt evolution (GEPA), archive-based evolution (Meta-Harness), and a generalist hand-designed system (OctoTools).

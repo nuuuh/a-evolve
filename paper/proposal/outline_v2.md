@@ -99,13 +99,14 @@ Each pattern's contribution is justified by ablation in RQ2.
 
 One paragraph: motivated by C3 — when $\mathcal{H}_t$ contains no useful signal for $x_t$'s regime, the evolver's *input* is inadequate, not its *capability*. No amount of multi-agent expansion or task-conditional routing fixes this; external direction is required.
 
-**Hook points.**
-- *Research phase*: credential / domain-pointer requests when API authentications fail or required data sources are unfamiliar.
-- *Builder phase*: task-board direction line when researcher signals "novel regime detected, no prior coverage."
+**Two structurally distinct hook points.** They differ along the axis of *what the human supplies*: direction (semantic guidance) vs. resource (a credential the evolver cannot discover from trajectories).
 
-**Triggering.** Hooks are not always-on. They activate on evolver-internal signals: failed API authentications, repeated regime-specific solver failures across cycles, novel-vocabulary tasks where the navigator cannot route confidently. Cost-bounded: typically <30 seconds of human time per cycle when invoked; zero cost otherwise.
+- *Taskboard / Analyst phase — direction injection.* When the Analyst flags a novel regime with no prior coverage in `task_board.md`, a HITL line is offered ("describe how to approach `<regime>` or skip"). Addresses **C3** directly: $\mathcal{H}_t$ has no transferable signal, so the human supplies the missing prior. Cheap and high-leverage when triggered (one direction line shapes the whole research cycle).
+- *Builder phase — credential / token injection.* When the Builder's pipeline-construction step encounters a `401`/`403` or a configuration prompt for missing credentials, a HITL line is offered ("provide `<KEY_NAME>` or skip"). Strictly a *resource* gate — the evolver knows what to build but cannot execute without auth. Distinct from C3 in mechanism (the data exists, access is gated) but shares its empirical signature (no amount of evolution closes the gap).
 
-> **Figure 6** (placeholder) — HITL trigger points in the evolver pipeline.
+**Triggering.** Hooks are not always-on. They activate on evolver-internal signals: Analyst-flagged "novel regime" markers (taskboard hook); failed authentications during Builder-phase API calls (credential hook). Both are silent when not triggered. Typical cost when invoked is <30 seconds of human time per cycle; zero cost otherwise.
+
+> **Figure 6** (placeholder) — Two HITL trigger points in the evolver pipeline: taskboard-direction (C3 steering) and builder-credential (resource gate).
 
 ---
 
@@ -192,6 +193,18 @@ Solver fixed at Sonnet 4.6 in main table. Multi-backbone results (DeepSeek V3.2,
 
 **Reading.** (i) Decomposed reasoning is the largest contributor — removing it (→ A-Evolve) drops performance to the single-agent baseline. (ii) Feedback signal and accumulated knowledge contribute independently; each accounts for ~3–4 pts. (iii) All three are necessary — no single dimension subsumes the others.
 
+> **Figure 7a — RQ2 statistics: artifact-type distribution by ablation.** Stacked horizontal bars per ablation row (full / −feedback / −knowledge / −decomposed / A-Evolve), with each bar partitioned into Prompt / Tool / Pipeline / Distill. The visual claim is that *the construction shifts qualitatively, not just quantitatively*: only the full configuration populates the Pipeline and Distill tails. Numbers seeded from `experiment.tex` Table 4 / `tab:rq2_ablation`.
+
+> **Figure 7b — RQ2 demonstration: a real CTF-Dojo evolution cycle.** Drawn from a logged run (cycle to be selected from a successful "binary-reversing" branch; provenance = `experiments/ctf_dojo/<run_id>/cycle_<N>/`). Five panels left-to-right with the actual artifacts produced between phases:
+>
+> 1. **Analyst.** Trajectory excerpts from the failing batch + the resulting `task_board.md` diff (new failure regime entry, e.g., "stripped ELF reverse-engineering — repeated solver failures").
+> 2. **Researchers (parallel).** Three side-by-side `research_log.jsonl` rows from independent agents (e.g., R1 = `radare2`, R2 = `Ghidra-headless`, R3 = `angr`), each with `works:true/false`, coverage, runtime.
+> 3. **Builder.** The `infra/binary_analysis.py` file written, plus the `architecture.md` diff that records what was added.
+> 4. **Verifier.** Test invocations of the new pipeline against held-out tasks, with pass/fail counts and the retry signal back to Builder if any failed.
+> 5. **Downstream.** The task that triggered the cycle, re-solved on the next batch with the new pipeline routed in.
+>
+> Goal: make "persistent state + parallel research + role separation" tangible, so the §3.3 ablation rows have a concrete referent.
+
 **Compute-matched sanity check (appendix).** Single-agent evolver given the full multi-agent token budget (self-critique loops, best-of-N) does not close the gap — confirming the difference is structural, not compute.
 
 ### 3.4 RQ3 — Measuring navigation loss $L_{\text{nav}}$ (C1)
@@ -215,9 +228,17 @@ All three share identical evolver effort (zero extra evolution); only the solver
 
 **Falsification.** Same measurement on temporally shuffled benchmark. Under shuffling, non-stationarity is destroyed; the gap should collapse to noise (Prop 2). Reported in appendix.
 
-> **Figure 8** (placeholder) — Per-batch accuracy over the temporal stream: unconditional, navigator, oracle-branch. Gap widens in later batches as shift accumulates.
+> **Figure 8a — RQ3 statistics: per-batch accuracy + harness size.** Two-panel stats figure on a shared x-axis (batch index over the CTF-Dojo stream).
+> - *Top panel*: per-batch accuracy of three readings from the same evolved tree — unconditional (force `main`), navigator (route per task), oracle-branch (per-task max). The gap *navigator − unconditional* widens with batch index, as Prop 4 predicts; the gap *oracle − navigator* is the routing-quality residual.
+> - *Bottom panel*: per-solve harness size in KB. Linear evolution grows monotonically (~60 KB by end of CTF-Dojo, ~176 KB by end of FutureX); navigation stays bounded (~12 KB) because each task loads only one branch. This is a *symptom* of $L_{\text{nav}}$ accumulation, not an independent claim.
+>
+> Numbers and curves seeded from `experiment.tex` `fig:rq3_dynamic` and `fig:rq3_harness_size`.
 
-**Per-solve harness size (sub-figure).** Linear evolution grows monotonically (~60 KB by end of stream); navigation stays bounded (~12 KB per solve) because each task loads only one branch. Confirms that navigation partitions accumulated content rather than inflating the solver's context.
+> **Figure 8b — RQ3 demonstration (combined): tree growth + routing trace.** One figure, two stacked panels, both from a single CTF-Dojo run.
+> - *Top panel — strategy tree as it grew*. Time-axis annotated with branch-creation events: `main` at t=0; `branch/crypto-classical` forked at cycle 2 after Analyst flagged repeated classical-cipher failures; `branch/binary-reversing` at cycle 4 after stripped-ELF tasks appeared; `branch/web-modern` at cycle 7 after a JWT/SQLi cluster. Each fork annotated with the trigger ("3 consecutive classical-cipher failures on `main`") so the *causal chain from shift detection to branch creation* is visible.
+> - *Bottom panel — routing for one task*. A single CTF-Dojo task header (e.g., "RE/2018 — stripped x86-64 ELF, find the flag"). Show what $F_{\text{Navigate}}$ reads: three side-by-side `git show <branch>:README.md` excerpts (one per branch). Show the navigator's structured output: `{"branch": "binary-reversing", "confidence": 0.83, "reason": "stripped ELF + reverse-engineering keywords match this branch's tools/registry; main lacks radare2/Ghidra"}`. Then show the solver checking out `branch/binary-reversing` and producing the flag.
+>
+> Goal: make navigation concrete — *how* the tree grew (creation), and *how* a task gets routed at solve time. Replaces the §2.3 placeholder Figure 4 (which should now just forward-reference here).
 
 ### 3.5 RQ4 — HITL on experience-insufficient task slices (C3)
 
@@ -233,25 +254,15 @@ Report per-configuration:
 - Accuracy on **other slices** (English news, Wikipedia-covered topics) — control; should not change
 - Number of HITL invocations and total human time
 
-**Example trace and downstream effect (illustrative):**
+> **Figure 9a — RQ4 statistics: targeting pattern.** Grouped bar chart, two slices × two conditions. Slices = {zh-finance (experience-insufficient), other (control)}. Conditions = {no HITL, +HITL}. The two zh-finance bars span a large gap (+18.6 pts); the two control bars are within seed noise (+0.1 pt). A single visual makes the C3 *signature* — gain is concentrated on the experience-insufficient slice — readable at a glance. Numbers from Table 3.
 
-```
-Cycle 3, Phase 2 (Research):
-  Researcher tries Eastmoney API → 403 Forbidden, credential required
-  ▸ HITL prompt: "Provide EASTMONEY_API_KEY or skip:"
-  ▸ Human response: <provides key>  (~12 seconds)
-  ▸ Researcher retries: works=true, coverage=[stock_ohlc, market_cap, PBOC_rate]
-
-Cycle 3, Phase 3 (Build):
-  Builder reads verified research and constructs
-  infra/chinese_finance_pipeline.py — invoked by solver for all subsequent
-  zh-finance tasks.
-
-Downstream effect (zh-finance slice):
-  Pre-Cycle 3:  31.2 %
-  Post-Cycle 3: 54.8 %
-  Other slices: 52.1 % → 52.4 %  (within noise — HITL does not help in general)
-```
+> **Figure 9b — RQ4 demonstration: two HITL hooks across two cycles (FutureX).** Drawn from one logged FutureX run (provenance = `experiments/futurex/<run_id>/`). The two hooks fire in *different* cycles because the triggers are sequential by construction: direction must arrive before the Builder has anything to authenticate against. Each row in the figure is one cycle.
+>
+> - **Cycle $k$ — Taskboard / Analyst hook (C3 direction injection).** Analyst processes the failing batch; the routing log shows the navigator returning `{"branch": null, "confidence": 0.21}` on three zh-finance tasks (no covering branch, low confidence). Analyst writes `task_board.md` with a "novel regime, no prior coverage" tag. *HITL fires*: human supplies a one-line direction ("Chinese-language equity prediction; Eastmoney/Sina Finance are canonical sources; use ZH news + macro indicator joins"). Direction line is appended to `task_board.md` and read by Researchers in the same cycle. Show: routing log → analyst diff → HITL prompt → human response → researcher pickup.
+>
+> - **Cycle $k+m$ — Builder hook (credential / token injection).** With direction from cycle $k$, parallel Researchers identify Eastmoney as a viable source. Builder begins constructing `infra/chinese_finance_pipeline.py`; first execution returns `403 Forbidden` from the Eastmoney endpoint. *HITL fires*: human supplies `EASTMONEY_API_KEY`. Builder retries; pipeline runs to completion; Verifier confirms coverage on held-out zh-finance tasks. Show: builder execution log → 403 → HITL prompt → token injection → successful execution → verifier pass.
+>
+> The figure caption notes: *cycles $k$ and $k+m$ are taken from the same run; the actual indices depend on when each trigger first fires (typical: $k=2$, $k+m=3$ on FutureX).* Goal: show the two structurally distinct interventions (direction vs. resource) and that they fire on independent triggers, not as a packaged "human help" event.
 
 **Table 3 — HITL impact on experience-insufficient slice (illustrative):**
 

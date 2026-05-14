@@ -211,11 +211,40 @@ run H4 online_eval \
   --output-dir results/futurex_online_eval \
   --config experiments/futurex/configs/baseline.yaml
 
-# H5_nav: Navigation - inline branching + task routing (strict search, no multi-agent)
+# H5_nav: Navigation - plan-driven branching + task routing (strict search, no multi-agent)
 run H5_nav navigation_strict \
   --max-turns 80 \
   --navigation \
+  --evolver-prompt experiments/futurex/evolver_prompt_nav.md \
   --output-dir results/futurex_navigation \
+  --config experiments/futurex/configs/navigation.yaml
+
+# H5_nav_varA: Navigation variant A — aggressive branching (us-east-1)
+run H5_nav_varA nav_varA \
+  --max-turns 80 \
+  --navigation \
+  --evolver-prompt experiments/futurex/evolver_prompt_nav_varA.md \
+  --region us-east-1 \
+  --output-dir results/futurex_nav_varA \
+  --config experiments/futurex/configs/navigation.yaml
+
+# H5_nav_varB: Navigation variant B — protect main, never remove (us-east-2)
+run H5_nav_varB nav_varB \
+  --max-turns 80 \
+  --navigation \
+  --evolver-prompt experiments/futurex/evolver_prompt_nav_varB.md \
+  --region us-east-2 \
+  --output-dir results/futurex_nav_varB \
+  --config experiments/futurex/configs/navigation.yaml
+
+# H5_nav_varC: Navigation variant C — main=infra, branch=strategy (eu-west-1)
+run H5_nav_varC nav_varC \
+  --max-turns 80 \
+  --navigation \
+  --evolver-prompt experiments/futurex/evolver_prompt_nav_varC.md \
+  --region eu-west-1 --model-id eu.anthropic.claude-sonnet-4-6 \
+  --evolver-model eu.anthropic.claude-opus-4-6-v1 \
+  --output-dir results/futurex_nav_varC \
   --config experiments/futurex/configs/navigation.yaml
 
 # H5_multi: Structured evolution (4-phase: analyze → research → build → verify)

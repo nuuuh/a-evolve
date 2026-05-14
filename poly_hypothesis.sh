@@ -133,24 +133,23 @@ run H3 late_start \
   --output-dir "results/polybench_late_start${SUFFIX}" \
   --config experiments/polybench/configs/late_start.yaml
 
-# H4: Navigation - inline branching + task routing (no multi-agent)
+# H4: Navigation - plan-driven branching + task routing (no multi-agent)
 run H4 navigation \
   --navigation \
+  --evolver-prompt experiments/polybench/evolver_prompt_nav.md \
   --output-dir "results/polybench_navigation${SUFFIX}" \
   --config experiments/polybench/configs/navigation.yaml
 
 # H4_multi: Structured evolution (4-phase: analyze → research → build → verify)
 run H4_multi structured_evo \
   --output-dir "results/polybench_structured_evo${SUFFIX}" \
-  --config experiments/polybench/configs/structured_evolution_evo.yaml \
-  --batch-size 250
+  --config experiments/polybench/configs/structured_evolution_evo.yaml 
 
 # H4_multi_nav: Structured evolution + navigation (4-phase + git branching)
 run H4_multi_nav structured_nav \
   --navigation \
   --output-dir "results/polybench_structured_nav${SUFFIX}" \
-  --config experiments/polybench/configs/structured_navigation_evo.yaml \
-  --batch-size 250
+  --config experiments/polybench/configs/structured_navigation_evo.yaml 
 
 # ─── Summary ──────────────────────────────────────────────────────────
 echo ""

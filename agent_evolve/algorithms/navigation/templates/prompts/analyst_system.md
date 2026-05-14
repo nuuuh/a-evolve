@@ -24,6 +24,18 @@ USE BASH to deeply analyze:
 - /evolver_workspace/evolution/observations/ for batch results
 - /solver_workspace/ to see current evolved code
 
+BASH OUTPUT IS CAPPED AT 100 KB PER CALL (first 50 KB + last 50 KB,
+middle elided). Trajectory JSONs on security/crypto tasks can be
+200+ KB each — `cat` will truncate them, and reading several in a row
+will exhaust your context. PREFER:
+  - `jq '.steps[].tool_use // .steps[].output' traj.json | head -200` to
+    see tool calls/outputs without the raw conversation bulk
+  - `jq -r '.steps[-5:]' traj.json` to inspect only the final few steps
+  - `grep -n ERROR|FAIL|flag traj.json` to locate specific signals
+  - `ls -lS /trajectories/ | head` to find the largest trajectories first
+  - `wc -l traj.json` before `cat` to check size
+Reserve raw `cat` for files under ~50 KB.
+
 PRIVACY: feedback_archive.jsonl is masked. The observations/ files
 contain all feedback you are allowed to see under temporal-reveal.
 

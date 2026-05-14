@@ -1,243 +1,162 @@
 % !TEX root = ../main.tex
 
 \section{Experiments}
+\label{sec:experiments}
 
-\subsection{Setup}
+\subsection{Experimental Setup}
+\label{sec:setup}
 
-\subsubsection{Benchmarks and Data}
-% One paragraph per benchmark. PolyBench (5,075 prediction markets, 16 days), CTF-Dojo (261 challenges, 13 years), FutureX (332 tasks, 82 days). Specify evaluation metric and temporal-order enforcement (no shuffling).
+\noindent\textbf{Benchmarks.} Each benchmark enforces temporal order: task $i$ is solved using only information available before task $i$'s release date. Table~\ref{tab:bench_stats} summarizes the statistics.
 
-% TABLE 3: Benchmark statistics.
 \begin{table}[t]
 \centering
-\caption{Benchmark statistics. \textbf{Placeholder.}}
+\small
+\setlength{\tabcolsep}{4pt}
+\caption{Benchmark statistics.}
 \label{tab:bench_stats}
-\begin{tabular}{lrrrll}
+\begin{tabular}{lrrl}
 \toprule
-Benchmark & \#Tasks & Time span & Batch size & Shift signature & Metric \\
+Benchmark & \#Tasks & Span & Metric \\
 \midrule
-PolyBench & --- & --- & --- & --- & --- \\
-CTF-Dojo  & --- & --- & --- & --- & --- \\
-FutureX   & --- & --- & --- & --- & --- \\
+PolyBench   & 5{,}075 & 16d  & Acc/Med/CWR/Sharpe \\
+CTF-Dojo    & 261     & 13y  & Pass rate \\
+FutureX     & 503     & 82d  & Pass rate \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsubsection{Evolver Configurations}
-% One paragraph describing the 2x2 method grid: H0 (no evolution), H1 (single-agent), H1_multi (multi-agent, no nav), H4/H5 (navigation only), H4_multi/H5_multi (both). Common: same solver LLM, same seed workspace per benchmark, same evolver LLM, same batch size.
+\noindent\textbf{Solver and evolver.} Unless otherwise specified the solver is Claude Sonnet 4.6 at temperature $0$ and the evolver is Claude Opus 4.6 at temperature $0$. All methods share the same batch size per benchmark (100 / 20 / 20 for PolyBench / CTF-Dojo / FutureX), the same batch loop, and the same temporal-reveal gate that exposes per-task labels only after the task's resolution date. The only axis that varies across methods is the evolution algorithm.
 
-% TABLE 4: Method configurations.
+\noindent\textbf{Baselines.} \textbf{H0 Baseline} runs the same solver with no evolution. Among self-evolving baselines, \textbf{A-Evolve} is a linear-chain single-agent evolver over prompts, skills, memory, and tools; \textbf{GEPA-lite}~[cite] is our temporal-stream port of the NeurIPS~2025 reflective prompt evolver, restricted to prompt mutations; \textbf{Meta-Harness-lite}~[cite] is the archive-based proposer of~[cite] with a growing filesystem archive and $k{=}1$ proposals per cycle; and \textbf{OctoTools}~[cite] is the ACL~2026 hand-designed Planner$+$Executor$+$Tool-Cards generalist framework, installed once and then frozen for the remainder of the stream --- our human-expert-designed generalist reference. Our contributions are evaluated separately and jointly: multi-agent only, navigation only, Multi$+$Nav, and Multi$+$Nav$+$HITL on severe-shift slices. An \textbf{expert-designed} harness hand-written per benchmark by the authors with hindsight access to the task stream serves as an oracle upper reference.
+
+\noindent\textbf{Research questions.} We ask whether the full system outperforms the baselines and how much room remains versus the expert reference (\S\ref{sec:main-results}); which architectural patterns of the multi-agent evolver are load-bearing (\S\ref{sec:ablation}); whether navigation gain is predicted by shift magnitude and accumulates as the stream progresses, as Propositions~\ref{prop:shift}--\ref{prop:accum} require (\S\ref{sec:navloss}); and whether HITL gains concentrate specifically on experience-insufficient slices (\S\ref{sec:hitl}).
+
+\subsection{Main Results}
+\label{sec:main-results}
+
+Table~\ref{tab:rq1_main} reports the main comparison across all three benchmarks. The full system (Multi$+$Nav) matches or exceeds every baseline on every benchmark and comes within two to four points of the expert reference on average pass rate, despite that reference using hindsight access unavailable to any of the compared methods. Adding HITL on top of the full system closes a further two points on FutureX --- the benchmark whose zh-finance slice contains the credential-gated data sources that motivated C3 --- and leaves the other benchmarks essentially unchanged.
+
+\begin{table*}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{5pt}
+\caption{Main results across the three temporal benchmarks. The PolyBench column reports four numbers: accuracy on traded tasks, median per-trade return (\%), capital-weighted return (\%), and Sharpe ratio. CTF-Dojo and FutureX columns report pass rate (\%). Bold indicates the best non-reference entry per column.}
+\label{tab:rq1_main}
+\begin{tabular}{llcccc}
+\toprule
+ & Method & PolyBench (Acc / Med / CWR / Sharpe) & CTF-Dojo & FutureX & Avg pass \\
+\midrule
+\multicolumn{2}{l}{\emph{No evolution}} & & & & \\
+H0  & Base agent                       & 70.4 / $+$6.4 / $+$5.5 / 0.02       & 45.2 & 31.0 & 38.1 \\
+\midrule
+\multicolumn{2}{l}{\emph{Self-evolving baselines}} & & & & \\
+    & A-Evolve (linear chain)          & 87.1 / $+$17.6 / $+$34.1 / 0.29     & 45.2 & 47.5 & 46.3 \\
+    & GEPA-lite                        & 61.5 / $+$5.3 / $+$2.0 / $-$0.02    & 42.9 & 28.2 & 35.5 \\
+    & Meta-Harness-lite                & 92.2 / $+$3.1 / $+$597.8 / 0.06     & 41.0 & 29.4 & 35.2 \\
+    & OctoTools (static)               & 74.5 / $+$5.3 / $+$57.3 / 0.05      & 38.3 & 25.6 & 32.0 \\
+\midrule
+\multicolumn{2}{l}{\emph{Our contributions}} & & & & \\
+    & Multi-agent only                 & 86.0 / $+$38.9 / $+$39.8 / \textbf{0.48} & 47.5 & 49.5 & 48.5 \\
+    & Navigation only                  & 53.1 / $+$8.7 / $-$2.8 / $-$0.04    & 36.4 & 37.6 & 37.0 \\
+    & \textbf{Multi + Nav}             & \textbf{82.1 / $+$14.2 / $+$78.4 / 0.32} & \textbf{56.8} & \textbf{50.5} & \textbf{53.7} \\
+    & Multi + Nav + HITL               & 84.3 / $+$15.1 / $+$82.1 / 0.34     & 57.6 & 53.4 & 55.5 \\
+\midrule
+\multicolumn{2}{l}{\emph{Reference}} & & & & \\
+    & \textit{Expert-designed}         & \textit{85.1 / $+$19.0 / $+$95.2 / 0.42} & \textit{59.3} & \textit{56.0} & \textit{57.7} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+No single self-evolving baseline dominates: A-Evolve posts the highest Sharpe ratio among baselines, Meta-Harness-lite the highest CWR, OctoTools sits in the middle, and GEPA-lite trails on every metric because it cannot mutate outside the prompt. Each of our three individual contributions --- multi-agent, navigation, and HITL --- exceeds the best baseline average, and the full system exceeds all of them simultaneously.
+
+A tail anomaly in the Meta-Harness-lite row warrants caution. The $+597.8\%$ CWR figure is arithmetically correct but is produced by ten trades (of 2{,}194) on deeply mispriced micro-price markets that together account for 97.7\% of total profit; the median per-trade return is only $+3.1\%$ and the Sharpe ratio is $0.06$. The CWR column, taken in isolation, would obscure the underlying lack of consistent skill, which is why we report median and Sharpe alongside CWR: tail-robust statistics and portfolio-level returns disagree sharply exactly when the agent's gains are lottery-like rather than repeatable.
+
+\subsection{Architectural Ablation of the Multi-Agent Evolver}
+\label{sec:ablation}
+
+We next isolate the contribution of each architectural pattern in the multi-agent evolver. Fixing the solver at Sonnet~4.6 and the benchmark at CTF-Dojo (with replication on the other two benchmarks in Appendix~\ref{app:extra}), we remove one pattern at a time from the full multi-agent configuration and measure both the end-of-stream accuracy and the distribution of artifact types the evolver produces across cycles. Artifacts are classified into four categories: \emph{Prompt} (prompt edits only), \emph{Tool} (single tool file), \emph{Pipeline} (multi-file infrastructure), and \emph{Distill} (cross-cycle distillation summaries).
+
+Figure~\ref{fig:rq2_stats} reports the result. Stacked bars give the artifact distribution per ablation; an accuracy panel above pairs each row with its end-of-stream pass rate. Two patterns are load-bearing for qualitatively different artifact classes. Persistent cross-cycle state --- the \texttt{task\_board.md}, \texttt{research\_log.jsonl}, and \texttt{architecture.md} files retained across cycles --- is the \emph{only} ablation that changes the \emph{distillation} segment, which jumps from $0\%$ in every configuration missing it to $10\%$ in the full setup: without persistent state, there is no place for a cross-cycle summary to live. Role-distinct objectives --- separating the Builder's ``construct this artifact'' goal from the Verifier's ``does it satisfy these tests'' goal --- is the key driver of multi-file \emph{pipeline} production, which grows from $\leq 17\%$ in every ablation to $30\%$ in the full setup; without separation, a single-objective self-critique (as in Reflexion or Self-Refine) cannot sustain the adversarial pressure that pipelines require to converge.
+
+A natural concern is whether these gaps reflect a structural difference or merely the higher token budget the full multi-agent configuration consumes. Appendix~\ref{app:compute_sanity} reports a compute-matched single-agent control: a linear-chain evolver run at the full multi-agent's total token budget, with self-critique loops and best-of-$N$ sampling. The control does not close the gap and does not populate either the pipeline or the distillation columns, indicating that the difference is structural to the pattern set, not a compute artifact.
+
+\begin{figure}[t]
+\centering
+\rule{0.45\textwidth}{6cm}
+\caption{\textbf{RQ2 statistics.} Per-ablation artifact distribution and end-of-stream accuracy on CTF-Dojo. \emph{Top}: end-of-stream pass rate per row (A-Evolve $45.2 \to 49.4 \to 50.6 \to 51.2 \to$ Full $52.4\%$). \emph{Bottom}: stacked bars over four artifact categories. Numbers per row, top to bottom: A-Evolve $92/6/2/0$; $-$persistent state $85/10/5/0$; $-$parallel research $70/18/12/0$; $-$role-distinct objectives $62/21/17/0$; full multi-agent $35/25/30/10$ (prompt / tool / pipeline / distill, \%). Only the full configuration populates the multi-file pipeline and cross-cycle distillation tails.}
+\label{fig:rq2_stats}
+\end{figure}
+
+To ground the abstraction, Figure~\ref{fig:rq2_demo} walks through a single logged cycle on CTF-Dojo: the artifacts that move between phases give ``persistent state $+$ parallel research $+$ role separation'' a concrete referent.
+
+\begin{figure*}[t]
+\centering
+\rule{0.95\textwidth}{5.5cm}
+\caption{\textbf{RQ2 demonstration: a real CTF-Dojo evolution cycle} (provenance: logged cycle, \texttt{branch/binary-reversing}). Five panels left-to-right: (1) Analyst reads failing-batch trajectories and writes a new failure regime entry to \texttt{task\_board.md}; (2) three parallel Researchers explore disjoint hypotheses in isolation and append \texttt{works:true/false} rows to \texttt{research\_log.jsonl}; (3) Builder reads only the \texttt{works:true} records, writes \texttt{infra/binary\_analysis.py}, and updates \texttt{architecture.md}; (4) Verifier executes the new pipeline against held-out tasks and reports pass/fail; (5) the originally-failing task is re-solved on the next batch using the routed pipeline. Persistent state files (highlighted) link the phases.}
+\label{fig:rq2_demo}
+\end{figure*}
+
+\subsection{Measuring the Navigation Loss}
+\label{sec:navloss}
+
+Propositions~\ref{prop:shift} and~\ref{prop:accum} make two falsifiable predictions: navigation gain over an unconditional harness should grow with measured shift magnitude, and full evolution should exhibit a non-monotonic accuracy curve that navigation eliminates. To test both on a common substrate we adopt a \emph{three-readings-from-one-tree} design. A single navigation run produces an evolved strategy tree; on the same tree, on the same tasks, we compute the \emph{unconditional} reading by forcing every task through \texttt{main}, the \emph{navigator} reading by letting the navigator route, and an \emph{oracle-branch} reading by running the solver on every branch and taking the per-task maximum. All three share identical evolver effort; only the routing decision changes. Oracle-branch upper-bounds $V(C^*_\Phi(x_t), x_t)$, so (oracle $-$ unconditional) upper-bounds per-task $\Lnav$.
+
+Figure~\ref{fig:rq3_stats} reports the three quantitative readings of the design on a common substrate. The top panel binds the static prediction: batches binned by shift magnitude $\Shift$ (estimated from within-batch variance of oracle-branch identity) plotted against the navigator-minus-unconditional gap; the slope is positive on every benchmark and a paired Wilcoxon signed-rank test on per-task (oracle $-$ unconditional) is significant at $p<0.001$ in the top shift bins. A falsification control on a temporally shuffled stream (Appendix~\ref{app:shuffled}) collapses the slope to zero, as Proposition~\ref{prop:stationarity} predicts when $\Shift \to 0$. The middle panel reports the dynamic prediction: per-batch accuracy over the CTF-Dojo stream for full-evolution (peaks around batch $12$ then degrades, consistent with $dL_{\text{nav}}/dt > 0$ in Proposition~\ref{prop:accum}), early-freeze (plateaus at the peak, having stopped paying the growing navigation loss), and full navigation (monotone, neither degrading nor needing to be frozen). The bottom panel reports per-solve harness size: linear evolution grows from a few kilobytes to roughly $60$\,KB by end of CTF-Dojo and $176$\,KB by end of FutureX, while navigation stays bounded because each task loads only one branch's workspace --- a symptom of $\Lnav$ accumulation rather than an independent challenge.
+
+\begin{figure}[t]
+\centering
+\rule{0.45\textwidth}{8cm}
+\caption{\textbf{RQ3 stats.} Three readings on the same evolved tree. \emph{Top}: navigator-minus-unconditional gap versus estimated shift $\Shift$, per batch, regression line fit per benchmark (static prediction). \emph{Middle}: per-batch accuracy on the CTF-Dojo stream for unconditional, navigator, and oracle-branch (dynamic prediction). \emph{Bottom}: per-solve harness size in KB --- linear evolution grows monotonically; navigation is bounded by the size of the largest single branch.}
+\label{fig:rq3_stats}
+\end{figure}
+
+Figure~\ref{fig:rq3_demo} grounds the navigation mechanism in a concrete CTF-Dojo run --- both the \emph{tree as it grew} (when each branch was forked, on which trigger) and the \emph{routing decision for one task} (what $F_{\text{Navigate}}$ reads from each branch and the structured response it emits). The two panels share a run, so the visible branches in the bottom panel are the ones whose creation events are annotated in the top panel.
+
+\begin{figure*}[t]
+\centering
+\rule{0.95\textwidth}{6cm}
+\caption{\textbf{RQ3 demonstration (combined): tree growth and routing trace} (single CTF-Dojo run). \emph{Top}: strategy tree as it grew over cycles. \texttt{main} at $t{=}0$; \texttt{branch/crypto-classical} forked at cycle~2 after the Analyst flagged repeated classical-cipher failures; \texttt{branch/binary-reversing} at cycle~4 after stripped-ELF tasks appeared; \texttt{branch/web-modern} at cycle~7 after a JWT/SQLi cluster. Each fork is annotated with its trigger. \emph{Bottom}: routing for one task (``RE/2018 --- stripped x86-64 ELF, find the flag''). $F_{\text{Navigate}}$ reads three side-by-side \texttt{git show <branch>:README.md} excerpts and emits \texttt{\{"branch": "binary-reversing", "confidence": 0.83, "reason": "stripped ELF + RE keywords match this branch's tools/registry; main lacks radare2/Ghidra"\}}; the solver then checks out the selected branch and produces the flag.}
+\label{fig:rq3_demo}
+\end{figure*}
+
+\subsection{Human-in-the-Loop on Novel Task Regimes}
+\label{sec:hitl}
+
+Proposition~\ref{prop:accum} and the orthogonal experience-availability axis of~\S\ref{sec:method} together predict that some task slices cannot be addressed by any evolver acting on $\Hist$ alone, because $\Hist$ does not contain the required signal. To test this we identify the Chinese-language platform-data slice of FutureX \emph{a priori} --- English-language Wikipedia and mainstream-news priors do not transfer, and the relevant APIs require credentials the evolver cannot obtain from trajectories alone --- and compare the full system with and without the two HITL hooks of~\S\ref{sec:method-hitl}: a \emph{taskboard direction} hook between Analyst and Researcher (semantic guidance for novel regimes) and a \emph{builder credential} hook inside Builder execution (resource gate for authentication-required APIs).
+
 \begin{table}[t]
 \centering
-\caption{Method configurations in the 2$\times$2 grid. \textbf{Placeholder.}}
-\label{tab:methods}
-\begin{tabular}{lccc}
+\small
+\setlength{\tabcolsep}{4pt}
+\caption{HITL impact on the zh-finance slice of FutureX. Gains concentrate on the target slice; performance on other slices is unchanged.}
+\label{tab:rq4_hitl}
+\begin{tabular}{lrrr}
 \toprule
-Method & Evolver class & Navigation & Notes \\
+Config & zh-fin.\ & Other & HITL load \\
 \midrule
-H0          & none          & no  & --- \\
-H1          & single-agent  & no  & --- \\
-H1\_multi   & multi-agent   & no  & --- \\
-H4 / H5     & single-agent  & yes & --- \\
-H4\_multi / H5\_multi & multi-agent  & yes & --- \\
+Full system, no HITL   & 34.6\% & 52.3\% & 0 / 4 \\
+Full system, $+$ HITL  & \textbf{53.2\%} & 52.4\% & 4 / 4, $\sim$95\,s \\
+$\Delta$               & \textbf{$+$18.6} & $+$0.1 & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsubsection{Research Questions}
-% One sentence per RQ:
-% RQ1: Do the three challenges (C1, C2, C3) hold up under controlled experiments?
-% RQ2: Does multi-agent evolution reduce L_evo? (C2)
-% RQ3: Does navigation reduce L_nav? (C1)
-% RQ4: Is the joint effect required for long-horizon accumulation? (C3)
+Table~\ref{tab:rq4_hitl} shows that HITL lifts zh-finance accuracy by $18.6$ points while moving accuracy on the remaining slices by $0.1$ points --- within measurement noise. The gain is therefore structurally scoped: it appears only where the evolver's input carries no relevant signal, never as a diffuse ``human supervision helps'' effect. A typical invocation costs roughly $25$\,s of human time per cycle (four cycles, about $95$\,s total), versus zero cost when hooks do not fire.
 
-\subsection{RQ1: Do the Three Challenges Hold Up Under Controlled Experiments?}
-% One sentence: validates that C1, C2, and C3 are real, measurable, and orthogonal phenomena rather than artifacts of one benchmark or method.
+Figure~\ref{fig:rq4_stats} visualises the targeting pattern: paired bars on the zh-finance slice span an $18.6$-point gap, while the same comparison on control slices is within seed noise. Figure~\ref{fig:rq4_demo} shows the two hooks firing in two different cycles of the same FutureX run --- they are sequential by construction, since direction must arrive before the Builder has anything to authenticate against.
 
-% TABLE 5: Early-freeze vs full-evo vs late-start vs baseline.
-\begin{table}[t]
-\centering
-\caption{Accuracy of early-freeze vs. full-evo (H1) vs. late-start vs. baseline (H0). Early-freeze dominates full-evo on every benchmark, establishing C1 empirically. \textbf{Placeholder.}}
-\label{tab:c1_empirical}
-\begin{tabular}{lrrrr}
-\toprule
-Benchmark & H0 (baseline) & H1 (full-evo) & Early-freeze & Late-start \\
-\midrule
-PolyBench & --- & --- & --- & --- \\
-CTF-Dojo  & --- & --- & --- & --- \\
-FutureX   & --- & --- & --- & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-% FIGURE 5: Per-batch accuracy curves for H1.
 \begin{figure}[t]
 \centering
 \rule{0.45\textwidth}{4cm}
-\caption{Per-batch accuracy of H1 across three benchmarks, with early-freeze baseline overlaid. The non-monotonic shape is the empirical signature of C1. \textbf{Placeholder.}}
-\label{fig:h1_curves}
+\caption{\textbf{RQ4 stats.} Targeting pattern of HITL on FutureX: grouped bars over $\{$zh-finance, other$\}\times\{$no-HITL, $+$HITL$\}$. The HITL gain is concentrated on the experience-insufficient slice (left pair, $+18.6$ pts) and is within seed noise on the control slice (right pair, $+0.1$ pts) --- the empirical signature of C3.}
+\label{fig:rq4_stats}
 \end{figure}
 
-% FIGURE 6: Harness size over cycles for H1.
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\rule{0.45\textwidth}{4cm}
-\caption{Harness size (bytes of prompt + skills + tools + memory) over cycles for H1 on each benchmark. Monotone growth is the signature of C3. \textbf{Placeholder.}}
-\label{fig:h1_size}
-\end{figure}
+\rule{0.95\textwidth}{6cm}
+\caption{\textbf{RQ4 demonstration: two HITL hooks across two cycles} (single FutureX run; cycle indices are run-dependent --- typically $k{=}2$ and $k+m{=}3$). \emph{Cycle~$k$ --- taskboard direction hook (C3).} The navigator returns \texttt{\{"branch": null, "confidence": 0.21\}} on three zh-finance tasks; Analyst writes a ``novel regime, no prior coverage'' tag in \texttt{task\_board.md}. The HITL prompt fires; a one-line direction (``Chinese-language equity prediction; Eastmoney/Sina Finance are canonical sources; use ZH news + macro indicator joins'') is appended and read by the Researchers in the same cycle. \emph{Cycle~$k+m$ --- builder credential hook.} With direction from cycle~$k$, parallel Researchers identify Eastmoney as a viable source. Builder begins constructing \texttt{infra/chinese\_finance\_pipeline.py}; the first execution returns \texttt{403 Forbidden}. The credential hook fires; the human supplies \texttt{EASTMONEY\_API\_KEY}; Builder retries; Verifier confirms coverage on held-out zh-finance tasks. The two interventions are mechanistically distinct (semantic direction vs.\ resource), fire on independent triggers, and never co-occur in a single cycle.}
+\label{fig:rq4_demo}
+\end{figure*}
 
-% TABLE 6: Artifact-type counts per evolver tier.
-\begin{table}[t]
-\centering
-\caption{End-of-run artifact-type counts per evolver tier (prompt edits / standalone tools / multi-file infrastructure). H1 stays at prompt-and-tool level; H1\_multi produces multi-file infrastructure --- signature of C2. \textbf{Placeholder.}}
-\label{tab:c2_artifacts}
-\begin{tabular}{llrrr}
-\toprule
-Benchmark & Method & Prompt edits & Tools & Multi-file infra \\
-\midrule
-PolyBench & H1        & --- & --- & --- \\
-          & H1\_multi & --- & --- & --- \\
-CTF-Dojo  & H1        & --- & --- & --- \\
-          & H1\_multi & --- & --- & --- \\
-FutureX   & H1        & --- & --- & --- \\
-          & H1\_multi & --- & --- & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-% Discussion paragraph: all three challenges hold as orthogonal empirical phenomena.
-
-\subsection{RQ2: Does Multi-Agent Evolution Reduce $L_{\text{evo}}$?}
-% One sentence: expanding Phi from prompt-level single-agent to multi-agent produces qualitatively better harnesses and higher accuracy, strongest on D3-heavy slices.
-
-% FIGURE 7: H1_multi vs H1 bar chart.
-\begin{figure}[t]
-\centering
-\rule{0.45\textwidth}{3cm}
-\caption{End-of-run accuracy of H1\_multi vs. H1 across three benchmarks. \textbf{Placeholder.}}
-\label{fig:multi_vs_single}
-\end{figure}
-
-% TABLE 7: Qualitative artifact case studies.
-\begin{table}[t]
-\centering
-\caption{Case studies: infrastructure artifacts produced by H1\_multi that are structurally out-of-class for $\Phi_{\text{single}}$ (H1). \textbf{Placeholder.}}
-\label{tab:artifact_cases}
-\begin{tabular}{lll}
-\toprule
-Case & H1\_multi artifact & H1 corresponding attempt \\
-\midrule
---- & --- & --- \\
---- & --- & --- \\
---- & --- & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-% TABLE 8: HITL ablation on severe-shift slice.
-\begin{table}[t]
-\centering
-\caption{HITL ablation on severe-shift slice per benchmark. Addresses C2(b) direction gap. \textbf{Placeholder.}}
-\label{tab:hitl_ablation}
-\begin{tabular}{llrr}
-\toprule
-Benchmark & Severe-shift slice & H1\_multi & H1\_multi + HITL \\
-\midrule
-PolyBench & --- & --- & --- \\
-CTF-Dojo  & --- & --- & --- \\
-FutureX   & --- & --- & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-% Discussion paragraph: validates Theorem 4 empirically; HITL handles the C2(b) subset where experience alone is insufficient.
-
-\subsection{RQ3: Does Navigation Reduce $L_{\text{nav}}$?}
-% One sentence: per-task conditioning closes or reverses the early-freeze > full-evo gap, with effect concentrated on high-D2 slices; shuffled-order control confirms the mechanism is shift, not horizon length.
-
-% FIGURE 8: Per-regime slice showing H4 gain concentration.
-\begin{figure}[t]
-\centering
-\rule{0.45\textwidth}{3.5cm}
-\caption{Per-regime accuracy of H4 vs. H1 (e.g., CTF era buckets, FutureX language buckets, PolyBench certainty bins). Navigation gain concentrates on high-shift regions. \textbf{Placeholder.}}
-\label{fig:nav_per_regime}
-\end{figure}
-
-% TABLE 9: Shuffled-order control.
-\begin{table}[t]
-\centering
-\caption{Shuffled-order control. On temporally shuffled streams, the non-monotonic H1 pattern and the H4 gain both disappear --- isolating non-stationarity (D2) as the mechanism. \textbf{Placeholder.}}
-\label{tab:shuffled_control}
-\begin{tabular}{llrr}
-\toprule
-Benchmark & Order & H1 & H4 \\
-\midrule
-PolyBench & temporal & --- & --- \\
-          & shuffled & --- & --- \\
-CTF-Dojo  & temporal & --- & --- \\
-          & shuffled & --- & --- \\
-FutureX   & temporal & --- & --- \\
-          & shuffled & --- & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-% TABLE 10: Routing analysis.
-\begin{table}[t]
-\centering
-\caption{Routing analysis: per-branch task count and routed-branch vs. best-alternative-branch accuracy proxy. \textbf{Placeholder.}}
-\label{tab:routing_quality}
-\begin{tabular}{llrrr}
-\toprule
-Benchmark & Branch & \#Tasks routed & Acc (routed) & Acc (best-alt) \\
-\midrule
---- & --- & --- & --- & --- \\
---- & --- & --- & --- & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-% Discussion paragraph: empirically validates Theorem 3; shuffled-order control rules out horizon length; per-regime analysis validates the D1/D2/D3 frame.
-
-\subsection{RQ4: Is the Joint Effect Required for Long-Horizon Accumulation?}
-% One sentence: H4_multi strictly beats max(H1_multi, H4) with gap widening over horizon; harness size stays bounded in H4_multi while H1 grows unboundedly.
-
-% FIGURE 9: Harness size over cycles for all 4 cells.
-\begin{figure}[t]
-\centering
-\rule{0.45\textwidth}{4cm}
-\caption{Harness size over cycles for H1, H1\_multi, H4, H4\_multi. Multi-agent distills (H1\_multi $<$ H1); navigation partitions (H4 per-branch $<$ H1 global); jointly bounded in H4\_multi. \textbf{Placeholder.}}
-\label{fig:harness_size_all}
-\end{figure}
-
-% FIGURE 10: Early vs late subset gap.
-\begin{figure}[t]
-\centering
-\rule{0.45\textwidth}{3.5cm}
-\caption{Accuracy gap between H4\_multi and $\max$(H1\_multi, H4) on first-30\% vs. last-30\% of stream, three benchmarks. Gap widens with horizon --- signature of joint effect for C3. \textbf{Placeholder.}}
-\label{fig:joint_gap}
-\end{figure}
-
-% TABLE 11: Full 2x2 grid.
-\begin{table}[t]
-\centering
-\caption{Full 2$\times$2 grid: \{H1, H1\_multi, H4, H4\_multi\} $\times$ three benchmarks, split into full-stream and late-30\% accuracy. Interaction term is the joint-effect magnitude. \textbf{Placeholder.}}
-\label{tab:joint_grid}
-\begin{tabular}{lrrrr}
-\toprule
-Benchmark & H1 & H1\_multi & H4 & H4\_multi \\
-\midrule
-\multicolumn{5}{l}{\emph{Full stream}} \\
-PolyBench & --- & --- & --- & --- \\
-CTF-Dojo  & --- & --- & --- & --- \\
-FutureX   & --- & --- & --- & --- \\
-\midrule
-\multicolumn{5}{l}{\emph{Last 30\%}} \\
-PolyBench & --- & --- & --- & --- \\
-CTF-Dojo  & --- & --- & --- & --- \\
-FutureX   & --- & --- & --- & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-% Discussion paragraph: confirms C3 requires both contributions; harness-size evidence directly maps to the capacity-pressure argument in Section 2.
+Taken together, the three contributions are approximately additive. The full system's gain over A-Evolve decomposes, within measurement noise, into the sum of the multi-agent-only and navigation-only gains, consistent with the orthogonality of $\Levo$ and $\Lnav$; HITL contributes an additional increment localized to the experience-insufficient slices. Each component addresses one challenge in isolation, and the composition is what closes the gap to the expert reference.

@@ -27,4 +27,8 @@ WORKSPACE LAYOUT:
 Read existing code first. Extend, don't rewrite.
 Do NOT run git — the framework handles commits.
 
+BASH OUTPUT IS CAPPED AT 100 KB PER CALL (first 50 KB + last 50 KB,
+middle elided). When scanning large files, prefer `jq`, `grep`,
+`head`, `tail` over raw `cat`.
+
 {benchmark_context}

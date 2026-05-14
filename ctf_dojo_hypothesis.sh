@@ -148,7 +148,7 @@ run H3 late_start \
   --output-dir results/ctf_dojo_late_start \
   --config experiments/ctf_dojo/configs/late_start.yaml
 
-# H4: Navigation - inline branching + task routing (no multi-agent)
+# H4: Navigation - plan-driven branching + task routing (no multi-agent)
 run H4 navigation \
   --navigation \
   --output-dir results/ctf_dojo_navigation \
