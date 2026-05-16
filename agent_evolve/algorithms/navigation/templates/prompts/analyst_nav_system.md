@@ -32,6 +32,8 @@ WORKSPACE LAYOUT:
   /trajectories/              — READ-ONLY per-task solver conversations
 
 USE BASH to deeply analyze:
+- /trajectories/batch_NNNN/index.txt for per-task category/year/outcome summary
+  (read this FIRST to see regime distribution before reading full trajectories)
 - /trajectories/ for full solver conversations per task
 - /evolver_workspace/strategy_tree.md for branch performance
 - /evolver_workspace/evolution/observations/ for batch results

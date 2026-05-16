@@ -11,10 +11,9 @@ PolyBench columns: **Acc** (trade-level accuracy), **Median** (per-trade raw ret
 | 3 | GEPA-lite (NeurIPS 2025) | `gepa_lite_evo.yaml` | ✅ 32.6% / 13.4% / +0.8% / +0.3% | ✅ 112/261 (42.9%) | ✅ 142/503 (28.2%) |
 | 4 | Meta-Harness-lite (Lee et al. 2026) | `meta_harness_lite_evo.yaml` | ✅ 55.3% / 50.8% / +579.3%\* / +320.3% | ✅ 107/261 (41.0%) | ✅ 148/503 (29.4%) |
 | 5 | OctoTools (Lu et al., ACL 2026 oral) | `octotools_expert_evo.yaml` | ✅ 54.6% / 39.9% / +35.1% / +19.1% | ✅ 100/261 (38.3%) | ✅ 129/503 (25.6%) |
-| 6 | Multi-agent only (structured_evolution) | `structured_evolution_evo.yaml` | 🔄 91.2% / 83.1% / — / — (2397/5075 done) | ✅ 136/261 (52.1%) | ✅ 249/503 (49.5%) |
-| 7 | Navigation only | `navigation.yaml` (H4/H5) | ✅ **91.4%** / **77.4%** / +385.1% / **+352.2%** | ✅ 120/261 (46.0%) | rerunning |
-| 8 | **Full system (Multi + Nav, structured_navigation)** | `structured_navigation_evo.yaml` | ✅ 94.5% / 76.8% / +374.4% / +353.7% | — (not yet run) | — (not yet run) |
-| — | Navigation (inline evolver variant) | — | — | — | 📎 190/503 (37.8%) |
+| 6 | Multi-agent only (structured_evolution) | `structured_evolution_evo.yaml` | ✅ 95.8% / 79.8% / +366.2% / +350.9% | ✅ 136/261 (52.1%) | ✅ 249/503 (49.5%) |
+| 7 | Navigation only | `navigation.yaml` (H4/H5) | ✅ **91.4%** / **77.4%** / +385.1% / **+352.2%** | ✅ 120/261 (46.0%) | ✅ 222/503 (44.1%) |
+| 8 | **Full system (Multi + Nav, structured_navigation)** | `structured_navigation_evo.yaml` | ✅ 93.9% / 76.7% / +377.9% / +354.8% | ✅ 129/261 (49.4%) | ✅ 236/503 (46.9%) |
 
 Legend: ✅ full-scale complete · ⏳ partial · 📎 supplementary variant · — not run yet
 

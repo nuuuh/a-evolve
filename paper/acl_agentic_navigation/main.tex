@@ -1,3 +1,5 @@
+\pdfoutput=1
+
 \documentclass[11pt]{article}
 
 % Official ACL style files (acl-org/acl-style-files, master branch).
@@ -21,6 +23,7 @@
 \usepackage{xcolor}
 \usepackage{array}
 \usepackage{makecell}
+\usepackage{paralist}
 
 % Proposition environments for the theoretical framework.
 \theoremstyle{plain}
@@ -34,16 +37,27 @@
 \newcommand{\Phimulti}{\Phi_{\text{multi}}}
 \newcommand{\Phisingle}{\Phi_{\text{single}}}
 
-\title{Agentic Evolution under Long-Horizon, Non-Stationary, Open-Ended Task Streams:\\
-A Regret Decomposition and Three Composable Architectural Remedies}
 
-\author{Anonymous ACL submission}
+\newcommand{\wei}[1]{\textcolor{orange}{\#Wei:~#1\#}}
+\newcommand{\weiedit}[1]{\textcolor{brown}{\#Edits:~#1\#}}
+\newcommand{\zw}[1]{\textcolor{blue}{\#Zewen:~#1\#}}
+
+
+\title{Long-Term Agentic System Optimization via Continual Auto-Harness and Runtime Adaptation}
+
+\author{
+Zewen Liu$^{1}$, Juntong Ni$^{1}$, Xianfeng Tang$^{2}$,
+Max S.Y. Lau$^{1}$, Qi He$^{3}$,  Wenpeng Yin$^{4}$, Wei Jin$^{1}$,
+\\
+$^{1}$Emory University, $^{2}$Amazon \\
+\texttt{\{zewen.liu, wei.jin\}@emory.edu}
+}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-Self-evolving agents are typically evaluated on i.i.d.\ benchmarks that omit three properties of real-world deployment: \textbf{long-horizon} (D1), \textbf{non-stationarity} (D2), and \textbf{open-endedness} (D3). On three temporal benchmarks that exercise all three --- PolyBench, CTF-Dojo, FutureX --- we characterise three task-intrinsic challenges: \textbf{C1} \emph{non-monotonic evolution} (early-freeze beats full-evo under shift); \textbf{C2} \emph{construction bottleneck} (prompt-level evolvers cannot build multi-file infrastructure); \textbf{C3} \emph{experience insufficiency} (under severe shift, history carries no signal). We partition regret as \emph{evolution loss} $\Levo(\Phi, K)$ (what the evolver class can construct at capacity~$K$) plus \emph{navigation loss} $\Lnav(\varphi)$ (whether the harness is conditioned on the task); experience availability sits outside the decomposition as a third axis. Three composable architectural contributions follow: agentic navigation via a git-backed strategy tree conditions the harness per task and reduces $\Lnav$; multi-agent evolution with persistent cross-cycle state expands the constructible harness class and reduces $\Levo$; and human-in-the-loop integration supplies external direction when history is insufficient. Each is independently effective in ablation, and together they close most of the gap to a hand-designed expert reference on all three benchmarks.
+An agent's harness, the prompts, skills, tools, and infrastructure wrapped around a fixed LLM, is a key determinant of its task-solving performance. Auto-harness systems such as A-Evolve, GEPA, and Meta-Harness construct this harness automatically from execution feedback and report strong gains on static benchmarks like SWE-bench and Terminal-bench. We show these gains do not transfer to chronologically arriving task streams. On three real streams (a prediction-market platform across politics, sports, and finance over weeks; a security competition across a decade of evolving exploit families; a forecasting service across English and Chinese sources), stopping evolution after 40\% of the stream beats running the full stream on every benchmark we tested. The cause is structural: existing auto-harness systems search the harness once and reuse it; they neither update the harness across cycles as the stream progresses (\emph{continual auto-harness}) nor select the right harness for each incoming task before solving it (\emph{runtime adaptation}). We propose a two-axis framework for long-term agentic system optimization, a sustained, cross-cycle optimisation of the agent's harness, instantiated as multi-agent evolution (Analyst $\to$ Researchers $\to$ Builder $\to$ Verifier with persistent cross-cycle state) and agentic navigation (a git-backed strategy tree routed per task), with structurally triggered human-in-the-loop hooks for regimes the agent has never sampled. Across the three streams, our system outperforms every auto-harness baseline we tested on every per-benchmark metric.
 \end{abstract}
 
 \input{sections/introduction}
@@ -52,8 +66,8 @@ Self-evolving agents are typically evaluated on i.i.d.\ benchmarks that omit thr
 \input{sections/experiment}
 \input{sections/conclusions}
 
-% Uncomment once references.bib is populated with real entries.
-% \bibliographystyle{acl_natbib}
+% Bibliography commented out while citations are placeholders.
+% Uncomment once \cite{} calls have keys.
 % \bibliography{references}
 
 \appendix

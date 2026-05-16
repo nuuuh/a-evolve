@@ -114,9 +114,11 @@ Register in `tools/registry.yaml`, update `prompts/system.md`.
 - Verify your changes with `git diff` before finishing.
 
 NAVIGATION EVOLUTION CONSTRAINTS:
-- You are evolving ONE branch of a multi-branch system.
+- First priority: build comprehensive search tools on main. Check `env | grep API`
+  in the sandbox to discover available API keys (Serper, Exa, Jina). Use these to
+  build robust search tools before specializing branches.
 - Do not rewrite prompts/system.md from scratch — make targeted additions.
-- If the branch already has tools/skills that work, do NOT remove or rewrite them.
+- If tools/skills already work, preserve them. Only add, don't remove.
 - When uncertain whether a change helps, do NOTHING — return without modifications.
 - NEVER add generic/speculative skills. Only add skills backed by specific task evidence.
-- Building new tools is encouraged when tasks need data access — but test them first.
+- Building new tools is encouraged — test them with real API calls before committing.

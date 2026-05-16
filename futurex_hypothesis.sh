@@ -215,6 +215,7 @@ run H4 online_eval \
 run H5_nav navigation_strict \
   --max-turns 80 \
   --navigation \
+  --batch-size 40 \
   --evolver-prompt experiments/futurex/evolver_prompt_nav.md \
   --output-dir results/futurex_navigation \
   --config experiments/futurex/configs/navigation.yaml
