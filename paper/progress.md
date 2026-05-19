@@ -2,18 +2,23 @@
 
 All runs use **Sonnet 4.6 solver**, `--temporal-reveal`, `--no-infra-evo`, `--branch-confidence 0.7`, workers in {5, 10, 24}. Baselines route via the `global.` Bedrock profile; hypothesis runs use `us.`. Smoke runs excluded.
 
-PolyBench columns: **Acc** (trade-level accuracy), **Median** (per-trade raw return), **CWR** (capital-weighted return), **Sharpe** (mean / std of per-trade APY). When Median and CWR disagree sharply, the agent is winning via rare tail trades rather than consistent skill — Sharpe is the clearest skill-vs-luck signal. CTF-Dojo and FutureX use pass-rate.
+**Metrics:**
+- **PolyBench**: Coverage (tasks traded / total), Acc (correct / all 5075), CWR (capital-weighted return %), PortRet (portfolio return %)
+- **CTF-Dojo**: Pass rate (flags / 261), CSR Δ (cumulative-solve-rate change from first to last batch, pp), Avg Turns (mean turns per successful solve)
+- **FutureX**: Pass rate (correct / 503), CSR Δ (same definition), Avg Turns (same)
 
-| # | Row | Config | PB Coverage / Acc(all) / CWR / PortRet | CTF-Dojo (261) | FutureX (503) |
+CSR Δ = CSR_end − CSR_start, where CSR at batch $b$ = (cumulative successes through batch $b$) / (cumulative tasks through batch $b$). Positive = solver is becoming more capable over the stream. Negative = solver is degrading.
+
+| # | Row | Config | PB Cov / Acc / CWR / PortRet | CTF Pass / CSR Δ / Turns | FX Pass / DomCov / Sharpe |
 |---|---|---|:---:|:---:|:---:|
-| 1 | Base agent (no evolution) | `baseline.yaml` (H0) | ✅ 31.7% / 22.2% / +5.5% / +1.7% | ✅ 97/261 (37.2%) | ✅ 156/503 (31.0%) |
-| 2 | A-Evolve (linear chain) | `full_evo.yaml` (H1) | ✅ 21.1% / 18.4% / +34.1% / +7.2% | ✅ 118/261 (45.2%) | ✅ 239/503 (47.5%) |
-| 3 | GEPA-lite (NeurIPS 2025) | `gepa_lite_evo.yaml` | ✅ 32.6% / 13.4% / +0.8% / +0.3% | ✅ 112/261 (42.9%) | ✅ 142/503 (28.2%) |
-| 4 | Meta-Harness-lite (Lee et al. 2026) | `meta_harness_lite_evo.yaml` | ✅ 55.3% / 50.8% / +579.3%\* / +320.3% | ✅ 107/261 (41.0%) | ✅ 148/503 (29.4%) |
-| 5 | OctoTools (Lu et al., ACL 2026 oral) | `octotools_expert_evo.yaml` | ✅ 54.6% / 39.9% / +35.1% / +19.1% | ✅ 100/261 (38.3%) | ✅ 129/503 (25.6%) |
-| 6 | Multi-agent only (structured_evolution) | `structured_evolution_evo.yaml` | ✅ 95.8% / 79.8% / +366.2% / +350.9% | ✅ 136/261 (52.1%) | ✅ 249/503 (49.5%) |
-| 7 | Navigation only | `navigation.yaml` (H4/H5) | ✅ **91.4%** / **77.4%** / +385.1% / **+352.2%** | ✅ 120/261 (46.0%) | ✅ 222/503 (44.1%) |
-| 8 | **Full system (Multi + Nav, structured_navigation)** | `structured_navigation_evo.yaml` | ✅ 93.9% / 76.7% / +377.9% / +354.8% | ✅ 129/261 (49.4%) | ✅ 236/503 (46.9%) |
+| 1 | Base agent (H0) | `baseline.yaml` | 31.7 / 22.2 / +5.5 / +1.7 | 37.2 / −12.7 / 19.5 | 31.0 / 33.1 / 1.93 |
+| 2 | A-Evolve (linear chain) | `full_evo.yaml` | 21.1 / 18.4 / +34.1 / +7.2 | 45.2 / −14.6 / 9.5 | 47.5 / 54.4 / 2.51 |
+| 3 | GEPA-lite | `gepa_lite_evo.yaml` | 32.6 / 13.4 / +0.8 / +0.3 | 42.9 / −11.9 / 18.5 | 28.2 / 31.7 / 1.87 |
+| 4 | Meta-Harness-lite | `meta_harness_lite_evo.yaml` | 55.3 / 50.8 / +579.3\* / +320.3 | 41.0 / −8.8 / 18.3 | 29.4 / 31.6 / 2.42 |
+| 5 | OctoTools (static, human-designed) | `octotools_expert_evo.yaml` | 54.6 / 39.9 / +35.1 / +19.1 | 38.3 / −26.5 / 17.0 | 25.6 / 28.6 / 1.77 |
+| 6 | **Multi-agent only** | `structured_evolution_evo.yaml` | **95.8 / 79.8** / +366.2 / +350.9 | **52.1 / +12.3** / 12.8 | **49.5 / 57.1** / 2.57 |
+| 7 | Navigation only | `navigation.yaml` | 91.4 / 77.4 / **+385.1 / +352.2** | 46.0 / −8.8 / **15.5** | 44.1 / 50.6 / **2.73** |
+| 8 | Full system (M+N) | `structured_navigation_evo.yaml` | 93.9 / 76.7 / +377.9 / +354.8 | ⏳ 80 tasks only | ⏳ 160 tasks only |
 
 Legend: ✅ full-scale complete · ⏳ partial · 📎 supplementary variant · — not run yet
 

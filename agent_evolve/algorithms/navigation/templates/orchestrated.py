@@ -459,7 +459,12 @@ class OrchestratedTemplate(EvolutionTemplate):
             # mutated, rebase the branch before we work on it.
             if target != "main" and main_mutated_this_cycle:
                 try:
-                    vc.rebase_branch(target, "main")
+                    rebased = vc.rebase_branch(target, "main")
+                    if not rebased:
+                        logger.info("Rebase %s failed, syncing tools/infra from main", target)
+                        vc.sync_paths_from("main", target, [
+                            "tools/", "infra/", "tools/registry.yaml",
+                        ])
                 except Exception as e:
                     logger.warning("Rebase %s failed: %s", target, e)
 

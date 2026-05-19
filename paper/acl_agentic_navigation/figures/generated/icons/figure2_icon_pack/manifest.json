@@ -1,0 +1,169 @@
+{
+  "source": "Figure 2 icon vocabulary recreated from Image #1",
+  "format": "transparent PNG",
+  "size_px": 1024,
+  "count": 40,
+  "icons": [
+    {
+      "name": "task_bar_chart",
+      "path": "png_1024/task_bar_chart.png"
+    },
+    {
+      "name": "task_soccer",
+      "path": "png_1024/task_soccer.png"
+    },
+    {
+      "name": "task_lock",
+      "path": "png_1024/task_lock.png"
+    },
+    {
+      "name": "task_trend",
+      "path": "png_1024/task_trend.png"
+    },
+    {
+      "name": "task_globe",
+      "path": "png_1024/task_globe.png"
+    },
+    {
+      "name": "hitl_chat",
+      "path": "png_1024/hitl_chat.png"
+    },
+    {
+      "name": "analyst_person",
+      "path": "png_1024/analyst_person.png"
+    },
+    {
+      "name": "reveal_clock",
+      "path": "png_1024/reveal_clock.png"
+    },
+    {
+      "name": "document",
+      "path": "png_1024/document.png"
+    },
+    {
+      "name": "task_board",
+      "path": "png_1024/task_board.png"
+    },
+    {
+      "name": "research_lightbulb",
+      "path": "png_1024/research_lightbulb.png"
+    },
+    {
+      "name": "research_flask",
+      "path": "png_1024/research_flask.png"
+    },
+    {
+      "name": "research_magnifier",
+      "path": "png_1024/research_magnifier.png"
+    },
+    {
+      "name": "research_cube",
+      "path": "png_1024/research_cube.png"
+    },
+    {
+      "name": "research_database",
+      "path": "png_1024/research_database.png"
+    },
+    {
+      "name": "success_check",
+      "path": "png_1024/success_check.png"
+    },
+    {
+      "name": "failure_x",
+      "path": "png_1024/failure_x.png"
+    },
+    {
+      "name": "git_graph",
+      "path": "png_1024/git_graph.png"
+    },
+    {
+      "name": "git_create",
+      "path": "png_1024/git_create.png"
+    },
+    {
+      "name": "git_update",
+      "path": "png_1024/git_update.png"
+    },
+    {
+      "name": "git_checkout",
+      "path": "png_1024/git_checkout.png"
+    },
+    {
+      "name": "builder_hammer",
+      "path": "png_1024/builder_hammer.png"
+    },
+    {
+      "name": "verifier_shield",
+      "path": "png_1024/verifier_shield.png"
+    },
+    {
+      "name": "harness_tree",
+      "path": "png_1024/harness_tree.png"
+    },
+    {
+      "name": "updated_harness_tree",
+      "path": "png_1024/updated_harness_tree.png"
+    },
+    {
+      "name": "runtime_router",
+      "path": "png_1024/runtime_router.png"
+    },
+    {
+      "name": "routing_search_docs",
+      "path": "png_1024/routing_search_docs.png"
+    },
+    {
+      "name": "solver_robot",
+      "path": "png_1024/solver_robot.png"
+    },
+    {
+      "name": "result_check",
+      "path": "png_1024/result_check.png"
+    },
+    {
+      "name": "branch_main",
+      "path": "png_1024/branch_main.png"
+    },
+    {
+      "name": "branch_a",
+      "path": "png_1024/branch_a.png"
+    },
+    {
+      "name": "branch_b",
+      "path": "png_1024/branch_b.png"
+    },
+    {
+      "name": "workspace_task_board",
+      "path": "png_1024/workspace_task_board.png"
+    },
+    {
+      "name": "workspace_research_log",
+      "path": "png_1024/workspace_research_log.png"
+    },
+    {
+      "name": "workspace_architecture",
+      "path": "png_1024/workspace_architecture.png"
+    },
+    {
+      "name": "workspace_strategy_tree",
+      "path": "png_1024/workspace_strategy_tree.png"
+    },
+    {
+      "name": "artifact_prompt",
+      "path": "png_1024/artifact_prompt.png"
+    },
+    {
+      "name": "artifact_skills",
+      "path": "png_1024/artifact_skills.png"
+    },
+    {
+      "name": "artifact_memory",
+      "path": "png_1024/artifact_memory.png"
+    },
+    {
+      "name": "artifact_tools",
+      "path": "png_1024/artifact_tools.png"
+    }
+  ],
+  "contact_sheet": "figure2_icon_sheet.png"
+}

@@ -322,15 +322,48 @@ class VersionControl:
                 except RuntimeError:
                     pass
 
-    def rebase_branch(self, branch: str, onto: str = "main") -> None:
-        """Rebase *branch* onto *onto* so it inherits latest root changes."""
+    def rebase_branch(self, branch: str, onto: str = "main") -> bool:
+        """Rebase *branch* onto *onto* so it inherits latest root changes.
+
+        Returns True if rebase succeeded, False if aborted due to conflicts.
+        """
         current = self.get_current_branch()
         self._git("checkout", branch)
         try:
             self._git("rebase", onto)
+            return True
         except RuntimeError:
-            # Conflict — abort and leave branch as-is
             self._git("rebase", "--abort")
+            return False
+        finally:
+            self._git("checkout", current)
+
+    def sync_paths_from(
+        self, source: str, target: str, paths: list[str]
+    ) -> bool:
+        """Copy specific paths from *source* branch onto *target* branch.
+
+        Used as fallback when rebase fails — brings main's tools/infra
+        onto a branch without touching the branch's own prompts.
+        Returns True if any files were synced.
+        """
+        current = self.get_current_branch()
+        self._git("checkout", target)
+        try:
+            synced = False
+            for path in paths:
+                try:
+                    self._git("checkout", source, "--", path)
+                    synced = True
+                except RuntimeError:
+                    pass
+            if synced:
+                try:
+                    self._git("commit", "-m",
+                              f"sync {', '.join(paths)} from {source}")
+                except RuntimeError:
+                    pass
+            return synced
         finally:
             self._git("checkout", current)
 

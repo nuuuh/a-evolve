@@ -25,12 +25,20 @@ logger = logging.getLogger(__name__)
 MAX_PROMPT_CHARS = 10_000
 
 SEARCH_CAP_PATTERNS = [
+    # Section-level removal: entire "HARD TURN/SEARCH LIMIT" blocks
+    r"(?si)##\s*⚠️?\s*HARD\s+(?:TURN|SEARCH)\s+LIMIT.*?(?=\n##\s|\n---|\Z)",
+    # Line-level patterns
     r"(?i)limit\s+searches?\s+to\s+\d+",
     r"(?i)use\s+\d+-?\d*\s+searches?",
     r"(?i)submit\s+by\s+search\s+\d+",
-    r"(?i)HARD\s+SEARCH\s+LIMIT",
     r"(?i)max(imum)?\s+\d+\s+searches?",
     r"(?i)no\s+more\s+than\s+\d+\s+searches?",
+    r"(?i)AT\s+MOST\s+\d+\s+tool\s+calls?[^.]*\.",
+    r"(?i)after\s+(?:your\s+)?\d+(?:th|st|nd|rd)?\s+(?:tool\s+call|search)[^.]*\.",
+    r"(?i)\d+\s+tool\s+calls?\s+total[^.]*\.",
+    r"(?i)count\s+your\s+tool\s+calls[^.]*\.",
+    r"(?i)\[?Tool\s+call\s+\[?\d+/\d+\]?",
+    r"(?i)if\s+you\s+have\s+not\s+found\s+data\s+after\s+\d+\s+tool\s+calls?[^.]*\.",
 ]
 
 NEWS_SEARCH_HINT = (

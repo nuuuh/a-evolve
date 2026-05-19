@@ -31,7 +31,7 @@
 
 % Macros for the theoretical terms so prose stays consistent.
 \newcommand{\Levo}{L_{\text{evo}}}
-\newcommand{\Lnav}{L_{\text{nav}}}
+\newcommand{\Ladapt}{L_{\text{adapt}}}
 \newcommand{\Hist}{\mathcal{H}_t}
 \newcommand{\Shift}{\Sigma_t}
 \newcommand{\Phimulti}{\Phi_{\text{multi}}}
@@ -43,7 +43,7 @@
 \newcommand{\zw}[1]{\textcolor{blue}{\#Zewen:~#1\#}}
 
 
-\title{Long-Term Agentic System Optimization via Continual Auto-Harness and Runtime Adaptation}
+\title{Adaptive Auto-Harness: Continual Self-Improvement for Long-Running Agentic Systems}
 
 \author{
 Zewen Liu$^{1}$, Juntong Ni$^{1}$, Xianfeng Tang$^{2}$,
@@ -57,7 +57,7 @@ $^{1}$Emory University, $^{2}$Amazon \\
 \maketitle
 
 \begin{abstract}
-An agent's harness, the prompts, skills, tools, and infrastructure wrapped around a fixed LLM, is a key determinant of its task-solving performance. Auto-harness systems such as A-Evolve, GEPA, and Meta-Harness construct this harness automatically from execution feedback and report strong gains on static benchmarks like SWE-bench and Terminal-bench. We show these gains do not transfer to chronologically arriving task streams. On three real streams (a prediction-market platform across politics, sports, and finance over weeks; a security competition across a decade of evolving exploit families; a forecasting service across English and Chinese sources), stopping evolution after 40\% of the stream beats running the full stream on every benchmark we tested. The cause is structural: existing auto-harness systems search the harness once and reuse it; they neither update the harness across cycles as the stream progresses (\emph{continual auto-harness}) nor select the right harness for each incoming task before solving it (\emph{runtime adaptation}). We propose a two-axis framework for long-term agentic system optimization, a sustained, cross-cycle optimisation of the agent's harness, instantiated as multi-agent evolution (Analyst $\to$ Researchers $\to$ Builder $\to$ Verifier with persistent cross-cycle state) and agentic navigation (a git-backed strategy tree routed per task), with structurally triggered human-in-the-loop hooks for regimes the agent has never sampled. Across the three streams, our system outperforms every auto-harness baseline we tested on every per-benchmark metric.
+Auto-harness systems such as A-Evolve, GEPA, and Meta-Harness automatically construct an LLM agent's harness (prompts, skills, tools, infrastructure) and report strong gains on static benchmarks. Real deployment, however, demands \emph{continual self-improvement}: a sustained improvement of the harness as the agent operates on a long-running stream of tasks. We identify three deployment dimensions that prior systems overlook and propose an analytical framework, a regret decomposition $\Levo + \Ladapt$, that derives two complementary operations: \emph{continual auto-harness} (a stateful multi-agent evolver with cross-cycle knowledge) and \emph{solve-time adaptation} (a strategy-tree navigator that selects a task-relevant harness prior to solving), plus a human-in-the-loop channel for regimes outside prior experience. Our system outperforms A-Evolve, GEPA, and Meta-Harness on three real task streams.
 \end{abstract}
 
 \input{sections/introduction}

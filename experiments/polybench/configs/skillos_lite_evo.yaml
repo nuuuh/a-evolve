@@ -1,0 +1,24 @@
+# SkillOS-lite baseline (Ouyang et al., 2025).
+# LLM-based skill curation: create, refine, retire skills per cycle.
+batch_size: 100
+max_cycles: 0
+holdout_ratio: 0.0
+
+evolve_prompts: true
+evolve_skills: true
+evolve_memory: true
+evolve_tools: true
+
+model_name: us.anthropic.claude-sonnet-4-6
+evolver_model: us.anthropic.claude-opus-4-6-v1
+evolver_max_tokens: 128000
+
+solve_workers: 8
+
+egl_threshold: 0.05
+egl_window: 3
+
+sandbox_network: host
+evolver_sandbox_network: none
+
+orchestrator: skillos_lite

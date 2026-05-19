@@ -5,91 +5,104 @@
 
 \begin{figure*}[ht]
 \centering
-\rule{0.95\textwidth}{6.5cm}
-\caption{Unified system pipeline. \emph{Top panel}: a git-backed strategy tree provides per-task routing. $F_{\text{Navigate}}$ reads each branch's workspace (\texttt{README.md}, \texttt{prompts/system.md}, \texttt{skills/}, \texttt{tools/registry.yaml}) via \texttt{git show} and routes $x_t$ to the best-equipped branch (\S\ref{sec:method-nav}). \emph{Bottom panel}: per evolution cycle, a four-phase multi-agent pipeline operates on the routed branch (Analyst $\to$ parallel Researchers $\to$ Builder $\to$ Verifier), with persistent cross-cycle state (\texttt{task\_board.md}, \texttt{research\_log.jsonl}, \texttt{architecture.md}) linking successive cycles (\S\ref{sec:method-multi}). Two HITL hook points are marked: a \emph{taskboard direction} hook between Analyst and Researcher (Cycle~$k$, resolves experience insufficiency) and a \emph{builder credential} hook inside Builder execution (Cycle~$k+m$, resource gate); both are silent unless triggered (\S\ref{sec:method-hitl}).}
+\includegraphics[width=0.95\textwidth]{figures/framework_ref.png}
+\caption{Overview of the Adaptive Auto-Harness system. \emph{Phase 1: Continual Auto-Harness} (top): between batches, a multi-agent evolver (Analyst $\to$ Researchers $\to$ Builder $\to$ Verifier) constructs and refines the harness, with persistent cross-cycle state and HITL hooks. The evolver maintains a git-backed harness tree with regime-specific branches. \emph{Phase 2: Solve-Time Adaptation} (bottom): at solve time, agentic routing selects the most suitable branch for each task $x_t$, and the solver executes on the selected branch's workspace.}
 \label{fig:unified_pipeline}
 \end{figure*}
 
 
-\subsection{Problem Setting}
+\subsection{Problem Formulation}
+\label{sec:method-setup}
 
-In this paper, we define tasks arrive in a time-ordered stream $x_1, x_2, \ldots, x_T$ with $x_t \sim P_t$, where $P_t$ is the task distribution at time $t$ and each $x_t$ has a fixed ground truth $y^*(x_t)$. The agent observes the history of prior tasks, their trajectories, and outcomes, $\Hist = \{(x_i, r_i, \tau_i)\}_{i=1}^{t-1}$, where $r_i$ is the realised reward on task $x_i$ and $\tau_i$ is the agent's trajectory (actions, intermediate observations, tool calls) on that task. A \emph{harness} $C = \varphi(\Hist)$ with $|C| \leq K$ is a bounded representation (prompts, skills, memory, tools, infrastructure) with capacity budget $K$, where $\varphi$ is the \emph{evolver}: the harness-construction function that compresses history into the harness. The agent then acts via the policy $a_t \sim \pi(a \mid x_t, C_t)$, where $\pi$ is the LLM-induced sampling distribution over actions conditioned on the task and harness.
+We define tasks arrive in a continual stream $x_1, x_2, \ldots, x_T$ with $x_t \sim P_t$, where $P_t$ is the task distribution at time $t$ and each $x_t$ has a fixed ground truth $y(x_t)$. The agent observes the history of prior experience $\Hist = \{(x_i, r_i, \tau_i)\}_{i=1}^{t-1}$, where $r_i$ is optionally the realized reward on task $x_i$ and $\tau_i$ is the agent's solving trajectory (actions, intermediate observations, tool calls). A \emph{harness} $C = \varphi(\Hist)$, with $|C| \leq K$, is a bounded representation (prompts, skills, memory, and tools) with capacity budget $K$, where $\varphi$ is the \emph{evolver}: the agentic system that automatically transforms historic experience into the harness. A solver agent then acts via the policy $a_t \sim \pi(a \mid x_t, C_t)$, where $\pi$ is the LLM-induced sampling distribution over actions conditioned on the task and harness.
 
-\subsection{Conceptual Framework}
+\subsection{Analytical Framing}
 \label{sec:framework}
 
-\paragraph{Utility and regret.}
-The utility of a harness $C$ on a task $x$ is $V(C, x) = \mathbb{E}_{a \sim \pi(\cdot \mid x, C)}[r(a, y^*(x))]$, and the regret of the evolver-constructed harness relative to the full-history policy is
+\noindent\textbf{Utility and regret.}
+We define the utility of a harness $C$ on a task $x_t$ as
+\begin{equation}
+\label{eq:utility}
+V(C, x_t) = \mathbb{E}_{a \sim \pi(\cdot \mid x_t, C)}[r(a, y(x_t))],
+\end{equation}
+which is the expected reward of the harness-conditioned solver. The full-history utility is the corresponding ceiling under the capacity budget,
+$V(\Hist, x_t) \,:=\, \sup_{\substack{C \,:\, |C| \leq K}} V(C, x_t)$,
+that is, the best utility attainable by any bounded harness on $x_t$. The regret of the evolver-constructed harness is then
 \begin{equation}
 \label{eq:regret}
-\text{Regret}(\varphi, x_t) = V(\Hist, x_t) - V(\varphi(\Hist), x_t) \geq 0.
+\text{Regret}(\varphi, x_t) = V(\Hist, x_t) - V(\varphi(\Hist), x_t) \geq 0,
 \end{equation}
-Non-negativity holds under the assumption that an agent given $\Hist$ directly as input can do at least as well as the same agent given any bounded compression $\varphi(\Hist)$.
+non-negative since $\varphi(\Hist)$ is one element of the supremum's domain. Operationally, this ceiling matches what a solver granted $\Hist$ directly, under the same compute and tool budget as $\varphi$, could attain by reconstructing any candidate harness on the fly.
 
-\paragraph{Two dimensions of harness construction.}
-Fix the evolver class $\Phi$. The best task-conditional harness achievable within $\Phi$ at capacity~$K$ is
+\noindent\textbf{Runtime optimal harness.}
+Fix the evolver class $\Phi$ and define the runtime optimal harness for a particular task:
 \begin{equation}
 \label{eq:cstar}
-C^*_\Phi(x) = \arg\max_{\substack{C \,:\, C = \varphi(\Hist, x) \\ \varphi \in \Phi,\; |C| \leq K}} V(C, x).
+C^*_\Phi(x_t) = \arg\max_{\substack{C = \varphi(\Hist),\ \varphi \in \Phi \\ |C| \leq K}} V(C, x_t).
 \end{equation}
-Two dimensions matter: the construction quality of $\Phi$ (what harnesses it can build) and whether the harness is \emph{conditional} on $x_t$ (per-task routing) or \emph{unconditional} (one $C$ for all tasks).
+This is an oracle reference: no single deployed $\varphi$ realises $C^*_\Phi$ across the stream, since the maximising $\varphi$ generally differs per task. Using $C^*_\Phi$ as pivot between $V(\Hist, x_t)$ and $V(\varphi(\Hist), x_t)$ yields the following decomposition.
 
 \begin{proposition}[Regret Decomposition]
 \label{prop:decomp}
-For any unconditional evolver $\varphi \in \Phi$,
+For any deployed evolver $\varphi \in \Phi$,
 \begin{equation}
 \label{eq:decomp}
-\mathbb{E}_{x_t}[\text{Regret}(\varphi, x_t)] = \Levo(\Phi, K) + \Lnav(\varphi),
+\mathbb{E}_{x_t}[\text{Regret}(\varphi, x_t)] = \Levo(\Phi) + \Ladapt(\varphi),
 \end{equation}
 where
 \begin{align}
 \label{eq:losses}
-\begin{split}
-\Levo(\Phi, K) &= \mathbb{E}_{x_t}\!\bigl[V(\Hist, x_t) - V(C^*_\Phi(x_t), x_t)\bigr], \\
-\Lnav(\varphi)  &= \mathbb{E}_{x_t}\!\bigl[V(C^*_\Phi(x_t), x_t) - V(\varphi(\Hist), x_t)\bigr].
-\end{split}
+\Levo(\Phi) &= \mathbb{E}_{x_t}\!\bigl[V(\Hist, x_t) - V(C^*_\Phi(x_t), x_t)\bigr],
 \end{align}
-$\Levo$ is the \emph{evolver-class limit}; $\Lnav$ is the \emph{conditioning limit}.
-
-\emph{Derivation.} Insert $V(C^*_\Phi(x_t), x_t)$ as an intermediate term into $\text{Regret}(\varphi, x_t)$ and split. Both pieces are non-negative because $V(\Hist, x_t) \geq V(C^*_\Phi(x_t), x_t) \geq V(\varphi(\Hist), x_t)$: the first inequality is information dominance and the second is per-task optimality of $C^*_\Phi$ over any unconditional harness in $\Phi$.
+\begin{align}
+\Ladapt(\varphi)  &= \mathbb{E}_{x_t}\!\bigl[V(C^*_\Phi(x_t), x_t) - V(\varphi(\Hist), x_t)\bigr].
+\end{align}
 \end{proposition}
 
-\paragraph{Experience availability as a third axis.}
-When $\Hist$ carries no relevant signal for the current regime (missing credentials, novel language, or unfamiliar data sources), neither a richer evolver class $\Phi$ nor a per-task conditioning of $\varphi$ can help. This regime sits outside the decomposition and motivates a third intervention, HITL~(\S\ref{sec:method-hitl}), which supplies direction at the evolver's \emph{input} rather than modifying either loss term.
+$\Levo$ is the \emph{evolution loss}: it reflects the evolver class $\Phi$'s capability gap, regardless of how many cycles the evolver runs. A single-agent prompt editor cannot produce multi-file infrastructure; that ceiling is structural, not a matter of effort. Reducing $\Levo$ therefore requires pursuing more capable evolver systems with access to broader control and feedbacks. $\Ladapt$ is the \emph{adaptation loss}: the oracle builds the optimal harness per task, but a deployed $\varphi$ commits to one harness before seeing $x_t$. Therefore, even with an optimal evolver system, $\Ladapt$ exists as long as task heterogeneity persists.
+
+% Since $C^*_\Phi(x_t)$ dominates any fixed harness pointwise,
+% \begin{equation}
+% \label{eq:conditioning_gap}
+% \mathbb{E}_{x_t}\!\bigl[V(C^*_\Phi(x_t), x_t)\bigr] \;\geq\; \max_{\varphi \in \Phi}\, \mathbb{E}_{x_t}\!\bigl[V(\varphi(\Hist), x_t)\bigr],
+% \end{equation}
+% with strict inequality whenever different tasks prefer different harnesses. 
+
+\paragraph{Human-in-the-loop as a third axis.}
+The decomposition assumes $\Hist$ contains relevant signal for $x_t$. When it does not (e.g., missing API credentials), neither a richer evolver class $\Phi$ nor per-task conditioning of $\varphi$ can recover what is absent from history. This case sits outside Equation~\ref{eq:decomp} and motivates a human-in-the-loop channel (\S\ref{sec:method-hitl}) that supplies external input at the evolver's \emph{input} rather than modifying either loss term.
 
 
-
-
-\subsection{Multi-Agent Evolution}
+\subsection{Continual Auto-Harness via Multi-Agent Evolution}
 \label{sec:method-multi}
 
-By Proposition~\ref{prop:decomp}, $\Levo$ is the gap between full-history utility and the best harness any evolver in $\Phi$ can construct at capacity~$K$. Reducing $\Levo$ requires enlarging $\Phi$ to admit harnesses that prior single-agent evolvers cannot build, in particular multi-file infrastructure rather than single-prompt edits.
+Reducing $\Levo$ requires expanding the evolution capability $\Phi$. We identify three axes along which prior single-agent evolvers are structurally limited: (i) evolution involves multiple complex subtasks that compete for a single context window, capping the complexity of constructible harnesses; (ii) the evolver lacks a proper feedback channel for continual streams where labels arrive asynchronously; (iii) without cross-cycle memory, the evolver's construction capability remains static and cannot compound with the growing stream. We expand $\Phi$ along each axis in our multi-agent evolver (Figure~\ref{fig:unified_pipeline}, bottom panel):
 
-We instantiate this enlargement with four architectural patterns, jointly realised in the four-phase cycle shown in the bottom panel of Figure~\ref{fig:unified_pipeline}. (1) \emph{Persistent cross-cycle state}: \texttt{task\_board.md}, \texttt{research\_log.jsonl}, and \texttt{architecture.md} carry findings from cycle $N{-}1$ into cycle $N$. (2) \emph{Parallel independent research}: in each cycle, multiple Researcher agents explore disjoint hypothesis branches in isolation, reducing premature convergence. (3) \emph{Role-distinct objectives}: Analyst (decomposes failures, updates \texttt{task\_board.md}) $\to$ Researchers (investigate, append \texttt{works:true/false} to \texttt{research\_log.jsonl}) $\to$ Builder (implements \texttt{infra/*.py} from \texttt{works:true} records, updates \texttt{architecture.md}) $\to$ Verifier (tests against held-out queries; failures retry up to three times). (4) \emph{HITL phase-boundary hooks} at the Analyst$\to$Researcher and inside-Builder boundaries (\S\ref{sec:method-hitl}).
+\noindent\textbf{(1) Multi-agent with distinct roles and objectives.}
+Existing single-agent evolvers must fit analysis, research, implementation, and verification into one context window (D1). We decompose evolution into four agents (Analyst $\to$ parallel Researchers $\to$ Builder $\to$ Verifier), each with a dedicated objective and full context budget. This eliminates the single-window bottleneck and lets parallel Researchers explore disjoint hypotheses without premature convergence.
 
-Together these patterns enlarge the evolver class from $\Phisingle$ to $\Phimulti \supset \Phisingle$. By monotonicity of the max in Proposition~\ref{prop:decomp}, $\Levo(\Phimulti, K) \leq \Levo(\Phisingle, K)$: multi-agent evolution resolves the construction bottleneck by enlarging the constructible-harness set, not by adding compute. We verify the structural-not-compute claim with a compute-matched single-agent control in \S\ref{sec:ablation}.
+\noindent\textbf{(2) Temporal-reveal feedback.}
+On continual streams, labels arrive asynchronously (e.g., a prediction market resolves days after the trade). We implement a \emph{temporal-reveal gate} that surfaces each task's ground-truth label to the evolver only after its resolution date, providing a proper streaming feedback signal without leaking future information.
+
+\noindent\textbf{(3) Persistent cross-cycle state.}
+We provide the evolver with a dedicated workspace that persists across cycles, containing a task board (prioritised failure analysis), research logs (tested hypotheses with pass/fail verdicts), architecture documentation, and verification tests. This cross-cycle memory enables the evolver to refine its construction ability over time and build upon prior evolution experience rather than restarting from scratch.
 
 
 
 
-
-
-
-\subsection{Agentic Navigation}
+\subsection{Solve-Time Adaptation via Harness-Tree Routing}
 \label{sec:method-nav}
 
-By Proposition~\ref{prop:decomp}, $\Lnav$ is reduced only by conditioning the harness on the current task: $\varphi(\Hist) \to \varphi(\Hist, x_t)$. Two qualitative properties of $\Lnav$ make this principled and yield falsifiable predictions tested in \S\ref{sec:navloss}. First, $\Lnav$ vanishes under stationarity (a single $C^*$ optimal for every task forces $C^*_\Phi(x_t) = C^*$) and grows with within-batch task heterogeneity. Second, under non-stationarity the supported task distribution diversifies as the stream progresses, so per-batch $\Lnav$ grows with $t$ even as $\Levo$ shrinks; the resulting non-monotonic accuracy curve is what makes early-freeze beat full evolution.
+Reducing $\Ladapt$ requires the deployed harness to approximate $C^*_\Phi(x_t)$ across heterogeneous tasks. A naive approach would perform full adaptation at solve time, but this is expensive and unreliable under latency constraints. Therefore, we propose shifting the heavy adaptation work into evolution time, which requires the evolver to construct a \emph{branching harness tree} of specialised harnesses, and leave only a lightweight routing decision at solve time: selecting the most suitable harness branch given the current task context (Figure~\ref{fig:unified_pipeline}, top panel).
 
-We refer to per-task conditioning as \emph{agentic navigation} and instantiate it as a git-backed strategy tree with per-task routing (top panel of Figure~\ref{fig:unified_pipeline}). The solver's workspace is a git repository whose \texttt{main} branch carries stationary content (techniques that transfer across regimes); regime-specific branches (e.g., \texttt{branch/crypto-classical}, \texttt{branch/binary-reversing}) are spawned by the evolver when distribution shift is detected, each with its own prompt, skills, and tool registry. Before solving each task, a navigator LLM reads every branch's workspace (\texttt{README.md}, \texttt{prompts/system.md}, \texttt{skills/} listing, \texttt{tools/registry.yaml}) via \texttt{git show} and emits \texttt{\{"branch": \ldots, "confidence": \ldots, "reason": \ldots\}}; the solver then checks out the selected branch and executes.
+We instantiate this with two designs (Figure~\ref{fig:unified_pipeline}, top panel). \textbf{(1) Git-managed harness tree.} The solver's workspace is a git repository. The evolver constructs regime-specific branches (e.g., \texttt{branch/crypto-classical}, \texttt{branch/binary-reversing}) during evolution, each carrying its own prompt, skills, and tool registry; git provides versioning, isolation, and lineage tracking across branches. \textbf{(2) Agentic routing.} At solve time, an router agent reads each branch's workspace via \texttt{git show} and selects the most suitable branch given $x_t$'s context; the solver then checks out that branch and executes.
 
-This design resolves $\Lnav$ in a way that differs from retrieval-augmented generation and mixture-of-experts routing in four respects: retrieval units are executable git branches (workspaces) rather than document chunks; branches carry evolutionary lineage via fork and merge; the router operates over README and system-prompt content rather than embedding similarity; and total capacity is partitioned across branches rather than retrieved as top-$k$. We ship two evolution modes that drive branch creation and mutation: \emph{inline} (a single sandboxed evolver call with full git access) and \emph{orchestrated} (a plan-driven variant with a separate analyst pass and per-branch evolver calls).
-
-
-\subsection{Human-in-the-Loop Integration}
+\subsection{Human-in-the-Loop Channel}
 \label{sec:method-hitl}
 
-When $\Hist$ contains no signal for $x_t$'s regime, neither $\Levo$ nor $\Lnav$ can be reduced: the full-history utility $V(\Hist, x_t)$ itself has a low ceiling, and no construction or conditioning recovers what $\Hist$ does not contain. HITL augments $\Hist$ with external input, raising this ceiling.
+When $\Hist$ contains no relevant signal for $x_t$, neither a richer $\Phi$ nor solve-time routing can recover what is absent from history. We address this with two structurally triggered hooks in the multi-agent pipeline (Figure~\ref{fig:unified_pipeline}), each providing a different form of human steering:
+\noindent\textbf{(1) Task-board steering.}
+After the Analyst updates the task board, a human may review it to add entries, adjust priorities, or supply domain guidance and provisions. This proactively steers the subsequent research cycle with direction the evolver cannot derive from trajectories alone.
+\noindent\textbf{(2) Interactive assistance during research.}
+When a Researcher hits a barrier mid-execution that requires human intervention (e.g., an authentication wall), the hook prompts the human in real time. This reactively unblocks the research agent at the point of failure.
 
-We add two triggered hooks at structurally distinct points in the multi-agent pipeline (marked in Figure~\ref{fig:unified_pipeline}), differentiated by what the human supplies. The \emph{taskboard direction} hook fires between Analyst and Researcher when the Analyst flags a regime with no covering branch and no prior \texttt{works:true} signal; the human supplies \emph{semantic guidance} that shapes the research cycle. The \emph{builder credential} hook fires inside Phase~3 when the Builder encounters an authentication failure; the human supplies a \emph{resource} (typically an API key) that the evolver cannot discover from trajectories alone.
-
-Both hooks are silent unless triggered. Typical invoked cost is under thirty seconds of human time per cycle; total cost on FutureX is $\sim 95$\,s across four cycles (\S\ref{sec:hitl}).
+Both hooks are silent unless triggered and share the same goal: incorporating human insights and provisions beyond the current evolver's capability.

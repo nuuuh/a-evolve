@@ -156,6 +156,25 @@ class StructuredNavigationTemplate(EvolutionTemplate):
         )
 
         research_summary = "\n".join(json.dumps(r) for r in research_log[-20:])
+
+        # Compute per-category stats for branching signal
+        cat_stats: dict[str, dict[str, int]] = {}
+        for r in batch_results:
+            cat = r.get("category") or r.get("domain") or "unknown"
+            cat_stats.setdefault(cat, {"total": 0, "pass": 0})
+            cat_stats[cat]["total"] += 1
+            if r.get("success"):
+                cat_stats[cat]["pass"] += 1
+        category_summary = ""
+        if any(c != "unknown" for c in cat_stats):
+            lines = ["Per-category performance this batch:"]
+            for cat, s in sorted(cat_stats.items(), key=lambda x: -x[1]["total"]):
+                if cat == "unknown":
+                    continue
+                pct = f"{100*s['pass']/s['total']:.0f}%" if s["total"] > 0 else "N/A"
+                lines.append(f"  {cat}: {s['pass']}/{s['total']} ({pct})")
+            category_summary = "\n".join(lines)
+
         template_vars = {
             "evo_number": str(evo_number),
             "batch_prompt": base_prompt,
@@ -164,11 +183,12 @@ class StructuredNavigationTemplate(EvolutionTemplate):
             "research_log": research_summary,
             "strategy_tree": strategy_tree_md,
             "routing_summary": routing_summary,
+            "category_summary": category_summary,
         }
         analyst_prompt = _load_prompt(
             prompts_dir, "analyst.md", "Analyze failures.",
         )
-        # Use nav-specific system prompt if available, fall back to standard
+        # Use nav-specific system prompt (with branching instructions)
         system = _load_prompt(
             prompts_dir, "analyst_nav_system.md", "",
         )
@@ -180,6 +200,9 @@ class StructuredNavigationTemplate(EvolutionTemplate):
 
         # Inject navigation context into prompt
         analyst_prompt = analyst_prompt.format_map(template_vars)
+        # Append category stats directly (branching signal)
+        if category_summary:
+            analyst_prompt += f"\n\n{category_summary}\n"
 
         logger.info("Phase 1: Analyzing batch failures (with branching decision)...")
         try:
@@ -482,7 +505,12 @@ class StructuredNavigationTemplate(EvolutionTemplate):
             # Rebase onto main before building (so builder sees main's latest)
             if main_mutated:
                 try:
-                    vc.rebase_branch(branch_name, "main")
+                    rebased = vc.rebase_branch(branch_name, "main")
+                    if not rebased:
+                        logger.info("Rebase %s failed, syncing tools/infra from main", branch_name)
+                        vc.sync_paths_from("main", branch_name, [
+                            "tools/", "infra/", "tools/registry.yaml",
+                        ])
                 except Exception as e:
                     logger.warning("Rebase %s onto main failed: %s", branch_name, e)
 
