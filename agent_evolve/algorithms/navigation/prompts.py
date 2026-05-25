@@ -19,8 +19,19 @@ from typing import Any
 
 
 NAVIGATE_SYSTEM_PROMPT = """\
-You are a fast task router. Read each branch's README and route the task to the
-best-fit branch. If no specialized branch clearly matches, choose "main".
+You are a fast task router. For each task you must pick exactly one branch
+from the list provided.
+
+Decision procedure:
+1. Read each branch's README, focusing on its "When to route here" section.
+2. Match the task description against each branch's positive signals
+   (categories, keywords, metadata) and negative signals (NOT applicable).
+3. If exactly one specialized branch matches strongly → route there with
+   high confidence (>= 0.7).
+4. If multiple branches partially match or none match clearly → route to
+   "main" with confidence reflecting your uncertainty.
+5. Branches without a clear "When to route here" section should be treated
+   as low-confidence candidates — prefer main unless the regime is obvious.
 
 Output JSON only:
 {"branch": "main", "confidence": 0.8, "reason": "brief reason"}

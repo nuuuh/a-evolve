@@ -1,0 +1,54 @@
+This is BibTeX, Version 0.99d (TeX Live 2021)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: main.aux
+The style file: acl_natbib.bst
+Reallocated glb_str_ptr (elt_size=4) to 20 items from 10.
+Reallocated global_strs (elt_size=200001) to 20 items from 10.
+Reallocated glb_str_end (elt_size=4) to 20 items from 10.
+Reallocated singl_function (elt_size=4) to 100 items from 50.
+Reallocated singl_function (elt_size=4) to 100 items from 50.
+Reallocated wiz_functions (elt_size=4) to 6000 items from 3000.
+Database file #1: references.bib
+Warning--I didn't find a database entry for ""
+You've used 23 entries,
+            3764 wiz_defined-function locations,
+            848 strings with 10817 characters,
+and the built_in function-call counts, 20026 in all, are:
+= -- 1602
+> -- 1345
+< -- 12
++ -- 563
+- -- 422
+* -- 1377
+:= -- 2990
+add.period$ -- 94
+call.type$ -- 23
+change.case$ -- 276
+chr.to.int$ -- 26
+cite$ -- 23
+duplicate$ -- 1154
+empty$ -- 1213
+format.name$ -- 478
+if$ -- 4208
+int.to.chr$ -- 2
+int.to.str$ -- 5
+missing$ -- 288
+newline$ -- 121
+num.names$ -- 92
+pop$ -- 767
+preamble$ -- 1
+purify$ -- 231
+quote$ -- 0
+skip$ -- 999
+stack$ -- 0
+substring$ -- 497
+swap$ -- 623
+text.length$ -- 6
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 207
+warning$ -- 0
+while$ -- 88
+width$ -- 0
+write$ -- 293
+(There was 1 warning)

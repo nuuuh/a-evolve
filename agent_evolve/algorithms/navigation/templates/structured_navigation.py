@@ -486,7 +486,7 @@ class StructuredNavigationTemplate(EvolutionTemplate):
             target="main", regimes=targets.get("main", []),
         )
 
-        # Then build each branch
+        # Then build each branch (real specialization, not just header)
         branch_mutated: dict[str, bool] = {}
         for branch_name, regimes in targets.items():
             if branch_name == "main":
@@ -520,6 +520,16 @@ class StructuredNavigationTemplate(EvolutionTemplate):
                 max_retries, prompts_dir, trajectory, evo_ws,
                 target=branch_name, regimes=regimes,
             )
+
+            # README for navigator
+            readme_path = solver_workspace.root / "README.md"
+            readme_path.write_text(
+                f"# {branch_name}\nSpecialization: {', '.join(regimes[:5])}\n"
+            )
+            try:
+                vc.commit(message=f"evo-{evo_number}-branch-readme-{branch_name}")
+            except Exception:
+                pass
 
         # Return to main
         vc.checkout_branch("main")
@@ -735,18 +745,36 @@ class StructuredNavigationTemplate(EvolutionTemplate):
                 evolver_workspace=evo_ws,
             )
             content = result.get("content", "")
-            passed = (
-                "VERDICT: PASS" in content.upper()
-                or "PASS" in content.upper().split("\n")[0]
+            up = content.upper() if content else ""
+            partial = "VERDICT: PARTIAL" in up
+            passed_strict = (
+                "VERDICT: PASS" in up
+                or (up.split("\n")[0].startswith("PASS") if up else False)
             ) if content else False
+            # PARTIAL is treated as passed on the target's own scope but
+            # the build is non-transferable — caller may isolate to branch.
+            passed = passed_strict or partial
             vc.commit(
                 message=f"evo-{evo_number}-verify-{target.replace('/', '-')}-{attempt}",
                 tag=f"evo-{evo_number}-verify-{target.replace('/', '-')}-{attempt}",
             )
-            return {"passed": passed, "report": content[:500]}
+            # Extract recommended branch if PARTIAL (verifier writes
+            # "isolate to branch/<name>" in the report).
+            isolate_to = None
+            if partial:
+                import re as _re
+                m = _re.search(r"branch/([\w\-]+)", content)
+                if m:
+                    isolate_to = f"branch/{m.group(1)}"
+            return {
+                "passed": passed,
+                "partial": partial,
+                "isolate_to": isolate_to,
+                "report": content[:500],
+            }
         except Exception as e:
             logger.warning("Verification [%s] failed: %s", target, e)
-            return {"passed": False, "report": str(e)}
+            return {"passed": False, "partial": False, "isolate_to": None, "report": str(e)}
 
     # ────────────────────────────────────────────────────────────────
     # Guardrails (per-target)

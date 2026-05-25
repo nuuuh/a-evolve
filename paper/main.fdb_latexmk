@@ -1,0 +1,13 @@
+# Fdb version 3
+["pdflatex"] 1779257911 "acl_agentic_navigation/main.tex" "main.pdf" "main" 1779257911
+  "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmr10.tfm" 1136768653 1296 45809c5a464d5f32c8f98ba97c1bb47f ""
+  "/usr/share/texlive/texmf-dist/tex/latex/base/article.cls" 1675316070 20145 aad8c3dd3bc36e260347b84002182bc2 ""
+  "/usr/share/texlive/texmf-dist/tex/latex/base/size11.clo" 1675316070 8465 2dd6985139dc15bc64ec71e501e76e40 ""
+  "/usr/share/texlive/texmf-dist/web2c/texmf.cnf" 1675316072 40136 b05acc85e8425979e52682d98a2bcacf ""
+  "/usr/share/texlive/texmf-var/web2c/pdftex/pdflatex.fmt" 1778547920 1345254 cd9148b2f3138bb9994a01c13a1380f7 ""
+  "acl.sty" 0 -1 0 ""
+  "acl_agentic_navigation/main.tex" 1779237510 3042 419e46bf149742aeabd57a9a88ff8244 ""
+  "main.aux" 1779257911 32 3985256e7290058c681f74d7a3565a19 ""
+  (generated)
+  "main.pdf"
+  "main.log"

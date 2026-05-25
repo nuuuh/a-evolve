@@ -1,0 +1,173 @@
+\begin{thebibliography}{23}
+\providecommand{\natexlab}[1]{#1}
+
+\bibitem[{{A-Evolve authors}(2025)}]{aevolve}
+{A-Evolve authors}. 2025.
+\newblock A-evolve: Linear-chain self-evolving agents.
+\newblock Placeholder citation; replace with canonical entry.
+
+\bibitem[{Agrawal et~al.(2025)Agrawal, Tan, Soylu, Ziems, Khare, Opsahl-Ong,
+  Singhvi, Shandilya, Ryan, Jiang et~al.}]{agrawal2025gepa}
+Lakshya~A Agrawal, Shangyin Tan, Dilara Soylu, Noah Ziems, Rishi Khare, Krista
+  Opsahl-Ong, Arnav Singhvi, Herumb Shandilya, Michael~J Ryan, Meng Jiang, and
+  1 others. 2025.
+\newblock Gepa: Reflective prompt evolution can outperform reinforcement
+  learning.
+\newblock \emph{arXiv preprint arXiv:2507.19457}.
+
+\bibitem[{Ben-David et~al.(2010)Ben-David, Blitzer, Crammer, Kulesza, Pereira,
+  and Vaughan}]{ben-david2010da}
+Shai Ben-David, John Blitzer, Koby Crammer, Alex Kulesza, Fernando Pereira, and
+  Jennifer~Wortman Vaughan. 2010.
+\newblock A theory of learning from different domains.
+\newblock \emph{Machine Learning}, 79:151--175.
+
+\bibitem[{Buzzega et~al.(2020)Buzzega, Boschini, Porrello, Abati, and
+  Calderara}]{buzzega2020dark}
+Pietro Buzzega, Matteo Boschini, Angelo Porrello, Davide Abati, and Simone
+  Calderara. 2020.
+\newblock Dark experience for general continual learning: A strong, simple
+  baseline.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, volume~33, pages 15920--15930.
+
+\bibitem[{Cheng et~al.(2026)Cheng, Liu, and Long}]{cheng2026polybench}
+Pu~Cheng, Juncheng Liu, and Yunshen Long. 2026.
+\newblock Polybench: Benchmarking llm forecasting and trading capabilities on
+  live prediction market data.
+\newblock \emph{arXiv preprint arXiv:2604.14199}.
+
+\bibitem[{Ganin et~al.(2016)Ganin, Ustinova, Ajakan, Germain, Larochelle,
+  Laviolette, Marchand, and Lempitsky}]{ganin2016dann}
+Yaroslav Ganin, Evgeniya Ustinova, Hana Ajakan, Pascal Germain, Hugo
+  Larochelle, Fran{\c{c}}ois Laviolette, Mario Marchand, and Victor Lempitsky.
+  2016.
+\newblock Domain-adversarial training of neural networks.
+\newblock \emph{Journal of Machine Learning Research}, 17(59):1--35.
+
+\bibitem[{{GEPA authors}(2025)}]{gepa2025}
+{GEPA authors}. 2025.
+\newblock Gepa: Reflective pareto prompt evolution.
+\newblock In \emph{Conference on Neural Information Processing Systems
+  (NeurIPS)}.
+\newblock Placeholder citation; replace with canonical entry.
+
+\bibitem[{Jacobs et~al.(1991)Jacobs, Jordan, Nowlan, and
+  Hinton}]{jacobs1991moe}
+Robert~A. Jacobs, Michael~I. Jordan, Steven~J. Nowlan, and Geoffrey~E. Hinton.
+  1991.
+\newblock Adaptive mixtures of local experts.
+\newblock \emph{Neural Computation}, 3(1):79--87.
+
+\bibitem[{Jimenez et~al.(2024)Jimenez, Yang, Wettig, Yao, Pei, Press, and
+  Narasimhan}]{jimenez2024swe}
+Carlos~E Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir
+  Press, and Karthik Narasimhan. 2024.
+\newblock Swe-bench: Can language models resolve real-world github issues?
+\newblock In \emph{International Conference on Learning Representations},
+  volume 2024, pages 54107--54157.
+
+\bibitem[{Karten et~al.(2026)Karten, Zhang, Upaa~Jr, Feng, Li, Shi, Jin, and
+  Vodrahalli}]{karten2026continual}
+Seth Karten, Joel Zhang, Tersoo Upaa~Jr, Ruirong Feng, Wenzhe Li, Chengshuai
+  Shi, Chi Jin, and Kiran Vodrahalli. 2026.
+\newblock Continual harness: Online adaptation for self-improving foundation
+  agents.
+\newblock \emph{arXiv preprint arXiv:2605.09998}.
+
+\bibitem[{Lee et~al.(2026)Lee, Nair, Zhang, Lee, Khattab, and
+  Finn}]{lee2026meta}
+Yoonho Lee, Roshen Nair, Qizheng Zhang, Kangwook Lee, Omar Khattab, and Chelsea
+  Finn. 2026.
+\newblock Meta-harness: End-to-end optimization of model harnesses.
+\newblock \emph{arXiv preprint arXiv:2603.28052}.
+
+\bibitem[{Liang et~al.(2020)Liang, Hu, and Feng}]{liang2020shot}
+Jian Liang, Dapeng Hu, and Jiashi Feng. 2020.
+\newblock Do we really need to access the source data? source hypothesis
+  transfer for unsupervised domain adaptation.
+\newblock In \emph{International Conference on Machine Learning (ICML)}.
+
+\bibitem[{Lin et~al.(2026)Lin, Lu, Shi, He, Mao, Zhang, Wu, Tang, Liu, Dai
+  et~al.}]{lin2026position}
+Minhua Lin, Hanqing Lu, Zhan Shi, Bing He, Rui Mao, Zhiwei Zhang, Zongyu Wu,
+  Xianfeng Tang, Hui Liu, Zhenwei Dai, and 1 others. 2026.
+\newblock Position: Agentic evolution is the path to evolving llms.
+\newblock \emph{arXiv preprint arXiv:2602.00359}.
+
+\bibitem[{{Meta-Harness authors}(2026)}]{metaharness2026}
+{Meta-Harness authors}. 2026.
+\newblock Meta-harness: Archive-based harness search.
+\newblock Placeholder citation; replace with canonical entry.
+
+\bibitem[{Miao et~al.(2025)Miao, Shahbaba, and Qu}]{miao2025reinforcement}
+Rui Miao, Babak Shahbaba, and Annie Qu. 2025.
+\newblock Reinforcement learning for individual optimal policy from
+  heterogeneous data.
+\newblock \emph{Annals of statistics}, 53(4):1513.
+
+\bibitem[{{OctoTools authors}(2026)}]{octotools2026}
+{OctoTools authors}. 2026.
+\newblock Octotools: A training-free planner-executor-tool-cards generalist.
+\newblock In \emph{Annual Meeting of the Association for Computational
+  Linguistics (ACL)}.
+\newblock Placeholder citation; replace with canonical entry.
+
+\bibitem[{Ouyang et~al.(2026)Ouyang, Yan, Chen, Han, Wang, Mishra, Meng, Li,
+  Jiao, Zha et~al.}]{ouyang2026skillos}
+Siru Ouyang, Jun Yan, Yanfei Chen, Rujun Han, Zifeng Wang, Bhavana~Dalvi
+  Mishra, Rui Meng, Chun-Liang Li, Yizhu Jiao, Kaiwen Zha, and 1 others. 2026.
+\newblock Skillos: Learning skill curation for self-evolving agents.
+\newblock \emph{arXiv preprint arXiv:2605.06614}.
+
+\bibitem[{Shazeer et~al.(2017)Shazeer, Mirhoseini, Maziarz, Davis, Le, Hinton,
+  and Dean}]{shazeer2017moe}
+Noam Shazeer, Azalia Mirhoseini, Krzysztof Maziarz, Andy Davis, Quoc Le,
+  Geoffrey Hinton, and Jeff Dean. 2017.
+\newblock Outrageously large neural networks: The sparsely-gated
+  mixture-of-experts layer.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}.
+
+\bibitem[{Wang et~al.(2021)Wang, Shelhamer, Liu, Olshausen, and
+  Darrell}]{wang2021tent}
+Dequan Wang, Evan Shelhamer, Shaoteng Liu, Bruno Olshausen, and Trevor Darrell.
+  2021.
+\newblock Tent: Fully test-time adaptation by entropy minimization.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}.
+
+\bibitem[{Wang et~al.(2022{\natexlab{a}})Wang, Zhang, Ebrahimi, Sun, Zhang,
+  Lee, Ren, Su, Perot, Dy, and Pfister}]{wang2022dualprompt}
+Zifeng Wang, Zizhao Zhang, Sayna Ebrahimi, Ruoxi Sun, Han Zhang, Chen-Yu Lee,
+  Xiaoqi Ren, Guolong Su, Vincent Perot, Jennifer~G. Dy, and Tomas Pfister.
+  2022{\natexlab{a}}.
+\newblock Dualprompt: Complementary prompting for rehearsal-free continual
+  learning.
+\newblock In \emph{European Conference on Computer Vision (ECCV)}, pages
+  631--648.
+
+\bibitem[{Wang et~al.(2022{\natexlab{b}})Wang, Zhang, Lee, Zhang, Sun, Ren, Su,
+  Perot, Dy, and Pfister}]{wang2022learning}
+Zifeng Wang, Zizhao Zhang, Chen-Yu Lee, Han Zhang, Ruoxi Sun, Xiaoqi Ren,
+  Guolong Su, Vincent Perot, Jennifer~G. Dy, and Tomas Pfister.
+  2022{\natexlab{b}}.
+\newblock Learning to prompt for continual learning.
+\newblock In \emph{Proceedings of the IEEE/CVF Conference on Computer Vision
+  and Pattern Recognition (CVPR)}, pages 139--149.
+
+\bibitem[{Zeng et~al.(2025)Zeng, Liu, Chen, He, Liao, Tian, Wang, Wang, Yang,
+  Yin et~al.}]{zeng2025futurex}
+Zhiyuan Zeng, Jiashuo Liu, Siyuan Chen, Tianci He, Yali Liao, Yixiao Tian,
+  Jinpeng Wang, Zaiyuan Wang, Yang Yang, Lingyue Yin, and 1 others. 2025.
+\newblock Futurex: An advanced live benchmark for llm agents in future
+  prediction.
+\newblock \emph{arXiv preprint arXiv:2508.11987}.
+
+\bibitem[{Zhuo et~al.(2025)Zhuo, Wang, Ding, Kumar, and
+  Wang}]{zhuo2025training}
+Terry~Yue Zhuo, Dingmin Wang, Hantian Ding, Varun Kumar, and Zijian Wang. 2025.
+\newblock Training language model agents to find vulnerabilities with ctf-dojo.
+\newblock \emph{arXiv preprint arXiv:2508.18370}.
+
+\end{thebibliography}

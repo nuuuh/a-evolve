@@ -1,0 +1,88 @@
+% % !TEX root = ../main.tex
+
+% \section{Introduction}
+% \label{sec:intro}
+% Agentic LLMs have been increasingly applied in real-world task streams, e.g., prediction markets, security competitions, forecasting platforms. Beyond the LLM model itself, the emerging paradigm of \emph{agentic evolution}: agents that update their own harness~\cite{} (prompts, skills, tools, etc) from prior task-solving experience, has gained significant attentions and proven to be useful. Recent systems such as A-Evolve~\cite{}, GEPA~\cite{}, and Meta-Harness~\cite{} report strong gains on i.i.d.\ benchmarks like SWE-bench and Terminal-bench. Yet these evaluations operate on short-horizon, manually curated train/val/test splits, the minimum conditions under which agentic evolution can function, rather than on the long, time-ordered streams that characterize real deployment. This gap leaves open whether the reported gains transfer to the settings the methods will ultimately face.
+
+
+% We argue that real-world deployment is structurally distinguished from i.i.d.\ evaluation by three dimensions that prior agentic evolution overlooks. \textbf{(D1) Long horizon streaming:} in the real-world deployment, tasks arrive and are evaluated chronologically over a long period of time (e.g., months or years), during which the harness accumulates. Therefore, each turn of evolution decision affects all downstream tasks. \textbf{(D2) Multi-modality:} real-world streams are heterogeneous. A prediction-market platform, for example, mixes politics, finance, and sports questions, each calling for distinct skills, tools, and prompting strategies. No single harness can be simultaneously optimal across all of them, leaving prior unconditional evolvers stuck in the classic one-fits-all dilemma~\cite{}. \textbf{(D3) Non-stationarity:} naturally derived from D1 and D2 over time, task distribution $P_t$ at time $t$ is not the same as $P_{t'}$ at a later time $t'$, meaning each task is drawn from a time-varying distribution rather than a fixed one. Past experience therefore does not transfer uniformly. Together, these three dimensions demand a broader paradigm than the naive agentic evolution: an agent must not only \emph{build} its harness from accumulated experience but also \emph{fit} the harness to each task. We refer to this expanded paradigm as \textbf{\emph{agentic harnessing}}, encompassing two complementary axes: \emph{agentic evolution} (harness construction across the stream) and \emph{agentic navigation} (task-wise harness conditioning). Prior agentic evolution covers only the first axis.
+
+
+% \zw{we can also put this preliminary study in later sections (method or experiment) if the intro is too long}
+% Each dimension surfaces a concrete failure of current agentic evolution (Figure~\ref{fig:three_signatures}). \textbf{First}, under D3 the evolver must blend stationary with regime-specific signal into a single harness, so continued evolution past an inflection point actively erodes downstream performance, showing the signature of \textit{non-monotonic evolution} in Figure~\ref{fig:three_signatures}a. \textbf{Second}, under D2 covering many modes requires coordinated multi-file artifacts that weak evolvers cannot construct, while strong evolvers saturate at small budgets and gain little from more cycles, exposing evolver capability rather than compute as the binding constraint, showing the signature of a \textit{construction bottleneck} in Figure~\ref{fig:three_signatures}b. \textbf{Third}, under D1 the long horizon only compounds when accumulated experience is relevant to the regime encountered downstream; when it is not, the evolver has no signal to extract from $\Hist$ alone and any closure relies on slow generic-skill transfer rather than directed learning, showing the signature of \textit{experience insufficiency} in Figure~\ref{fig:three_signatures}c. \textbf{Together}, these signatures motivate a paradigm that not only constructs a harness over time during evolution but also navigates the harness toward task optimum during inference.
+
+
+% \begin{figure}[t]
+% \centering
+% \rule{0.45\textwidth}{4.5cm}
+% \caption{Empirical signatures of the three failure modes induced by long-horizon deployment: (a) \emph{non-monotonic evolution}, per-batch accuracy under full evolution on PolyBench; (b) \emph{construction bottleneck}, end-of-run artifact-type distribution by evolver tier; (c) \emph{experience insufficiency}, novel-regime failure rate on the zh-finance slice of FutureX versus evolver cycles.}
+% \label{fig:three_signatures}
+% \end{figure}
+
+% In this paper, we approach the three problem dimensions and the specific signatures by formalising the two axes of agentic harnessing as a regret decomposition, producing an \emph{evolution loss} ($\Levo$) and a \emph{navigation loss} ($\Ladapt$), with experience availability as a third axis outside the decomposition. We then propose one remedy per axis: \textit{multi-agent evolution} for reducing $\Levo$; \textit{agentic navigation} for reducing $\Ladapt$; and \textit{Human-in-the-loop} for auxiliary evolution steering to compensate the insufficiency of past experience. We summarize the contributions as follows:
+
+% \begin{compactenum}[(1)]
+%   \item \textbf{Conceptual framework.} We formalise \emph{agentic harnessing} as the joint paradigm of agentic evolution and navigation, and decompose its regret as $\Levo + \Ladapt$, exposing the two axes as independently addressable bottlenecks.
+%   \item \textbf{Architectural remedies.} We propose three composable remedies, one per axis of agentic harnessing: multi-agent evolution on $\Levo$, agentic navigation on $\Ladapt$, and human-in-the-loop integration for the orthogonal experience-availability axis.
+%  \item \textbf{Empirical validation.} We evaluate on three temporally ordered benchmarks (PolyBench, CTF-Dojo, FutureX) that exhibit long-horizon streams with explicit non-stationarity and modality shifts, against seven baselines spanning the major agentic-system paradigms. We further provide quantitative analyses of the two decomposed regrets, $\Levo$ and $\Ladapt$.
+% \end{compactenum}
+
+
+
+
+
+% !TEX root = ../main.tex
+
+\section{Introduction}
+\label{sec:intro}
+
+
+An agent's harness, comprising the prompts, skills, tools, and supporting infrastructure that surround a fixed LLM, is a primary determinant of task-solving performance. \emph{Auto-harness systems} such as A-Evolve~\cite{lin2026position}, GEPA~\cite{agrawal2025gepa}, and Meta-Harness~\cite{lee2026meta} performs evolution to construct harness automatically from execution feedback, and report substantial gains on static offline benchmarks such as SWE-bench~\cite{jimenez2024swe}. However, online real-world deployment, whose tasks and evaluations follow a strict chronologic order, demands \emph{sustained self-improvement}: a sustained improvement of the harness as the agent operates on an open-ended task stream rather than on a fixed evaluation set. 
+Representative settings include prediction-market platforms with thousands of questions across diverse topics over weeks~\cite{cheng2026polybench}, security competitions spanning over a decade of evolving challenges~\cite{zhuo2025training}, and forecasting services handling cross-lingual queries from heterogeneous sources~\cite{zeng2025futurex}.
+
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/figure_c1_paper.pdf}
+% \vskip -1em
+\caption{Harness overfits past-stream patterns.
+\textbf{Top:} unbounded-run skills grow from 12 generic to 34, prompt size grows from 2KB to 68KB.
+\textbf{Bottom:} pass-rate lift for evolution with fixed cycles on Polymarket trading tasks overtime.}
+\label{fig:c1}
+% \vskip -1.5em
+\end{figure}
+
+
+
+
+% \zhan {Starting with an example why stationary harness (Paragraph 3) fails maybe easier for me to understand and is also a good way to opens up D1, D2 and D3 introduction}
+
+A concrete deployment failure illustrates the gap. As shown in Figure~\ref{fig:c1}, we perform A-evolve on polymarket trading tasks across weeks with different evolution budgets (evolution stops after N cycles). While evolution initially improves the harness (lift compared to no evolution), the runs with more budget accumulates source preferences and tools growth that consume context and bias later tasks. Across all five evolution-budget settings, every curve peaks early and declines, with fewer budget runs beating those with more evolutions, which indicates achieving sustained improvement on open-ended task stream requires more than continual update with more cycles.
+
+Therefore, as illustrated in Figure~\ref{fig:teaser}, we point out three deployment dimensions that distinguish the two settings. \textbf{(D1) Unbounded Streams.} The task stream has no fixed train/test cutoff or designated endpoint; feedback, trajectories, and harness state keep accumulating during deployment, creating heavy burden for the evolution.
+% What matters is cumulative performance over the entire stream.
+% {This accumulating experience demands harnesses with effective and generalizable structure from a large and growing volume of trajectories, which is essentially a complex multi-hop task. 
+Existing auto-harness systems built around a single-agent evolver are bounded by a finite context window, leaving little room to approach the large and growing volume of trajectories that effective and generalizable harness would require to be built. \textbf{(D2) Task heterogeneity.} The stream contains tasks of varied types that demand different harness components. A prediction-market platform, for example, mixes politics, sports, and finance questions in the same hour, each calling for distinct sources, tools, and prompting patterns. This rationale parallels a more general phenomenon: a single fixed policy is rarely optimal across heterogeneous problems~\cite{miao2025reinforcement}.
+{Existing auto-harness systems analogously deploy a static dense harness across the stream, with no solve-time adaptation to the task at hand.} \textbf{(D3) Distributional non-stationarity.} As the stream progresses, incoming tasks shift away from the experience the harness was last fitted on. A harness optimised for recent cycles therefore drifts out of fit for new tasks, even with rich historical experience. Closing this gap requires per-task contextual adaptation of the harness, not only continued historical fitting. Additional diagnostics are shown in Appendix~\ref{app:benchmarks}.
+
+% Consequently, these three dimensions produce empirical failures in current auto-harness systems. Unbounded streams turn evolution decisions into downstream commitments; heterogeneous tasks make one static harness underfit specialised regimes; and non-stationarity makes yesterday's useful experience potentially harmful tomorrow. A static one-harness-fits-all configuration cannot exploit the heterogeneity in the stream either.
+
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/teaser.pdf}
+% \vskip -1em
+\caption{Three deployment dimensions in open-ended task streams.}
+% \zhan{"open-ended task streams" seems inconsistent, which is just one pillar in your intro}
+\label{fig:teaser}
+\vskip -1em
+\end{figure}
+
+{We address these three dimensions under a unified analytical framework and identify two root gaps that prior auto-harness systems overlook. This analysis motivates: (1) \emph{Sustained auto-harness} (\S\ref{sec:method-multi}), which replaces stateless one-shot evolution with a stateful multi-agent system with cross-cycle knowledge for better harness construction; and (2) \emph{Solve-time adaptation} (\S\ref{sec:method-nav}), which adapts a task-relevant harness for each problem prior to solving, restoring per-task fit on a heterogeneous, drifting stream. Beyond the two axes, we further introduce a third axis: human-in-the-loop (HITL) for auxiliary steering of the harness to incorporate human insights and provisions that are absent from historical experience.} Our contributions are:
+% \zhan {I feel three major contributions are: analysis, system, experiments -- my recommendations
+% (1) A deployment-regime analysis of open-ended agentic task streams. (2) A novel evolving-agent system for sustained agentic self-improvement. (3) Comprehensive empirical validation with strong sustained gains.}
+\begin{compactenum}[(1)]
+  \item {\textbf{Deployment-regime analysis of open-ended agentic streams.} We formalise why static auto-harness evaluation is insufficient once tasks arrive as unbounded, heterogeneous, and non-stationary streams. The framework decomposes the gap towards the optimal harness into evolution loss and adaptation loss, providing guidance for auto-harness system designs.}
+  \item {\textbf{Adaptive Auto-harness system.} We introduce a stateful multi-agent evolver for sustained harness construction, a harness-tree router for solve-time adaptation, and structurally triggered human-in-the-loop hooks for regimes where historical experience is insufficient.}
+  \item \textbf{Comprehensive empirical validation and diagnosis.} We evaluate on three temporal streams spanning prediction markets, security challenges, and event forecasting against other auto-harness systems. Beyond aggregated performance, we provide in-depth analysis and evidence for the proposed gaps, component ablations, and human-in-the-loop slice analyses.
+\end{compactenum}

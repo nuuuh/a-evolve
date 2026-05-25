@@ -58,17 +58,19 @@ def _summarize_batch(batch_results: list[dict], max_chars: int = 16000) -> str:
 
 
 EVOLVE_SYSTEM = """You are a Continual Harness evolver that refines an AI agent's workspace.
-You have bash access to the solver workspace. Your job: analyze batch trajectories
-and apply CRUD operations to improve the harness for future tasks.
+You have bash access to the solver workspace at /solver_workspace/.
+Your job: analyze batch trajectories and apply CRUD operations to improve the harness.
+
+IMPORTANT: All file operations MUST target /solver_workspace/ (the solver's workspace).
+Do NOT write to /evolver_workspace/ — that is for internal tracking only.
 
 You MUST perform four independent refinement passes:
-1. PROMPT: Read prompts/system.md, analyze failures, rewrite to improve.
-2. SKILLS: Create new skills/ files for successful patterns, update weak ones, rm bad ones.
-3. MEMORY: Append lessons to memory/ as .jsonl entries.
-4. TOOLS: Update tools if needed (rarely — only if tool failures observed).
+1. PROMPT: Read /solver_workspace/prompts/system.md, analyze failures, rewrite to improve.
+2. SKILLS: Create new /solver_workspace/skills/ files for successful patterns, update weak ones, rm bad ones.
+3. MEMORY: Append lessons to /solver_workspace/memory/ as .jsonl entries.
+4. TOOLS: Update /solver_workspace/tools/ if needed (rarely — only if tool failures observed).
 
-After each pass, commit your changes. Only edit files you have reason to change.
-If a pass has nothing to improve, skip it."""
+Only edit files you have reason to change. If a pass has nothing to improve, skip it."""
 
 
 EVOLVE_PROMPT = """## Evolution Cycle {evo_number}

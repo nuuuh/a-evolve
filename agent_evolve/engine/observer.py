@@ -43,16 +43,16 @@ def _parse_iso_tolerant(raw: Any) -> datetime | None:
 def _label_revealed(obs: Observation, batch_ts: datetime | None) -> bool:
     """True iff a task's ground-truth label should be included in the JSONL.
 
-    Rule: the task's resolution date is on or before ``batch_ts``.
-    Returns False if the task has no ``resolution_date`` / ``resolved_at``
-    field (e.g. CTF challenges) or if ``batch_ts`` is None.
+    Tasks WITHOUT a resolution_date (e.g. CTF challenges) are immediately
+    revealed — there is no temporal ordering to protect.
+    Tasks WITH a resolution_date are revealed iff resolution <= batch_ts.
     """
-    if batch_ts is None:
-        return False
     meta = obs.task.metadata or {}
     raw = meta.get("resolution_date") or meta.get("resolved_at")
     resolved = _parse_iso_tolerant(raw)
     if resolved is None:
+        return True
+    if batch_ts is None:
         return False
     if not batch_ts.tzinfo:
         batch_ts = batch_ts.replace(tzinfo=timezone.utc)

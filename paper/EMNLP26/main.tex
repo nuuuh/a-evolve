@@ -1,0 +1,117 @@
+\documentclass[11pt]{article}
+
+% Official ACL style files (acl-org/acl-style-files, master branch).
+% Change "review" to "final" for camera-ready, or "preprint" for a
+% non-anonymous preprint with page numbers.
+
+
+\usepackage[review]{acl}
+
+% Standard package includes
+\usepackage{times}
+\usepackage{latexsym}
+
+% For proper rendering and hyphenation of words containing Latin characters (including in bib files)
+\usepackage[T1]{fontenc}
+% For Vietnamese characters
+% \usepackage[T5]{fontenc}
+% See https://www.latex-project.org/help/documentation/encguide.pdf for other character sets
+
+% This assumes your files are encoded as UTF8
+\usepackage[utf8]{inputenc}
+
+% This is not strictly necessary, and may be commented out,
+% but it will improve the layout of the manuscript,
+% and will typically save some space.
+\usepackage{microtype}
+
+% This is also not strictly necessary, and may be commented out.
+% However, it will improve the aesthetics of text in
+% the typewriter font.
+\usepackage{inconsolata}
+
+%Including images in your LaTeX document requires adding
+%additional package(s)
+\usepackage{graphicx}
+
+
+
+% acl.sty already loads times + T1 fontenc + inputenc + microtype +
+% inconsolata, so we do not re-declare them here (doing so causes minor
+% font-double-load warnings on some TeX Live installs).
+\usepackage{latexsym}
+
+% Extra packages used by our draft (tables/math/figures).
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage{xcolor}
+\usepackage{array}
+\usepackage{makecell}
+\usepackage{paralist}
+\usepackage{placeins}
+
+% Proposition environments for the theoretical framework.
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}
+
+% Macros for the theoretical terms so prose stays consistent.
+\newcommand{\Levo}{L_{\text{evo}}}
+\newcommand{\Ladapt}{L_{\text{adapt}}}
+\newcommand{\Hist}{\mathcal{H}_t}
+\newcommand{\Shift}{\Sigma_t}
+\newcommand{\Phimulti}{\Phi_{\text{multi}}}
+\newcommand{\Phisingle}{\Phi_{\text{single}}}
+
+
+\newcommand{\wei}[1]{\textcolor{orange}{\#Wei:~#1\#}}
+\newcommand{\weiedit}[1]{\textcolor{brown}{\#Edits:~#1\#}}
+\newcommand{\zw}[1]{\textcolor{blue}{\#Zewen:~#1\#}}
+\newcommand{\minhua}[1]{\textcolor{purple}{\#Minhua:~#1\#}}
+\newcommand{\zhan}[1]{\textcolor{teal}{\#Zhan:~#1\#}}
+\newcommand{\bing}[1]{{\color{olive}\bf [Bing: #1]}}
+
+
+% \title{Adaptive Auto-Harness: Self-Improvement for Long-Running Agentic Systems}
+
+% \title{Adaptive Auto-Harness: Self-Improvement for Long-term Agentic System Deployment}
+
+% \title{Adaptive Auto-Harness: Self-Improvement for Lifelong Agentic System Deployment}
+
+\title{Adaptive Auto-Harness: Sustained Self-Improvement for Agentic System Deployment on Open-Ended Task Streams}
+
+
+\author{
+Zewen Liu$^{1}$, Juntong Ni$^{1}$, Xianfeng Tang$^{2}$,
+Max S.Y. Lau$^{1}$, Qi He$^{3}$,  Wenpeng Yin$^{4}$, Wei Jin$^{1}$,
+\\
+$^{1}$Emory University, $^{2}$Amazon \\
+\texttt{\{zewen.liu, wei.jin\}@emory.edu}
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Auto-harness systems such as A-Evolve, GEPA, and Meta-Harness automatically construct an LLM agent's harness (prompts, skills, \bing{memories}, tools, infrastructure) and report strong gains on static benchmarks. Real-world deployment, however, demands \emph{sustained agentic system optimization}: continual improvement of the harness as the agent operates on an unbounded stream of tasks. We identify three deployment dimensions that prior systems overlook and propose an analytical framework, a regret decomposition $\Levo + \Ladapt$, that derives two complementary operations: \emph{continual auto-harness} (a stateful multi-agent evolver with cross-cycle knowledge) and \emph{runtime adaptation} (a strategy-tree navigator that selects a task-relevant harness prior to solving), plus a human-in-the-loop channel for regimes outside prior experience. Our system outperforms A-Evolve, GEPA, and Meta-Harness on three real task streams. \zw{will revise in the end}
+\end{abstract}
+
+\input{sections/introduction}
+\input{sections/related_work}
+\input{sections/method}
+\input{sections/experiment}
+\input{sections/conclusions}
+\clearpage
+
+% Bibliography commented out while citations are placeholders.
+% Uncomment once \cite{} calls have keys.
+\bibliography{references}
+
+\appendix
+\input{sections/appendix}
+
+\end{document}

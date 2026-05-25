@@ -17,7 +17,7 @@ navigation_enabled: true
 branch_confidence: 0.7
 orchestrator: structured_navigation
 structured_evolution:
-  prompts_dir: experiments/polybench/evolver_prompts
+  prompts_dir: experiments/polybench/evolver_prompts_nav
   research_parallel: 3
   build_verify_retries: 3
   hitl_enabled: false

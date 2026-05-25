@@ -1,0 +1,135 @@
+% !TEX root = ../main.tex
+
+\section{Benchmark Details}
+\label{app:benchmarks}
+
+We provide full descriptions of the three benchmarks summarized in \S\ref{sec:setup}. Across all three, tasks arrive in strict chronological order: the solver may only access information available before each task's release timestamp, enforced by a temporal-reveal gate that filters retrieval results and ground-truth labels accordingly. Together, the benchmarks instantiate the deployment dimensions defined in \S\ref{sec:intro}: finite evaluated prefixes of unbounded streams (D1), within-stream heterogeneity across topics, languages, and challenge categories (D2), and distribution shift over time (D3). Non-stationarity diagnostics are shown in Appendix~\ref{app:nonstationarity}. Throughout, let $N$ be the number of tasks in the stream, $\mathbb{1}_i$ the correctness indicator on task $x_i$, and $\hat{p}_i \in [0,1]$ the solver's confidence.
+
+\subsection{PolyBench}
+
+\noindent\textbf{Source and composition.} PolyBench is a Polymarket-derived prediction-market stream of 5{,}075 binary-outcome trades over 16 days (Feb 6--22, 2026), spanning politics, sports, finance, crypto, and entertainment markets. Markets are sampled to keep the per-day volume balanced across the five categories; resolution uses the official Polymarket outcome reported on-chain.
+
+\noindent\textbf{Temporal-reveal gate.} For each market we record its release timestamp and resolution timestamp. The solver may use any retrieval result whose source publication time precedes the release timestamp; resolution outcomes are revealed to the evolver only after the resolution date.
+
+\noindent\textbf{Metrics.} Let $\tau$ be the confidence gate (default $\tau{=}0.55$).
+\begin{align*}
+\mathrm{Cov} &= \tfrac{1}{N}\textstyle\sum_i \mathbb{1}[\hat{p}_i > \tau] \\
+\mathrm{Acc} &= \tfrac{1}{N}\textstyle\sum_i \mathbb{1}_i \\
+\mathrm{CWR} &= \textstyle\sum_i w_i (2\mathbb{1}_i - 1), \quad w_i \propto |\hat{p}_i - 0.5|
+\end{align*}
+Total portfolio return is reported as the dollar P\&L of a fixed-bankroll trader sized proportionally to $w_i$ on each gated trade.
+
+\subsection{CTF-Dojo}
+
+\noindent\textbf{Source and composition.} CTF-Dojo is a 261-challenge security-competition stream drawn from \texttt{pwncollege/ctf-archive}, chronologically ordered over 13 years (2011--2024). Challenges span binary exploitation, web security, cryptography, reverse engineering, and forensics categories. The chronological release order intentionally exposes the solver to evolving CTF tooling and trick families across the 13-year span (D3).
+
+\noindent\textbf{Sandbox and verification.} Each challenge runs inside a per-task Docker sandbox with a constrained network policy; flags are submitted as text and verified via SHA-256 hash comparison against the official flag.
+
+\noindent\textbf{Metrics.}
+\begin{align*}
+\mathrm{Pass} &= \tfrac{1}{N}\textstyle\sum_i \mathbb{1}_i \\
+\mathrm{Trend} &= \operatorname{slope}_{\mathrm{OLS}}\left(\{(t_i,\mathbb{1}_i-\mathbb{1}^{\mathrm{Sonnet}}_i)\}_{i=1}^{N}\right) \\
+\mathrm{Q25}_{60} &= Q_{0.25}\left(\left\{\tfrac{1}{60}\textstyle\sum_{i\in W_j}\mathbb{1}_i\right\}_{j}\right)
+\end{align*}
+where $t_i$ is the normalized chronological task index and $W_j$ ranges over 60-task sliding windows. Trend measures whether a method's task-level advantage over the Sonnet no-evolution control improves over the stream; the Sonnet row is therefore zero by construction. Q25@60 reports the lower-tail sliding-window pass rate, so a method must avoid weak windows rather than only score well on average.
+
+\subsection{FutureX}
+
+\noindent\textbf{Source and composition.} FutureX is a 503-question event-forecasting stream over 82 days (Jan--Apr 2026) drawn from FutureX-Past. Questions cover finance, technology, geopolitics, and entertainment domains, with both English and Chinese language variants. The zh-finance slice requires Chinese-language sources unavailable through default English-only retrieval.
+
+\noindent\textbf{Retrieval modes.} \emph{Strict} mode resolves all retrieval through the Wikipedia revision API restricted to revisions before the task's release date. \emph{Live} mode uses DuckDuckGo with a hard cutoff filter applied to result timestamps. The human-steering experiment in RQ5 uses live mode because authenticated providers such as Exa and Serper are gated behind credentials the evolver cannot synthesize from history.
+
+\noindent\textbf{Metrics.}
+\begin{align*}
+\mathrm{Pass} &= \tfrac{1}{N}\textstyle\sum_i \mathbb{1}_i \\
+\mathrm{Trend} &= \operatorname{slope}_{\mathrm{OLS}}\left(\{(t_i,\mathbb{1}_i-\mathbb{1}^{\mathrm{Sonnet}}_i)\}_{i=1}^{N}\right) \\
+\mathrm{Q25}_{60} &= Q_{0.25}\left(\left\{\tfrac{1}{60}\textstyle\sum_{i\in W_j}\mathbb{1}_i\right\}_{j}\right)
+\end{align*}
+These are the same aligned stream metrics used for CTF-Dojo. Trend is Sonnet-adjusted at the task level, and Q25@60 captures lower-tail deployment reliability across the chronological stream.
+
+\section{Additional Figures}
+\label{app:extra}
+
+\subsection{Experiment Mechanism Figures}
+\label{app:experiment_demos}
+
+\begin{figure}[p]
+\centering
+\includegraphics[width=0.9\columnwidth]{figures/rq2_demo.pdf}
+\caption{Representative sustained-evolution cycle. The Analyst diagnoses a failure, Researchers test candidate fixes, the Builder creates reusable artifacts, and the Verifier gates the change before the next cycle.}
+\label{fig:app_rq2_demo}
+\end{figure}
+
+\begin{figure}[p]
+\centering
+\includegraphics[width=0.9\columnwidth]{figures/rq3_demo.pdf}
+\caption{Representative solve-time routing trace. The router reads branch metadata, selects the sports-specialized branch for a sports forecasting task, and solves with the branch-specific prompt, skills, and tools.}
+\label{fig:app_rq3_demo}
+\end{figure}
+
+\begin{figure}[p]
+\centering
+\includegraphics[width=\columnwidth]{figures/rq4_demo_vertical.pdf}
+\caption{Representative human-steering triggers. Credential verification unlocks authenticated search during research, while task-board steering supplies source directions before the next build.}
+\label{fig:app_rq4_demo}
+\end{figure}
+
+\subsection{Benchmark Non-Stationarity Diagnostics}
+\label{app:nonstationarity}
+
+Figures~\ref{fig:app_nonstationarity_polybench}--\ref{fig:app_nonstationarity_futurex} provide benchmark-specific evidence that the temporal streams are not static IID pools.
+
+\begin{center}
+\captionsetup{type=figure,hypcap=false}
+\centering
+\includegraphics[width=\columnwidth]{figures/appendix_nonstationarity_polybench.png}
+\caption{\textbf{PolyBench non-stationarity.} Strategy-relevant market properties vary across the temporal stream, so a harness fitted to earlier batches can become mismatched to later markets.}
+\label{fig:app_nonstationarity_polybench}
+\end{center}
+
+\begin{center}
+\captionsetup{type=figure,hypcap=false}
+\centering
+\includegraphics[width=\columnwidth]{figures/appendix_nonstationarity_ctf_dojo.png}
+\caption{\textbf{CTF-Dojo non-stationarity.} The chronological stream expands into new competition frontiers, exposing the solver to changing challenge regimes rather than a fixed IID task pool.}
+\label{fig:app_nonstationarity_ctf_dojo}
+\end{center}
+
+\begin{center}
+\captionsetup{type=figure,hypcap=false}
+\centering
+\includegraphics[width=\columnwidth]{figures/appendix_nonstationarity_futurex.png}
+\caption{\textbf{FutureX non-stationarity.} Language, source, and difficulty properties shift across batches, creating solve-time harness mismatch when one static harness is reused for all tasks.}
+\label{fig:app_nonstationarity_futurex}
+\end{center}
+
+\section{Limitations}
+\label{app:limitations}
+
+\noindent\textbf{Benchmark coverage.} We evaluate three domains: prediction markets, cybersecurity challenges, and event forecasting. The D1/D2/D3 frame should be tested further on additional deployment streams such as robotics, biomedical reasoning, and long-form writing.
+
+\noindent\textbf{Evolver class is not scalar.} Our $\Levo$ argument is diagnostic, not predictive. The multi-agent evolver's empirical advantage is demonstrated via ablations and benchmark bottleneck analyses, not by a formal class-expansion bound.
+
+\noindent\textbf{Human steering cost model.} We measure human steering by invocation and resulting slice-level lift. In production, organizational cost, specialist availability, and response-time guarantees may dominate the raw time spent per intervention.
+
+\section{Ethics Statement}
+\label{app:ethics}
+
+We use benchmark tasks derived from public or research datasets and do not introduce private user data. PolyBench uses public prediction-market questions and outcomes; FutureX uses event-forecasting questions and time-filtered retrieval; CTF-Dojo uses public CTF challenges executed in isolated Docker sandboxes. The CTF experiments are limited to challenge containers and flag verification, and do not target real systems or third-party infrastructure.
+
+The human-steering experiments are conducted by the authors and are limited to source guidance, task-board edits, and credential decisions for search tools. We do not ask humans to label benchmark answers or manually choose solver branches. Credentials and provider-specific secrets are not reported in the paper or figures. Because auto-harness systems can strengthen autonomous agents, especially on cybersecurity tasks, releases should preserve sandbox restrictions, avoid exposing live credentials, and document that CTF results are for authorized benchmark settings only.
+
+\section{Prompt Interfaces}
+\label{app:prompts}
+
+\subsection{F\_Navigate System Prompt}
+
+The navigation prompt instructs the router to inspect the task context and branch metadata, compare candidate harness branches, and select exactly one branch before solving. The router may read branch prompts, tools, skills, and summaries, but it does not mutate the harness during solve time.
+
+\subsection{Analyst, Researcher, Builder, and Verifier Prompts}
+
+The multi-agent evolution prompts assign four separated roles. The Analyst summarizes failures and updates the task board; Researchers test hypotheses and gather evidence; the Builder converts verified findings into prompts, tools, skills, or infrastructure; and the Verifier runs checks that gate whether the change is committed to the next cycle.
+
+\subsection{Human-Steering Trigger Prompts}
+
+The human-steering prompts are used only when the evolver lacks information that cannot be inferred from $\Hist$, such as blocked credentials or source-specific access paths. The prompt requests the minimum external input needed to continue evolution and records the supplied steering in the task board or research log.

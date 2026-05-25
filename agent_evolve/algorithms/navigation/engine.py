@@ -149,7 +149,8 @@ class NavigationEngine(AEvolveEngine):
 
         The returned name is verified to exist in git (not just in the
         in-memory tree), so callers can checkout it without a fallback
-        race.
+        race. Routing falls back to "main" when the navigator's confidence
+        is below ``config.branch_confidence_threshold``.
         """
         vc = VersionControl(workspace_root) if workspace_root else None
 
@@ -160,6 +161,12 @@ class NavigationEngine(AEvolveEngine):
         # haven't failed checkout too many times.
         viable = self._viable_branches(tree, vc)
         if not viable:
+            return "main"
+
+        # Confidence threshold from config (default 0.7).
+        threshold = float(getattr(self.config, "branch_confidence_threshold", 0.7))
+        if threshold < 0:
+            # Negative means "never branch" — always route to main.
             return "main"
 
         branch_summaries = self._read_branch_leaves(tree, workspace_root, viable)
@@ -177,7 +184,18 @@ class NavigationEngine(AEvolveEngine):
                 )
                 result = json.loads(response.content)
                 raw = result.get("branch", "main")
-                return self._resolve_branch_name(raw, tree, vc=vc)
+                conf = float(result.get("confidence", 0.0))
+                resolved = self._resolve_branch_name(raw, tree, vc=vc)
+                # If router returns a non-main branch with confidence below
+                # threshold, fall back to main. main is always allowed
+                # regardless of confidence.
+                if resolved != "main" and conf < threshold:
+                    logger.info(
+                        "Routing %s → main (confidence %.2f < %.2f)",
+                        raw, conf, threshold,
+                    )
+                    return "main"
+                return resolved
         except Exception:
             pass
         return "main"
@@ -297,9 +315,9 @@ class NavigationEngine(AEvolveEngine):
         """
         if viable is not None:
             allowed = set(viable) | {"main"}
-            tree_branches = [b for b in tree.branches if b.name in allowed]
+            tree_branches = [b for b in tree.branches if b.name in allowed and b.name != "main"]
         else:
-            tree_branches = list(tree.branches)
+            tree_branches = [b for b in tree.branches if b.name != "main"]
         branch_names = ["main"] + [b.name for b in tree_branches]
         descriptions = {"main": "general-purpose root strategy"}
         for b in tree.branches:

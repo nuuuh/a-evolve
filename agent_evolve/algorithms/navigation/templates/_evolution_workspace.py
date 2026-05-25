@@ -322,6 +322,8 @@ def update_strategy_tree(
 
     # Branches
     for b in getattr(tree, "branches", []):
+        if b.name == "main":
+            continue
         lines.append(f"### {b.name}")
         lines.append(b.description or "(no description)")
         lines.append(f"- Created: cycle {b.created_at_cycle}")

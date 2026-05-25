@@ -11,11 +11,13 @@ CSR Δ = CSR_end − CSR_start, where CSR at batch $b$ = (cumulative successes t
 
 | # | Row | Config | PB Cov / Acc / CWR / PortRet | CTF Pass / CSR Δ / Turns | FX Pass / DomCov / Sharpe |
 |---|---|---|:---:|:---:|:---:|
-| 1 | Base agent (H0) | `baseline.yaml` | 31.7 / 22.2 / +5.5 / +1.7 | 37.2 / −12.7 / 19.5 | 31.0 / 33.1 / 1.93 |
-| 2 | A-Evolve (linear chain) | `full_evo.yaml` | 21.1 / 18.4 / +34.1 / +7.2 | 45.2 / −14.6 / 9.5 | 47.5 / 54.4 / 2.51 |
-| 3 | GEPA-lite | `gepa_lite_evo.yaml` | 32.6 / 13.4 / +0.8 / +0.3 | 42.9 / −11.9 / 18.5 | 28.2 / 31.7 / 1.87 |
-| 4 | Meta-Harness-lite | `meta_harness_lite_evo.yaml` | 55.3 / 50.8 / +579.3\* / +320.3 | 41.0 / −8.8 / 18.3 | 29.4 / 31.6 / 2.42 |
-| 5 | OctoTools (static, human-designed) | `octotools_expert_evo.yaml` | 54.6 / 39.9 / +35.1 / +19.1 | 38.3 / −26.5 / 17.0 | 25.6 / 28.6 / 1.77 |
+| 1 | Base agent (H0) | `baseline.yaml` | 31.7 / 22.2 / +5.5 / +1.8 | 37.2 / −12.8 / 19.5 | 31.0 / 32.2 / 1.93 |
+| 2 | A-Evolve (linear chain) | `full_evo.yaml` | 21.1 / 18.4 / +34.1 / +7.2 | 45.2 / −14.8 / 9.5 | 47.5 / 44.5 / 2.46 |
+| 3 | GEPA-lite | `gepa_lite_evo.yaml` | 32.6 / 13.4 / +0.8 / +0.3 | 42.9 / −12.1 / 18.5 | 28.2 / 29.2 / 1.69 |
+| 4 | Meta-Harness-lite | `meta_harness_lite_evo.yaml` | 55.3 / 50.8 / +579.3\* / +320.3 | 41.0 / −9.0 / 18.3 | 29.4 / 33.9 / 2.10 |
+| 5 | OctoTools (static, human-designed) | `octotools_expert_evo.yaml` | 54.4 / 40.0 / +37.5 / +20.4 | 38.3 / −26.7 / 17.0 | 25.6 / 27.5 / 1.61 |
+| 5b | Continual Harness-lite (Karten 2025) | `continual_harness_lite_evo.yaml` | 10.4 / 8.5 / +16.4 / +1.7 | 25.7 / +25.7 / 10.0 | 31.8 / 32.0 / 2.03 |
+| 5c | SkillOS-lite (Ouyang 2025) | `skillos_lite_evo.yaml` | 24.1 / 21.4 / +789.3 / +190.5 | 29.5 / +29.5 / 13.7 | 29.8 / 31.2 / 2.00 |
 | 6 | **Multi-agent only** | `structured_evolution_evo.yaml` | **95.8 / 79.8** / +366.2 / +350.9 | **52.1 / +12.3** / 12.8 | **49.5 / 57.1** / 2.57 |
 | 7 | Navigation only | `navigation.yaml` | 91.4 / 77.4 / **+385.1 / +352.2** | 46.0 / −8.8 / **15.5** | 44.1 / 50.6 / **2.73** |
 | 8 | Full system (M+N) | `structured_navigation_evo.yaml` | 93.9 / 76.7 / +377.9 / +354.8 | ⏳ 80 tasks only | ⏳ 160 tasks only |

@@ -11,7 +11,7 @@ evolver_max_tokens: 128000
 solve_workers: 8
 egl_threshold: 0.05
 egl_window: 3
-sandbox_network: host
+sandbox_network: none
 evolver_sandbox_network: none
 orchestrator: structured_evolution
 structured_evolution:

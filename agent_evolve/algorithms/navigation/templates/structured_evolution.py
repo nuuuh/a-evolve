@@ -81,9 +81,13 @@ def _load_prompt(prompts_dir: Path | None, name: str, fallback: str = "") -> str
     """Load a general prompt and append benchmark-specific context.
 
     1. Load the general prompt from templates/prompts/<name>
-    2. Load the benchmark context from <prompts_dir>/<name> if it exists
+    2. Load the benchmark context from <prompts_dir>/<name> if it exists.
+       If <prompts_dir> is named ``evolver_prompts_nav`` (the
+       full-system-specific override) and <name> is not present there,
+       fall back to the sibling ``evolver_prompts`` directory so shared
+       per-benchmark facts are still loaded.
     3. Replace {benchmark_context} in the general prompt with the
-       benchmark content (or empty string if no benchmark file)
+       benchmark content (or empty string if no benchmark file).
     """
     general = _GENERAL_PROMPTS_DIR / name
     if general.exists():
@@ -95,9 +99,16 @@ def _load_prompt(prompts_dir: Path | None, name: str, fallback: str = "") -> str
 
     benchmark_context = ""
     if prompts_dir:
-        bp = Path(prompts_dir) / name
+        pd = Path(prompts_dir)
+        bp = pd / name
         if bp.exists():
             benchmark_context = bp.read_text().strip()
+        elif pd.name == "evolver_prompts_nav":
+            # Inherit shared per-benchmark prompt from the sibling
+            # ``evolver_prompts`` directory.
+            shared = pd.parent / "evolver_prompts" / name
+            if shared.exists():
+                benchmark_context = shared.read_text().strip()
 
     return text.replace("{benchmark_context}", benchmark_context)
 
