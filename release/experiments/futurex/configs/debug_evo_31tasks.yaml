@@ -1,0 +1,56 @@
+# Evolution (H1) on exact 31 live L3+L4 tasks
+batch_size: 31
+max_cycles: 3
+holdout_ratio: 0.0
+
+evolve_prompts: true
+evolve_skills: true
+evolve_memory: true
+evolve_tools: true
+
+evolver_model: <evolver-model-id>
+evolver_max_tokens: 128000
+
+egl_threshold: 0.05
+egl_window: 3
+
+model_name: <solver-model-id>
+sort_by_timestamp: true
+builtin_search: strict
+sandbox_network: bridge
+evolver_sandbox_network: bridge
+
+futurex_difficulty: [3, 4]
+
+futurex_task_ids:
+  - "685141eca047fd005f77ef02"
+  - "685146342537420060414055"
+  - "68517362eb11c800614780de"
+  - "68774eaf0fc811003bd35b6d"
+  - "685e494b6e8dbd006cdc6f7c"
+  - "687071f2d3d00b006b624a8c"
+  - "685173c159f71f006037a1e9"
+  - "687071faab86ea0060215bc7"
+  - "685e4893e582f0005f9cd2c8"
+  - "685e489b6e8dbd006cdc6f70"
+  - "685e48b9e582f0005f9cd2c9"
+  - "685171e0560ebb0061efb2c3"
+  - "6851413f7b52bf0069cac9eb"
+  - "685e48ac6e8dbd006cdc6f71"
+  - "6867949457e54a0061f98f8c"
+  - "68514628aca664006bceb217"
+  - "6851740359f71f006037a1ed"
+  - "6854e0397ff26400687d2031"
+  - "6854dcbc7df94a0060eb86d0"
+  - "68774e69336fa8003b890146"
+  - "687df3a41d972f003b8ba68c"
+  - "685171b65b1af900600a3306"
+  - "685173fb59f71f006037a1ec"
+  - "6851735859f71f006037a1e2"
+  - "6851738859f71f006037a1e5"
+  - "6854dffd0635c0005f0a1d2f"
+  - "6870731ba3a7fb0061457aab"
+  - "68774ddd3083b1003c629ca8"
+  - "6944fde51834a500697575da"
+  - "6945061ed2f0e700661f17a1"
+  - "6945055fb5edfd005d923316"

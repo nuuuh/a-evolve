@@ -1,0 +1,18 @@
+# FutureX V2 — orthogonal_pair template.
+batch_size: 20
+max_cycles: 0
+holdout_ratio: 0.0
+evolve_prompts: true
+evolve_skills: true
+evolve_memory: true
+evolve_tools: true
+evolver_model: <evolver-model-id>
+evolver_max_tokens: 128000
+egl_threshold: 0.05
+egl_window: 3
+model_name: <solver-model-id>
+sort_by_timestamp: true
+builtin_search: "off"
+sandbox_network: bridge
+evolver_sandbox_network: bridge
+orchestrator: orthogonal_pair

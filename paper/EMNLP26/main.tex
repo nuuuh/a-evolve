@@ -97,7 +97,7 @@ $^{1}$Emory University, $^{2}$Amazon \\
 \maketitle
 
 \begin{abstract}
-Auto-harness systems such as A-Evolve, GEPA, and Meta-Harness automatically construct an LLM agent's harness (prompts, skills, \bing{memories}, tools, infrastructure) and report strong gains on static benchmarks. Real-world deployment, however, demands \emph{sustained agentic system optimization}: continual improvement of the harness as the agent operates on an unbounded stream of tasks. We identify three deployment dimensions that prior systems overlook and propose an analytical framework, a regret decomposition $\Levo + \Ladapt$, that derives two complementary operations: \emph{continual auto-harness} (a stateful multi-agent evolver with cross-cycle knowledge) and \emph{runtime adaptation} (a strategy-tree navigator that selects a task-relevant harness prior to solving), plus a human-in-the-loop channel for regimes outside prior experience. Our system outperforms A-Evolve, GEPA, and Meta-Harness on three real task streams. \zw{will revise in the end}
+Auto-harness systems such as A-Evolve, GEPA, and Meta-Harness improve LLM agents by optimizing prompts, skills, tools, memories, and supporting infrastructure from execution feedback, but they are typically evaluated on fixed offline benchmarks. Real deployments instead present open-ended task streams: histories grow without a fixed endpoint, heterogeneous tasks require different harnesses, and problem distributions shift over time. These challenges make a single repeatedly and densely updated harness brittle, causing performance degradation as accuracy peaks early and then declines. This motivates sustained harness construction with task-wise adaptation. We introduce Adaptive Auto-Harness, a framework and system for such streams. The framework decomposes the gap to an oracle harness into evolution loss and adaptation loss. The system addresses these losses with a stateful multi-agent evolver, a harness tree with solve-time routing, and human-steering hooks for cases where history lacks the needed signal. Across prediction-market, security-competition, and event-forecasting streams, Adaptive Auto-Harness outperforms five existing auto-harness baselines and ablations attribute gains to better construction, routing, or targeted human steering.
 \end{abstract}
 
 \input{sections/introduction}
@@ -105,10 +105,10 @@ Auto-harness systems such as A-Evolve, GEPA, and Meta-Harness automatically cons
 \input{sections/method}
 \input{sections/experiment}
 \input{sections/conclusions}
-\clearpage
+\input{sections/limitations}
+\input{sections/ethical_considerations}
+\input{sections/ai_usage}
 
-% Bibliography commented out while citations are placeholders.
-% Uncomment once \cite{} calls have keys.
 \bibliography{references}
 
 \appendix

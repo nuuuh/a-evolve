@@ -1,0 +1,25 @@
+# FutureX — GEPA-lite baseline (reflective prompt evolution, prompts-only).
+batch_size: 20
+max_cycles: 0
+holdout_ratio: 0.0
+
+evolve_prompts: true
+evolve_skills: false
+evolve_memory: false
+evolve_tools: false
+
+evolver_model: <evolver-model-id>
+evolver_max_tokens: 128000
+
+egl_threshold: 0.05
+egl_window: 3
+
+model_name: <solver-model-id>
+sort_by_timestamp: true
+builtin_search: "off"
+sandbox_network: bridge
+evolver_sandbox_network: bridge
+
+orchestrator: gepa_lite
+gepa_lite:
+  recent_reflections: 3

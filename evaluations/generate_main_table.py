@@ -41,8 +41,11 @@ class Method:
 
 METHODS = [
     Method("sonnet", "Sonnet", "polybench_baseline", "ctf_dojo_baseline", "futurex_baseline"),
-    Method("deepseek", "DeepSeek", None, None, None),
-    Method("kimi", "Kimi", None, None, None),
+    Method("haiku", "Haiku", "polybench_baseline_haiku", "ctf_dojo_baseline_haiku", "futurex_baseline_haiku"),
+    Method("deepseek", "DeepSeek", "polybench_baseline_deepseek", "ctf_dojo_baseline_deepseek", "futurex_baseline_deepseek"),
+    Method("kimi", "Kimi", "polybench_baseline_kimi", "ctf_dojo_baseline_kimi", "futurex_baseline_kimi"),
+    Method("glm", "GLM-4.7", "polybench_baseline_glm-4.7", "ctf_dojo_baseline_glm-4.7", "futurex_baseline_glm-4.7"),
+    Method("mistral", "Mistral", "polybench_baseline_mistral", "ctf_dojo_baseline_mistral", "futurex_baseline_mistral"),
     Method("a_evolve", "A-Evolve", "polybench_full_evo", "ctf_dojo_full_evo", "futurex_full_evo"),
     Method("gepa", "GEPA", "polybench_gepa_lite", "ctf_dojo_gepa_lite", "futurex_gepa_lite"),
     Method("meta_harness", "Meta Harness", "polybench_mh_lite", "ctf_dojo_mh_lite", "futurex_mh_lite"),
@@ -194,7 +197,8 @@ def polybench_metrics(results: list[dict], run_dir: Path | None = None) -> dict:
 
     traded = [
         row for row in results
-        if not row.get("gated") and _norm_label(row.get("decision")) != "SKIP"
+        if not row.get("gated")
+        and _norm_label(row.get("decision")) not in {"SKIP", ""}
     ]
     correct = [row for row in traded if row.get("success")]
 
@@ -209,9 +213,30 @@ def polybench_metrics(results: list[dict], run_dir: Path | None = None) -> dict:
 
     coverage = len(traded) / POLYBENCH_TOTAL
     cwr_pct = (cwr_profit / cwr_inv * 100.0) if cwr_inv > 0 else 0.0
+    task_scores = [
+        1.0
+        if (
+            not row.get("gated")
+            and _norm_label(row.get("decision")) not in {"SKIP", ""}
+            and row.get("success")
+        )
+        else 0.0
+        for row in results
+    ]
+    window = 500
+    if len(task_scores) >= window:
+        rolling_sum = sum(task_scores[:window])
+        min_sum = rolling_sum
+        for idx in range(window, len(task_scores)):
+            rolling_sum += task_scores[idx] - task_scores[idx - window]
+            min_sum = min(min_sum, rolling_sum)
+        worst500_acc = min_sum / window * 100.0
+    else:
+        worst500_acc = (sum(task_scores) / len(task_scores) * 100.0) if task_scores else 0.0
 
     return {
         "coverage": coverage * 100.0,
+        "worst500_acc": worst500_acc,
         "acc": len(correct) / POLYBENCH_TOTAL * 100.0,
         "port_ret": cwr_pct * coverage,
         "cwr": cwr_pct,
@@ -364,15 +389,11 @@ def build_table(results_dir: Path) -> tuple[list[dict[str, str]], dict[str, dict
     }
 
     row_specs = [
-        ("PolyBench", "Coverage", "up", "polybench", "coverage", 1, False),
+        ("PolyBench", "Worst@500", "up", "polybench", "worst500_acc", 1, False),
         ("PolyBench", "Accuracy", "up", "polybench", "acc", 1, False),
         ("PolyBench", "Return", "up", "polybench", "port_ret", 1, True),
         ("CTF-Dojo", "Pass", "up", "ctf", "pass", 1, False),
-        ("CTF-Dojo", "Trend", "up", "ctf", "trend", 1, True),
-        ("CTF-Dojo", "Q25@60", "up", "ctf", "q25", 1, False),
         ("FutureX", "Pass", "up", "futurex", "pass", 1, False),
-        ("FutureX", "Trend", "up", "futurex", "trend", 1, True),
-        ("FutureX", "Q25@60", "up", "futurex", "q25", 1, False),
     ]
 
     rows: list[dict[str, str]] = []

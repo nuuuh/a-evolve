@@ -1,0 +1,25 @@
+# PolyBench — Meta-Harness-lite baseline (archive-based proposer, k=1).
+# Fair-comparison port of Meta-Harness (Lee et al., 2026). See
+# agent_evolve/algorithms/navigation/templates/meta_harness_lite.py for details.
+batch_size: 100
+max_cycles: 0
+holdout_ratio: 0.0
+
+# Full harness edit surface (paper's design).
+evolve_prompts: true
+evolve_skills: true
+evolve_memory: true
+evolve_tools: true
+
+# Solver backbone: Sonnet 4.6 (same as all other RQ1 baselines).
+model_name: <solver-model-id>
+
+evolver_model: <evolver-model-id>
+evolver_max_tokens: 128000
+
+solve_workers: 24
+
+egl_threshold: 0.05
+egl_window: 3
+
+orchestrator: meta_harness_lite

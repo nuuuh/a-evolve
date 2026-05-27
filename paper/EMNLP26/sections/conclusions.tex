@@ -2,5 +2,6 @@
 
 \section{Conclusions}
 \label{sec:conclusions}
+\vspace{-0.35em}
 
-Existing auto-harness systems neither improve construction over time nor adapt to each incoming task. We address both gaps with a stateful multi-agent evolver that accumulates cross-cycle knowledge and a harness-tree router that selects a suitable branch at solve time. On three finite prefixes of unbounded deployment streams, the system outperforms all baselines and is the only one whose capability compounds over the stream.
+Open-ended task streams expose three challenges for auto-harness deployment: unbounded task arrival, heterogeneous tasks, and non-stationarity. Adaptive Auto-Harness addresses them by pairing sustained harness construction with solve-time task adaptation. The decomposition into evolution loss and adaptation loss explains why a single repeatedly updated harness is insufficient: the system must construct missing capabilities from stream evidence while selecting a suitable specialized branch for each task. Across three streams, the experiments show complementarity: evolution builds capabilities, routing exploits specialization, and human steering supplies external signals absent from history.

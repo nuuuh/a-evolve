@@ -14,58 +14,48 @@
 \centering
 \footnotesize
 \setlength{\tabcolsep}{2pt}
-\caption{Benchmark statistics for the three chronological task streams. Interval denotes the temporal ordering granularity used during evaluation.}
+\caption{Benchmark statistics for the three chronological task streams.}
+\vskip -1em
 \label{tab:bench_stats}
 \resizebox{\columnwidth}{!}{%
 \begin{tabular}{@{}lrlll@{}}
 \toprule
-Bench. & Tasks & Span & Interval & Domain \\
+Bench. & Tasks & Span & Resolution & Domain \\
 \midrule
-PolyBench & 5{,}075 & Feb 6--22, 2026 & Daily & Prediction markets \\
+PolyBench & 5{,}075 & Feb 6--22, 2026 & Day & Prediction markets \\
 CTF-Dojo  & 261   & 2011--2024 & Year & Security \\
-FutureX   & 503   & Jan--Apr 2026 & Weekly & Forecasting \\
+FutureX   & 503   & Jan--Apr 2026 & Week & Forecasting \\
 \bottomrule
 \end{tabular}
 }
+\vskip -1em
 \end{table}
 
-\noindent\textbf{Solver and evolver.} We use Claude Sonnet 4.6 as the solver for all experiments unless specified, and use Claude Opus 4.6 as the evolver, both at temperature 0 to attribute gains to the evolution algorithm rather than sampling noise; the no-evolution controls additionally report base-agent results for DeepSeek and Kimi. All algorithms share the same batch size (100/20/20 for PolyBench/CTF-Dojo/FutureX), batch loop, and temporal-reveal gate; only the evolution algorithm varies.
-
-\noindent\textbf{Metrics.} Each benchmark reports metrics tailored to its deployment goal. PolyBench reports coverage, all-task accuracy, and total portfolio return. For CTF-Dojo and FutureX, we report the official pass rate (Pass@1) defined by the original benchmarks~\cite{zhuo2025training,zeng2025futurex}. Full definitions are in Appendix~\ref{app:benchmarks}.\zw{need to come back later}
-
-\noindent\textbf{Baselines.} We compare against systems grouped as in Table~\ref{tab:rq1_main}. The no-evolution controls are base agents using \textbf{Sonnet}~\cite{}, \textbf{DeepSeek}~\cite{}, and \textbf{Kimi}~\cite{}. We compare with five auto-harness baselines: \textbf{A-Evolve}~\cite{aevolve}, \textbf{GEPA}~\cite{gepa2025}, \textbf{Meta-Harness}~\cite{metaharness2026} (archive-based proposer, $k{=}1$), \textbf{Continual Harness}, and \textbf{SkillOS}. We also compare with one human-designed system \textbf{OctoTools}~\cite{octotools2026}.
-
-\noindent\textbf{Research questions.}
-\textbf{RQ1} (\S\ref{sec:main-results}): How does Adaptive Auto-Harness compare against existing auto-harness systems on open-ended task streams?
-\textbf{RQ2} (\S\ref{sec:barriers}): How does Adaptive Auto-Harness address benchmark-specific bottlenecks?
-\textbf{RQ3} (\S\ref{sec:ablation}): Does stateful multi-agent evolution with evaluation feedback provide additional gains?
-\textbf{RQ4} (\S\ref{sec:navloss}): Can solve-time routing effectively leverage specialized harness branches?
-\textbf{RQ5} (\S\ref{sec:hitl}): Can human steering help when history provides insufficient signal?
-
-\subsection{Comparison with Baselines}
-\label{sec:main-results}
 
 \begin{table*}[!t]
 \centering
-\caption{Main comparison across no-evolution agents, auto-harness baselines, a human-designed system, and our two variants. Bold marks the best result per metric and underline marks second best.}
+\caption{Main comparison across no-evolution agents, auto-harness baselines, a human-designed system, and our three variants. PolyBench reports Coverage / Accuracy / Return (coverage-scaled CWR, in \%); CTF-Dojo and FutureX report the official Pass@1. Bold marks the best result per row and underline marks second best.}
+\vskip -0.5em
 \label{tab:rq1_main}
 \begingroup
 \small
 \setlength{\tabcolsep}{3pt}
 \def\arraystretch{1.12}
 \resizebox{\textwidth}{!}{%
-\begin{tabular}{@{}llcccccccccccc@{}}
+\begin{tabular}{@{}llccccccccccccccc@{}}
 \toprule
 \multicolumn{2}{c}{} &
-\multicolumn{3}{c}{\textbf{No evolution}} &
+\multicolumn{5}{c}{\textbf{No evolution}} &
 \multicolumn{5}{c}{\textbf{Auto-harness baselines}} &
 \multicolumn{1}{c}{\textbf{Human}} &
 \multicolumn{3}{c}{\textbf{Ours}} \\
-\cmidrule(lr){3-5} \cmidrule(lr){6-10} \cmidrule(lr){11-11} \cmidrule(lr){12-14}
+\cmidrule(lr){3-7} \cmidrule(lr){8-12} \cmidrule(lr){13-13} \cmidrule(lr){14-16}
 \textbf{Benchmark} & \textbf{Metric} &
 \textbf{Sonnet} &
+\textbf{Haiku} &
 \textbf{DeepSeek} &
 \textbf{Kimi} &
+\textbf{GLM} &
 \textbf{A-Evolve} &
 \textbf{GEPA} &
 \makecell{\textbf{Meta}\\\textbf{Harness}} &
@@ -73,30 +63,47 @@ FutureX   & 503   & Jan--Apr 2026 & Weekly & Forecasting \\
 \textbf{SkillOS} &
 \textbf{OctoTools} &
 \makecell{\textbf{Multi}\\\textbf{agent}} &
-\textbf{Nav.} &
+\textbf{Adaptive} &
 \makecell{\textbf{Full}\\\textbf{System}} \\
 \midrule
-\multirow{3}{*}{\textbf{PolyBench}}
-& Coverage {\scriptsize$\uparrow$} & 31.7 & -- & -- & 21.1 & 32.6 & 55.3 & 10.4 & 24.1 & 54.4 & \underline{95.8} & 91.4 & \textbf{98.2} \\
-& Accuracy {\scriptsize$\uparrow$} & 22.2 & -- & -- & 18.4 & 13.4 & 50.8 & 8.5 & 21.4 & 40.0 & \underline{79.8} & 77.4 & \textbf{80.9} \\
-& Return {\scriptsize$\uparrow$} & $+$1.8 & -- & -- & $+$7.2 & $+$0.3 & $+$320 & $+$1.7 & $+$3.6 & $+$20.4 & \underline{$+$351} & \textbf{$+$352} & $+$331 \\
+\multirow{2}{*}{\textbf{PolyBench}}
+& Accuracy {\scriptsize$\uparrow$} & 22.2 & 15.2 & 1.4 & 14.0 & 14.0 & 18.4 & 13.4 & 50.8 & 8.5 & 21.4 & 40.0 & \underline{79.8} & 77.4 & \textbf{80.9} \\
+& Return {\scriptsize$\uparrow$} & $+$1.7 & $+$88.0 & $+$16.4 & $-$2.0 & $+$10.1 & $+$7.2 & $+$0.2 & $+$320 & $+$1.7 & $+$3.6 & $+$20.4 & \underline{$+$351} & \textbf{$+$352} & $+$330 \\
 \midrule
-\textbf{CTF-Dojo} & Pass {\scriptsize$\uparrow$} & 37.2 & -- & -- & 45.2 & 42.9 & 41.0 & 25.7 & 29.5 & 38.3 & \underline{47.9} & 46.0 & \textbf{50.2} \\
+\textbf{CTF-Dojo} & Pass {\scriptsize$\uparrow$} & 37.2 & 23.8 & 26.1 & 24.5 & 12.6 & 45.2 & 42.9 & 41.0 & 25.7 & 29.5 & 38.3 & \underline{47.9} & 46.0 & \textbf{50.2} \\
 \midrule
-\textbf{FutureX} & Pass {\scriptsize$\uparrow$} & 31.0 & -- & -- & \underline{47.5} & 28.2 & 29.4 & 31.8 & 29.8 & 25.6 & \textbf{49.5} & 44.1 & -- \\
+\textbf{FutureX} & Pass {\scriptsize$\uparrow$} & 31.0 & 31.0 & 31.2 & 27.8 & 30.8 & \underline{47.5} & 28.2 & 29.4 & 31.8 & 29.8 & 25.6 & \textbf{49.5} & 44.1 & 47.3 \\
 \bottomrule
 \end{tabular}
 }
 \endgroup
-\vspace{-0.25em}
+\vskip -0.7em
 \end{table*}
 
-\zw{revisit}
-Table~\ref{tab:rq1_main} reports the main comparison. The central pattern is not that one baseline is weak, but that each baseline fails under a different deployment pressure. A-Evolve is competitive on the pass-rate benchmarks, reaching 45.2 on CTF-Dojo and 47.5 on FutureX, yet it covers only 21.1\% of PolyBench markets and therefore misses most trading opportunities. Meta-Harness is the strongest baseline on PolyBench return, but does not translate that advantage to CTF-Dojo or FutureX pass rates. OctoTools, the frozen human-designed system, is stable but lacks the stream-specific adaptation needed to lead any metric.
+\noindent\textbf{Baselines.} We compare with no-evolution runs with different solver agents using \textbf{Sonnet-4.6}~\cite{anthropic2025claude46}, \textbf{DeepSeek-V3.2}~\cite{deepseek2024v3}, \textbf{Claude Haiku}~\cite{anthropic2025haiku45}, textbf{GLM-4.7}~\cite{glm2024chatglm}, and \textbf{Kimi-K2.5}~\cite{moonshot2025kimik2}. We compare with five auto-harness baselines: \textbf{A-Evolve}~\cite{lin2026position}, \textbf{GEPA}~\cite{agrawal2025gepa}, \textbf{Meta-Harness}~\cite{lee2026meta}, \textbf{Continual Harness}, and \textbf{SkillOS}. We also compare with one human-designed system \textbf{OctoTools}~\cite{lu2025octotools}.
 
-Our three variants cover complementary regimes. The Full System combines stateful multi-agent evolution with solve-time routing and is the strongest reliability-oriented configuration: it reaches 98.2\% PolyBench coverage with 80.9\% accuracy and leads CTF-Dojo at 50.2\%. The multi-agent evolver alone is the next-best system on PolyBench coverage/accuracy and leads FutureX at 49.5\%. Navigation alone is most valuable when payoff depends on selecting the right specialized branch: it achieves the highest PolyBench return while retaining high coverage and accuracy.
 
-Reading the table by benchmark makes the deployment pressure sharper. On PolyBench, the Full System expands coverage to 98.2\%, far above the strongest non-ours coverage result (55.3\%), while navigation alone still slightly leads return because payoff depends on selecting the right specialized branch and confidence policy. On CTF-Dojo, the Full System clears the strongest baseline (A-Evolve at 45.2) by 5.0 points, with the multi-agent variant just behind at 47.9 and navigation alone at 46.0. On FutureX, the multi-agent system attains the highest pass rate at 49.5\%, two points above the strongest baseline.
+\noindent\textbf{Solver and evolver.} We use Claude Sonnet 4.6 as the solver for all experiments unless specified, and use Claude Opus 4.6 as the evolver, both at temperature 0 to attribute gains to the evolution algorithm rather than sampling noise; the no-evolution controls additionally report base-agent results for Haiku 4.5, DeepSeek-V3.2, Kimi-K2.5, and GLM-4.7. All algorithms share the same batch size (100/20/20 for PolyBench/CTF-Dojo/FutureX), batch loop, and temporal-reveal gate; only the evolution algorithm varies.
+
+\noindent\textbf{Metrics.} For PolyBench, we report three complementary metrics: \emph{Coverage}, the fraction of all 5{,}075 markets the agent traded; \emph{Accuracy}, the fraction of all markets traded correctly; and \emph{Return}, defined as $\mathrm{Coverage}\times\mathrm{CWR}$, where CWR is the confidence-weighted portfolio profit-to-investment ratio over traded markets. For CTF-Dojo and FutureX, we report the official pass rate (Pass@1) defined by the original benchmarks~\cite{zhuo2025training,zeng2025futurex}. We also report \emph{lift} in the figures as the difference with baselines. Full definitions are in Appendix~\ref{app:benchmarks}.
+
+
+
+\noindent\textbf{Research questions.}
+\textbf{RQ1} (\S\ref{sec:main-results}): How does Adaptive Auto-Harness compare against existing auto-harness systems on open-ended task streams?
+\textbf{RQ2} (\S\ref{sec:barriers}): How does Adaptive Auto-Harness address benchmark-specific bottlenecks?
+\textbf{RQ3} (\S\ref{sec:ablation}): Does stateful multi-agent evolution with evaluation feedback provide additional gains?
+\textbf{RQ4} (\S\ref{sec:navloss}): Can solve-time routing effectively leverage specialized harness branches?
+\textbf{RQ5} (\S\ref{sec:hitl}): Can human steering help under insufficient history signal?
+
+\subsection{Comparison with Baselines}
+\label{sec:main-results}
+
+
+
+\noindent\textbf{Prior systems specialize on one metric cluster.} A-Evolve leads the two pass-rate streams ($45.2\%$ CTF-Dojo, $47.5\%$ FutureX) but covers only $21.1\%$ of PolyBench markets. Meta-Harness leads all three PolyBench metrics ($55.3\%$ Coverage, $50.8\%$ Accuracy, $+320\%$ Return) but falls below the no-evolution Sonnet baseline on FutureX ($29.4\%$ vs.\ $31.0\%$). Base solvers stay below $32.6\%$ PolyBench Coverage on every model, and OctoTools, the frozen human-designed system, places third on PolyBench Return but does not lead any row. The pass-rate cluster and the portfolio cluster therefore sit in different baselines.
+
+\noindent\textbf{Our three variants jointly lead all five metrics.} Without HITL intervention, the Full System combines multi-agent evolution with solve-time routing and reaches $97.9\%$ PolyBench Coverage, $80.9\%$ Accuracy, and $50.2\%$ CTF-Dojo Pass. The Multi-agent variant leads FutureX at $49.5\%$, where evolving the right source and tooling matters more than per-task routing. The Adaptive variant leads PolyBench Return at $+352\%$, where matching each market to a specialized strategy matters more than wider coverage.
 
 \subsection{Benchmark Bottlenecks}
 \label{sec:barriers}
@@ -104,20 +111,28 @@ Reading the table by benchmark makes the deployment pressure sharper. On PolyBen
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\linewidth]{figures/l_evo_evidence.pdf}
+\vskip -1em
 \caption{$\Levo$ evidence across benchmark-specific bottlenecks. PolyBench stresses confidence calibration, FutureX stresses web-retrieval access, and CTF-Dojo stresses payload handling of different file sizes.}
 \label{fig:l_evo_evidence}
+\vskip -0.5em
 \end{figure}
 
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\linewidth]{figures/l_adapt_evidence.pdf}
+\vskip -1em
 \caption{$\Ladapt$ evidence from branch specialization. Curves show cumulative routing lift over the baselines, while shaded bands show harness branch performance spread across cycles.}
 \label{fig:l_adapt_evidence}
 \end{figure}
 
-RQ2 asks whether Adaptive Auto-Harness targets the bottlenecks that actually limit each benchmark. Figure~\ref{fig:l_evo_evidence} uses benchmark-specific stressors to expose the required constructed capabilities. On PolyBench, useful harnesses must calibrate confidence against market consensus: the multi-agent curves move upward with consensus, while weaker single-agent variants remain much flatter and under-use high-consensus opportunities. On FutureX, accuracy changes almost monotonically with retrieval access, showing that forecasting quality depends on source acquisition and web-search tooling rather than reasoning alone. On CTF-Dojo, payload size exposes a different bottleneck: multi-agent pass rate drops from $91\%$ on no-payload tasks to $39\%$ above 1MB, and the best single-agent line has the same downward shape. These panels show that the system must construct different capabilities for different benchmarks: confidence calibration for markets, search/source tools for forecasting, and payload-handling infrastructure for security tasks.
+RQ2 asks whether Adaptive Auto-Harness targets the bottlenecks that limit each benchmark. We organize the analysis around the two losses introduced in \S\ref{sec:framework}: the \emph{evolution loss} $\Levo$, the gap from capabilities the evolver class cannot construct; and the \emph{adaptation loss} $\Ladapt$, the gap from committing to a single harness across heterogeneous tasks.
 
-Figure~\ref{fig:l_adapt_evidence} shows the cumulative lift with adaptive-harness routing compared against the baselines and the quantile shows the performance across different branches. If a single committed harness were enough, routing lift over the median branch would collapse toward zero and branch-type quantiles would converge. Instead, lift remains positive across cycles, and the final-cycle branch-type IQRs stay wide: 28\% on PolyBench, 10\% on CTF-Dojo, and 20\% on FutureX. The adaptation bottleneck is especially clear on PolyBench, where category- and payoff-sensitive branches produce persistent lift, and on FutureX, where the positive lift coexists with the main-table Trend failure.
+\noindent\textbf{Evolution bottlenecks ($\Levo$) differ across benchmarks.} Figure~\ref{fig:l_evo_evidence} plots a benchmark-specific stress axis chosen to expose the most predictive capability. The PolyBench panel plots mean stated confidence against market consensus, defined as the implied probability of the favored outcome from Polymarket prices; a well-calibrated harness tracks the diagonal. The multi-agent variant does so, while single-agent variants stay flat and over-state confidence on low-consensus markets, suggesting that the binding capability is consensus-aware confidence calibration rather than raw prediction skill. The FutureX panel plots pass rate against three retrieval tiers, ranging from offline to date-filtered Wikipedia plus DuckDuckGo to unrestricted DuckDuckGo. Pass rate increases monotonically from $34.0\%$ to $47.6\%$ to $57.1\%$, identifying source acquisition rather than reasoning as the binding capability. The CTF-Dojo panel plots pass rate against the largest challenge file size, binned into five tiers from no-payload to $>$1MB. The best single-agent variant declines from $81.8\%$ to $30.4\%$, and the multi-agent variant declines from $90.9\%$ to $39.1\%$ while retaining roughly a 9-point margin throughout, indicating that payload-handling infrastructure becomes the binding capability as inputs grow and that the multi-agent evolver mitigates but does not eliminate this bottleneck. The binding capability therefore differs by benchmark, so no single fixed harness suffices.
+
+\noindent\textbf{Adaptation bottlenecks ($\Ladapt$) remain after evolution.} Figure~\ref{fig:l_adapt_evidence} reports per-task routing lift over evolver cycles, where lift on each task is the routed-harness score minus the median score across single-committed-harness baselines. The solid curve is the within-cycle mean lift and the shaded band is performance variation across different branches; if a single committed harness were sufficient, the mean lift would approach zero as evolution progresses. We observe instead that the mean lift and variation remains positive across all cycles on all three benchmarks. 
+% Together with the evolution evidence above, this supports a positive answer to RQ2: each loss term dominates on at least one benchmark, and Adaptive Auto-Harness addresses both. Multi-agent evolution constructs the benchmark-specific capability, and solve-time routing adapts to the appropriate branch for each task.
+
+\noindent\underline{\textbf{Takeaway.}} Although streams expose different bottlenecks, they can be addressed under the same principle: reduce evolution loss for missing harness capabilities and adaptation loss for task-specific fit.
 
 \subsection{Stateful Multi-Agent Evolution}
 \label{sec:ablation}
@@ -126,15 +141,19 @@ Figure~\ref{fig:l_adapt_evidence} shows the cumulative lift with adaptive-harnes
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\linewidth]{figures/figure_rq2.pdf}
-\caption{Ablations for multi-agent evolution. Removing evaluation feedback or cross-cycle memory degrades end-of-stream performance relative to the full stateful system.}
+\vskip -0.5em
+\caption{Ablations for multi-agent evolution. Removing evaluation feedback or cross-cycle memory degrades performance relative to the full stateful system.}
 \label{fig:rq2_stats}
+\vskip -0.5em
 \end{figure}
 
 \begin{figure}[!t]
 \centering
-\includegraphics[width=\linewidth]{figures/figure_rq3.pdf}
+\includegraphics[width=0.9\linewidth]{figures/figure_rq3.pdf}
+\vskip -0.5em
 \caption{Solve-time routing evaluation on a evolved harness tree. Oracle reports the best branch performance per task, Adapt uses our agentic router, Naive always uses \texttt{main} workspace, and Worst reports the worst branch performance per task.}
 \label{fig:rq3_stats}
+\vskip -0.5em
 \end{figure}
 
 \begin{figure*}[!t]
@@ -142,7 +161,7 @@ Figure~\ref{fig:l_adapt_evidence} shows the cumulative lift with adaptive-harnes
 \begin{minipage}[t]{0.64\textwidth}
 \centering
 \includegraphics[width=\linewidth]{figures/rq2_demo_horizontal.pdf}\\[-0.2em]
-{\scriptsize (a) Example of the four-phase evolution cycle. \zw{revisit}}
+{\scriptsize (a) Example of the four-phase evolution cycle.}
 \end{minipage}\hfill
 \begin{minipage}[t]{0.32\textwidth}
 \centering
@@ -153,31 +172,37 @@ Figure~\ref{fig:l_adapt_evidence} shows the cumulative lift with adaptive-harnes
 
 \includegraphics[width=\textwidth]{figures/rq4_demo_horizontal.pdf}\\[-0.2em]
 {\scriptsize (c) Example of the Human-in-the-Loop workflow.}
+\vskip -0.5em
 \caption{Extracted trajectories of the designed multi-agent evolution, agentic routing, and Human-in-the-Loop.}
 \label{fig:mechanism_traces}
 \vspace{-0.4em}
 \end{figure*}
 
 
-RQ3 asks whether stateful multi-agent evolution with evaluation feedback provides additional gains. Figure~\ref{fig:rq2_stats} answers yes: compared with the full system, removing feedback collapses PolyBench CWR from $44.3$ to $2.6$, while removing memory lowers CTF-Dojo from $43\%$ to $30\%$ and FutureX from $44\%$ to $38\%$. These drops show that the gains come from the stateful interface to the stream: delayed outcomes must enter later evolution steps, and reusable exploit artifacts, parsing rules, and source heuristics must persist across cycles. Without these state channels, a multi-agent loop can still propose variants, but it cannot reliably turn stream evidence into stronger harnesses.
+RQ3 asks whether the four-role evolver in \S\ref{sec:method-multi} (Analyst $\to$ parallel Researchers $\to$ Builder $\to$ Verifier) improves over a single-agent evolver, and whether its state channels matter. Figure~\ref{fig:rq2_stats} compares the full system with variants that remove temporal-reveal feedback or cross-cycle memory. The full system improves over the single-agent evolver on all three benchmarks: $20.3 \to 44.3$ CWR on PolyBench, $38\% \to 43\%$ on CTF-Dojo, and $38\% \to 44\%$ on FutureX. Removing memory causes the broadest degradation ($2.6$ CWR on PolyBench, $30\%$ on CTF-Dojo, and $38\%$ on FutureX), while removing feedback mainly hurts PolyBench ($7.5$ CWR), where outcomes resolve after trading. Overall, the four-role evolver is strongest when paired with persistent state: memory preserves cross-cycle search, and feedback turns resolved outcomes into later evolution signal.
 
 
 
 \subsection{Solve-Time Routing on the Harness Tree}
 \label{sec:navloss}
 
-RQ4 asks whether solve-time routing can leverage the specialized branches created by evolution. To isolate routing from construction, all strategies use the same evolved harness tree (Figure~\ref{fig:rq3_stats}; trace in Figure~\ref{fig:mechanism_traces}(b)): \emph{Oracle} chooses the per-task best branch, \emph{Adapt} uses our router, \emph{Naive} always uses \texttt{main}, and \emph{Worst} chooses the per-task worst branch. The answer is mostly yes: Oracle--Naive gaps show that branch specialization matters ($37\%$ on CTF-Dojo, $+9$ CWR on PolyBench, and $7\%$ on FutureX), and Adapt converts this specialization into gains on CTF-Dojo ($18\% \to 35\%$) and PolyBench ($+3 \to +6$ CWR). FutureX is the exception: Adapt trails Naive ($34\%$ vs.\ $40\%$) even though Oracle reaches $47\%$, showing that useful branches exist but the router does not identify them reliably under fast source shifts.
+RQ4 asks whether solve-time routing can leverage the specialized harness tree. We replay all branches on the same tasks and compare \emph{Oracle} (best branch per task), \emph{Adapt} (our router), \emph{Naive} (\texttt{main}), and \emph{Worst} (worst branch per task). Figure~\ref{fig:rq3_stats} shows clear Oracle-to-Naive headroom: $37$ points on CTF-Dojo, $+9$ CWR on PolyBench, and $7$ points on FutureX. Adapt captures the gap on CTF-Dojo and PolyBench, but trails Naive on FutureX, where source acquisition dominates routing choice.
+% The answer to RQ4 is therefore positive when branch differences are sufficiently stable for the router to identify, and breaks down on FutureX where rapid source shifts make branch quality non-stationary; the human-steering hooks in \S\ref{sec:hitl} target this regime directly.
+
+\noindent\underline{\textbf{Takeaway.}} Harness specialization creates headroom across streams, but FutureX shows that routing cannot compensate when source acquisition dominates branch choice.
 
 \subsection{Human Steering for Auto-Harnessing}
 \label{sec:hitl}
 
 \begin{figure}[!t]
 \centering
-\includegraphics[width=0.95\linewidth]{figures/figure_rq4_timeline.pdf}
-\caption{FutureX pass-rate lift with human steering. HITL is triggerd twice at different cycle phases (Research phase at cycle 1; Analyze phase at cycle 3). Cycle 1 starts with the zero lift and then improve on later cycles. The detailed trajectories is recorded in Figure~\ref{fig:mechanism_traces}.s}
+\includegraphics[width=0.9\linewidth]{figures/figure_rq4_timeline.pdf}
+\caption{FutureX pass-rate lift over four task slices under two human-steering hooks. The orange triangle marks research-phase steering and the purple triangle marks task-board steering. Lift is measured against the no-HITL run.}
 \label{fig:rq4_hitl_passrate}
+\vskip -0.5em
 \end{figure}
 
-RQ5 asks whether human steering helps when the stream history lacks the signal needed to build the next harness. We test this on FutureX because several failures come from missing search access or source-specific endpoint knowledge rather than from ordinary reasoning errors. Human input is therefore restricted to steering the auto-harness process: providing credentials when a research tool is blocked, or editing the task board with source directions that the evolver cannot infer from past trajectories. Figure~\ref{fig:mechanism_traces}(c) shows these two trigger types.
+RQ5 asks whether human steering helps when history lacks the source or access signal needed for evolution. Since all previous experiment does not apply HITL to ensure fairness, we evaluate this on FutureX and restrict human input to two hooks: \emph{research-phase steering} supplies credentials when research is blocked, and \emph{task-board steering} adds source directions the evolver cannot infer (Figure~\ref{fig:mechanism_traces}c). Figure~\ref{fig:rq4_hitl_passrate} shows the slice-level effect: lift is $0$ on broad polymarket questions, rises to $+5$ on broad search-dependent questions, peaks at $+20$ on the directly targeted finance\&tech slice, and remains $+15$ on adjacent Western-specialty questions. The pattern indicates that HITL helps when it injects the missing external signal, not generic human advice.
+% The answer to RQ5 is therefore positive only when the steering targets the specific missing signal, supporting human steering as a complement rather than a substitute for the autonomous evolver.
 
-The answer is positive only when the steering targets the missing signal. In Figure~\ref{fig:rq4_hitl_passrate}, generic Polymarket transfer gives no lift, so the gains are not from adding arbitrary human advice. Broad search steering adds $+5\%$, while task-board steering adds $+20\%$ on finance/technology and $+15\%$ on Western-specialty slices. These gains are localized to the slices where the missing source access or source map matters. Thus, human steering is useful for auto-harnessing when it supplies external information absent from history; it is not a substitute for labeling tasks or manually choosing branches.
+\noindent\underline{\textbf{Takeaway.}} Human steering is most useful when the missing ingredient is external source knowledge rather than additional autonomous evolution.

@@ -1,0 +1,10 @@
+% !TEX root = ../main.tex
+
+\section{Limitations}
+\label{sec:limitations}
+
+\noindent\textbf{Benchmark coverage.}
+We evaluate finite prefixes of three open-ended task streams: prediction markets, cybersecurity challenges, and event forecasting. These domains cover unbounded streams, task heterogeneity, and distributional non-stationarity, but the same framing should be tested further on additional deployment streams such as robotics, biomedical reasoning, and long-form writing.
+
+\noindent\textbf{Diagnostic losses.}
+The evolution loss $\Levo$ and adaptation loss $\Ladapt$ are analytical quantities, not directly estimated oracle losses. Our experiments diagnose them through bottleneck analyses, ablations, and routing controls rather than through a formal estimator of the oracle harness.

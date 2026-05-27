@@ -1,135 +1,172 @@
 % !TEX root = ../main.tex
 
-\section{Benchmark Details}
+\section{Benchmark and Evaluation Details}
 \label{app:benchmarks}
 
-We provide full descriptions of the three benchmarks summarized in \S\ref{sec:setup}. Across all three, tasks arrive in strict chronological order: the solver may only access information available before each task's release timestamp, enforced by a temporal-reveal gate that filters retrieval results and ground-truth labels accordingly. Together, the benchmarks instantiate the deployment dimensions defined in \S\ref{sec:intro}: finite evaluated prefixes of unbounded streams (D1), within-stream heterogeneity across topics, languages, and challenge categories (D2), and distribution shift over time (D3). Non-stationarity diagnostics are shown in Appendix~\ref{app:nonstationarity}. Throughout, let $N$ be the number of tasks in the stream, $\mathbb{1}_i$ the correctness indicator on task $x_i$, and $\hat{p}_i \in [0,1]$ the solver's confidence.
+Across all three benchmarks, tasks are evaluated in chronological order. The solver receives task $x_i$ with only the information available before its release time, while the evolver receives outcome labels only after the corresponding resolution time. The table generator loads the first record for each \texttt{instance\_id}, so retries or duplicate logs do not change the reported metrics. The three datasets are finite evaluated prefixes of unbounded task streams and jointly cover the three deployment challenges in \S\ref{sec:intro}: stream continuation (D1), within-stream heterogeneity (D2), and temporal shift (D3).
 
 \subsection{PolyBench}
 
-\noindent\textbf{Source and composition.} PolyBench is a Polymarket-derived prediction-market stream of 5{,}075 binary-outcome trades over 16 days (Feb 6--22, 2026), spanning politics, sports, finance, crypto, and entertainment markets. Markets are sampled to keep the per-day volume balanced across the five categories; resolution uses the official Polymarket outcome reported on-chain.
+\noindent\textbf{Source and composition.}
+PolyBench is a Polymarket-derived prediction-market stream with 5{,}075 binary-outcome tasks from Feb 6--22, 2026. The stream spans politics, sports, finance, crypto, and entertainment markets, and each task is resolved against the official market outcome.
 
-\noindent\textbf{Temporal-reveal gate.} For each market we record its release timestamp and resolution timestamp. The solver may use any retrieval result whose source publication time precedes the release timestamp; resolution outcomes are revealed to the evolver only after the resolution date.
+\noindent\textbf{Temporal ordering.}
+For each market, we store the task release timestamp and the outcome resolution timestamp. Retrieval evidence is filtered by release time during solving. Resolved labels are hidden from evolution until the corresponding market has resolved.
 
-\noindent\textbf{Metrics.} Let $\tau$ be the confidence gate (default $\tau{=}0.55$).
+\noindent\textbf{Metrics.}
+Let $\mathcal{T}$ be the set of executed trades, excluding gated tasks, empty decisions, and \textsc{Skip} decisions. Let $s_i$ indicate whether trade $i$ is correct, $b_i$ be its confidence-weighted investment, and $g_i$ be its realized profit. The metrics reported for PolyBench are:
 \begin{align*}
-\mathrm{Cov} &= \tfrac{1}{N}\textstyle\sum_i \mathbb{1}[\hat{p}_i > \tau] \\
-\mathrm{Acc} &= \tfrac{1}{N}\textstyle\sum_i \mathbb{1}_i \\
-\mathrm{CWR} &= \textstyle\sum_i w_i (2\mathbb{1}_i - 1), \quad w_i \propto |\hat{p}_i - 0.5|
+\mathrm{Acc} &= 100 \cdot \tfrac{1}{N}\textstyle\sum_{i\in\mathcal{T}} s_i \\
+\mathrm{CWR} &= 100 \cdot \tfrac{\sum_{i\in\mathcal{T}} g_i}{\sum_{i\in\mathcal{T}} b_i} \\
+\mathrm{Return} &= \tfrac{|\mathcal{T}|}{N}\cdot\mathrm{CWR}.
 \end{align*}
-Total portfolio return is reported as the dollar P\&L of a fixed-bankroll trader sized proportionally to $w_i$ on each gated trade.
+Accuracy therefore rewards both broad coverage and correct decisions, while Return scales the portfolio profit-to-investment ratio by the fraction of tasks actually traded.
 
 \subsection{CTF-Dojo}
 
-\noindent\textbf{Source and composition.} CTF-Dojo is a 261-challenge security-competition stream drawn from \texttt{pwncollege/ctf-archive}, chronologically ordered over 13 years (2011--2024). Challenges span binary exploitation, web security, cryptography, reverse engineering, and forensics categories. The chronological release order intentionally exposes the solver to evolving CTF tooling and trick families across the 13-year span (D3).
+\noindent\textbf{Source and composition.}
+CTF-Dojo is a 261-challenge security-competition stream drawn from \texttt{pwncollege/ctf-archive}, chronologically ordered from 2011 to 2024. Challenges cover binary exploitation, web security, cryptography, reverse engineering, and forensics, exposing changes in challenge style and tooling over time.
 
-\noindent\textbf{Sandbox and verification.} Each challenge runs inside a per-task Docker sandbox with a constrained network policy; flags are submitted as text and verified via SHA-256 hash comparison against the official flag.
+\noindent\textbf{Sandbox and verification.}
+Each challenge runs inside a per-task Docker sandbox with constrained network policy. Flags are submitted as text and verified by SHA-256 hash comparison against the official flag.
 
 \noindent\textbf{Metrics.}
-\begin{align*}
-\mathrm{Pass} &= \tfrac{1}{N}\textstyle\sum_i \mathbb{1}_i \\
-\mathrm{Trend} &= \operatorname{slope}_{\mathrm{OLS}}\left(\{(t_i,\mathbb{1}_i-\mathbb{1}^{\mathrm{Sonnet}}_i)\}_{i=1}^{N}\right) \\
-\mathrm{Q25}_{60} &= Q_{0.25}\left(\left\{\tfrac{1}{60}\textstyle\sum_{i\in W_j}\mathbb{1}_i\right\}_{j}\right)
-\end{align*}
-where $t_i$ is the normalized chronological task index and $W_j$ ranges over 60-task sliding windows. Trend measures whether a method's task-level advantage over the Sonnet no-evolution control improves over the stream; the Sonnet row is therefore zero by construction. Q25@60 reports the lower-tail sliding-window pass rate, so a method must avoid weak windows rather than only score well on average.
+We report Pass@1, the percentage of challenges solved within the benchmark budget. All CTF-Dojo aggregate results use the same chronological ordering as the released stream.
 
 \subsection{FutureX}
 
-\noindent\textbf{Source and composition.} FutureX is a 503-question event-forecasting stream over 82 days (Jan--Apr 2026) drawn from FutureX-Past. Questions cover finance, technology, geopolitics, and entertainment domains, with both English and Chinese language variants. The zh-finance slice requires Chinese-language sources unavailable through default English-only retrieval.
+\noindent\textbf{Source and composition.}
+FutureX is a 503-question event-forecasting stream over 82 days from Jan--Apr 2026, drawn from FutureX-Past. Questions cover finance, technology, geopolitics, and entertainment, with both English and Chinese-language variants. The zh-finance slice requires source discovery beyond default English-only retrieval.
 
-\noindent\textbf{Retrieval modes.} \emph{Strict} mode resolves all retrieval through the Wikipedia revision API restricted to revisions before the task's release date. \emph{Live} mode uses DuckDuckGo with a hard cutoff filter applied to result timestamps. The human-steering experiment in RQ5 uses live mode because authenticated providers such as Exa and Serper are gated behind credentials the evolver cannot synthesize from history.
+\noindent\textbf{Temporal retrieval and filtering.}
+FutureX tasks are historical, but web pages and search indices continue to change after the event. To avoid label leakage, each task is solved with a per-task cutoff date derived from its temporal metadata. In strict built-in retrieval, Wikipedia content is fetched through the revision API using the latest revision before the cutoff, DuckDuckGo results are fetched and filtered by extracted publication dates from \texttt{htmldate} and URL patterns, and structured economic series are queried with observation and realtime endpoints capped at the cutoff. For evolved tools executed through the sandbox, live command output is passed through an LLM temporal filter before the solver sees it: the filter receives the task, cutoff date, and retrieved content, then either returns \textsc{Clean} or replaces post-cutoff values, rows, and snippets with \texttt{[REDACTED]}. This preserves pre-cutoff evidence while blocking dynamic web content that would reveal the resolved answer.
 
 \noindent\textbf{Metrics.}
-\begin{align*}
-\mathrm{Pass} &= \tfrac{1}{N}\textstyle\sum_i \mathbb{1}_i \\
-\mathrm{Trend} &= \operatorname{slope}_{\mathrm{OLS}}\left(\{(t_i,\mathbb{1}_i-\mathbb{1}^{\mathrm{Sonnet}}_i)\}_{i=1}^{N}\right) \\
-\mathrm{Q25}_{60} &= Q_{0.25}\left(\left\{\tfrac{1}{60}\textstyle\sum_{i\in W_j}\mathbb{1}_i\right\}_{j}\right)
-\end{align*}
-These are the same aligned stream metrics used for CTF-Dojo. Trend is Sonnet-adjusted at the task level, and Q25@60 captures lower-tail deployment reliability across the chronological stream.
+We report Pass@1 under the official FutureX criterion. Slice-level human-steering analyses use the same pass criterion and aggregate tasks by the groups shown in Figure~\ref{fig:rq4_hitl_passrate}.
 
-\section{Additional Figures}
-\label{app:extra}
+\section{Implementation and Reproducibility Details}
+\label{app:experimental-details}
 
-\subsection{Experiment Mechanism Figures}
-\label{app:experiment_demos}
+\noindent\textbf{Execution protocol.}
+All main runs use provider-hosted LLM APIs with native tool calling and the same chronological task order used by the benchmarks. Reported numbers are generated from the corresponding \texttt{results.jsonl} files. Closed provider-hosted models do not expose parameter counts; we therefore report the evaluated task counts and evolution cycles rather than GPU-hours. The full-system runs contain 5{,}075/261/503 solve trajectories and 51/14/26 evolution cycles for PolyBench/CTF-Dojo/FutureX, respectively.
 
-\begin{figure}[p]
-\centering
-\includegraphics[width=0.9\columnwidth]{figures/rq2_demo.pdf}
-\caption{Representative sustained-evolution cycle. The Analyst diagnoses a failure, Researchers test candidate fixes, the Builder creates reusable artifacts, and the Verifier gates the change before the next cycle.}
-\label{fig:app_rq2_demo}
-\end{figure}
+\noindent\textbf{Compute and resources.}
+All model inference is performed through provider-hosted APIs; the primary Adaptive Auto-Harness runs use Claude Sonnet for solving and Claude Opus for evolution, with other provider-hosted models used only for the corresponding baseline rows. We do not train or fine-tune model weights, and no local GPU compute is used for model optimization. Local compute is used for orchestration, result aggregation, figure generation, and Docker-based benchmark execution, including the per-task CTF-Dojo and FutureX sandboxes. Because the evaluated closed models do not disclose parameter counts, task counts and evolution cycles are the main compute descriptors.
 
-\begin{figure}[p]
-\centering
-\includegraphics[width=0.9\columnwidth]{figures/rq3_demo.pdf}
-\caption{Representative solve-time routing trace. The router reads branch metadata, selects the sports-specialized branch for a sports forecasting task, and solves with the branch-specific prompt, skills, and tools.}
-\label{fig:app_rq3_demo}
-\end{figure}
 
-\begin{figure}[p]
-\centering
-\includegraphics[width=\columnwidth]{figures/rq4_demo_vertical.pdf}
-\caption{Representative human-steering triggers. Credential verification unlocks authenticated search during research, while task-board steering supplies source directions before the next build.}
-\label{fig:app_rq4_demo}
-\end{figure}
+\noindent\textbf{Temporal reveal.}
+Each task stores a release timestamp and, when available, a resolution timestamp. Solver calls are filtered against the release time. Evolution cycles receive the trajectory immediately but receive outcome feedback only after the task has resolved, so unresolved tasks remain unlabeled history rather than leaked supervision.
 
-\subsection{Benchmark Non-Stationarity Diagnostics}
+\noindent\textbf{Workspace artifacts.}
+The evolver workspace persists a task board, research logs, verifier notes, tests, and architecture notes across cycles. These artifacts are separate from the solver workspace: the evolver may update harness files during evolution, while the solve-time router only inspects branch metadata and selects a branch for the incoming task.
+
+\noindent\textbf{Branch replay protocol.}
+For routing analysis, every branch in the evolved harness tree is replayed on the same task set before constructing oracle and worst controls. Oracle and worst are therefore post-hoc diagnostic bounds; the deployed router only sees task context and branch metadata, not labels or branch outcomes.
+
+\noindent\textbf{Human-steering records.}
+Human-steering events are author-provided system interventions rather than recruited human-subject annotations. Each event is logged with the triggering phase, requested external signal, and workspace location where the response is recorded. This makes steering auditable and keeps human input as source or access guidance rather than answer labels.
+
+\section{Benchmark Non-Stationarity Diagnostics}
 \label{app:nonstationarity}
 
-Figures~\ref{fig:app_nonstationarity_polybench}--\ref{fig:app_nonstationarity_futurex} provide benchmark-specific evidence that the temporal streams are not static IID pools.
+Figures~\ref{fig:app_nonstationarity_polybench}--\ref{fig:app_nonstationarity_futurex} provide descriptive diagnostics for the temporal structure of the three streams. These plots are not used as evaluation metrics; instead, they show why the benchmarks are not static IID pools and why a harness fitted to earlier observations can become mismatched to later tasks. Most panels are computed from task metadata, task text, or benchmark-side properties; panels that use outcomes or a baseline solver are included only as descriptive solvability proxies.
 
-\begin{center}
-\captionsetup{type=figure,hypcap=false}
+\noindent\textbf{PolyBench.}
+Prediction markets shift in both difficulty and tradability over the evaluated period (Figure~\ref{fig:app_nonstationarity_polybench}). Early markets are more often liquid and already decisive: the fraction of tradeable markets drops from 97\% early to 31\% late, and the fraction whose maximum price exceeds 0.95 drops from 44\% to 29\%. At the same time, near-even markets increase from 18\% to 35\%, meaning later tasks more often require evidence beyond simply following a strong market consensus. The market-price correctness proxy also changes over time, from 84\% early to 77\% late. Together, these shifts make a fixed prediction-market strategy brittle: calibration, abstention, and evidence gathering must adapt as the stream moves from liquid and decisive markets toward thinner and more ambiguous ones.
+
+\noindent\textbf{CTF-Dojo.}
+CTF-Dojo exposes a different form of non-stationarity: the stream expands into competitions and challenge conventions not present in the early history (Figure~\ref{fig:app_nonstationarity_ctf_dojo}). The cumulative number of source competitions keeps increasing across the chronological order, and by the late stream the fraction of tasks from competitions unseen in the first third reaches 100\%. The number of competitions represented in a 50-task window also varies substantially, so neighboring tasks can require different assumptions about file layout, scoring conventions, and intended exploitation style. The cross-competition score coefficient of variation further indicates that competitions are not interchangeable pools; each event can calibrate difficulty and challenge design differently. This motivates persistent construction of reusable security skills, but also cautions against treating early CTF experience as uniformly transferable.
+
+\noindent\textbf{FutureX.}
+FutureX shifts along source, language, and difficulty dimensions (Figure~\ref{fig:app_nonstationarity_futurex}). Batch-level baseline accuracy ranges from 20\% to 80\%, showing that chronological batches differ substantially in solvability. Later batches contain more Chinese-titled questions and more questions tied to platforms that are difficult to search directly, while the share of harder Level 3--4 questions increases sharply in the same region. Chinese-language answer requirements also appear mainly in later batches. These changes explain why FutureX stresses both construction and adaptation: the harness must acquire better source-finding and temporal retrieval behavior, while solve-time routing must select branches suited to the task's language, source, and difficulty profile.
+
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\columnwidth]{figures/appendix_nonstationarity_polybench.png}
-\caption{\textbf{PolyBench non-stationarity.} Strategy-relevant market properties vary across the temporal stream, so a harness fitted to earlier batches can become mismatched to later markets.}
+\includegraphics[width=0.9\linewidth]{acl_agentic_navigation/figures/fig1_strategy_drift.pdf}
+\caption{\textbf{PolyBench non-stationarity.} Market difficulty and tradability shift over time: later markets are less often decisive or liquid and more often near-even.}
 \label{fig:app_nonstationarity_polybench}
-\end{center}
+\end{figure*}
 
-\begin{center}
-\captionsetup{type=figure,hypcap=false}
+\begin{figure*}[htb]
 \centering
-\includegraphics[width=\columnwidth]{figures/appendix_nonstationarity_ctf_dojo.png}
-\caption{\textbf{CTF-Dojo non-stationarity.} The chronological stream expands into new competition frontiers, exposing the solver to changing challenge regimes rather than a fixed IID task pool.}
+\includegraphics[width=0.8\linewidth]{acl_agentic_navigation/figures/shift_crypto.pdf}
+\caption{\textbf{CTF-Dojo non-stationarity.} The chronological stream keeps introducing new competitions and increases cross-competition variability, so early challenge experience is not uniformly transferable.}
 \label{fig:app_nonstationarity_ctf_dojo}
-\end{center}
+\end{figure*}
 
-\begin{center}
-\captionsetup{type=figure,hypcap=false}
+\begin{figure*}[htb]
 \centering
-\includegraphics[width=\columnwidth]{figures/appendix_nonstationarity_futurex.png}
-\caption{\textbf{FutureX non-stationarity.} Language, source, and difficulty properties shift across batches, creating solve-time harness mismatch when one static harness is reused for all tasks.}
+\includegraphics[width=0.8\linewidth]{acl_agentic_navigation/figures/property_shift.pdf}
+\caption{\textbf{FutureX non-stationarity.} Language, source accessibility, difficulty, and answer format shift across batches, creating solve-time harness mismatch when one static harness is reused for all tasks.}
 \label{fig:app_nonstationarity_futurex}
-\end{center}
+\end{figure*}
 
-\section{Limitations}
-\label{app:limitations}
 
-\noindent\textbf{Benchmark coverage.} We evaluate three domains: prediction markets, cybersecurity challenges, and event forecasting. The D1/D2/D3 frame should be tested further on additional deployment streams such as robotics, biomedical reasoning, and long-form writing.
 
-\noindent\textbf{Evolver class is not scalar.} Our $\Levo$ argument is diagnostic, not predictive. The multi-agent evolver's empirical advantage is demonstrated via ablations and benchmark bottleneck analyses, not by a formal class-expansion bound.
+\section{Further Experiments}
+\label{app:further-experiments}
 
-\noindent\textbf{Human steering cost model.} We measure human steering by invocation and resulting slice-level lift. In production, organizational cost, specialist availability, and response-time guarantees may dominate the raw time spent per intervention.
+We include two supplemental diagnostics that clarify where the main gains come from without duplicating the RQ analyses in \S\ref{sec:experiments}.
 
-\section{Ethics Statement}
-\label{app:ethics}
+\noindent\textbf{Evolver capability and construction budget.}
+Figure~\ref{fig:app_c2_evolver_budget} varies the evolver model and construction budget on CTF-Dojo. Stronger evolvers achieve higher pass rates, while additional budget mainly helps weaker evolvers and saturates for the strongest model.
 
-We use benchmark tasks derived from public or research datasets and do not introduce private user data. PolyBench uses public prediction-market questions and outcomes; FutureX uses event-forecasting questions and time-filtered retrieval; CTF-Dojo uses public CTF challenges executed in isolated Docker sandboxes. The CTF experiments are limited to challenge containers and flag verification, and do not target real systems or third-party infrastructure.
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/figure_c2_final.pdf}
+\caption{\textbf{Evolver capability on CTF-Dojo.} Pass rate improves with stronger evolver models; higher budget helps Haiku and Sonnet but gives little additional gain once Opus already reaches high performance.}
+\label{fig:app_c2_evolver_budget}
+\end{figure}
 
-The human-steering experiments are conducted by the authors and are limited to source guidance, task-board edits, and credential decisions for search tools. We do not ask humans to label benchmark answers or manually choose solver branches. Credentials and provider-specific secrets are not reported in the paper or figures. Because auto-harness systems can strengthen autonomous agents, especially on cybersecurity tasks, releases should preserve sandbox restrictions, avoid exposing live credentials, and document that CTF results are for authorized benchmark settings only.
+\noindent\textbf{Cross-domain workspace dilution.}
+Figure~\ref{fig:app_polybench_dilution} compares PolyBench CWR when using workspaces evolved on different domains. The PolyBench-specific workspace performs best, while the all-evolved workspace loses 57 points of CWR, showing that mixing heterogeneous experience can dilute domain-relevant harness structure.
 
-\section{Prompt Interfaces}
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/figure_c3_polybench_dilution.pdf}
+\caption{\textbf{PolyBench workspace dilution.} A PolyBench-evolved workspace reaches the highest CWR, while combining all evolved workspaces sharply reduces CWR, supporting the need for specialized harness branches rather than a single dense harness.}
+\label{fig:app_polybench_dilution}
+\end{figure}
+
+\FloatBarrier
+\clearpage
+\onecolumn
+\section{Simplified Prompt Interfaces}
 \label{app:prompts}
 
-\subsection{F\_Navigate System Prompt}
+\newcommand{\PromptBlock}[2]{%
+  \par\smallskip
+  \begingroup
+  \setlength{\fboxsep}{6pt}%
+  \setlength{\fboxrule}{0.4pt}%
+  \noindent\fcolorbox{black!35}{black!3}{%
+    \begin{minipage}{0.94\linewidth}
+    {\large\textbf{#1}}\par\vspace{0.25em}
+    {\normalsize #2}
+    \end{minipage}}%
+  \par\smallskip
+  \endgroup
+}
 
-The navigation prompt instructs the router to inspect the task context and branch metadata, compare candidate harness branches, and select exactly one branch before solving. The router may read branch prompts, tools, skills, and summaries, but it does not mutate the harness during solve time.
+The full prompts contain benchmark-specific paths and implementation details. We report simplified versions here to show the role structure and information flow used by Adaptive Auto-Harness.
 
-\subsection{Analyst, Researcher, Builder, and Verifier Prompts}
+\PromptBlock{Solve-time router}{
+\textbf{Input:} the incoming task and branch summaries. \textbf{Instruction:} read each branch's intended scope, match the task to positive and negative routing signals, and select exactly one harness branch. Use the main branch when multiple branches match weakly or no branch has clear evidence. Return a branch name, confidence, and short reason.
+}
 
-The multi-agent evolution prompts assign four separated roles. The Analyst summarizes failures and updates the task board; Researchers test hypotheses and gather evidence; the Builder converts verified findings into prompts, tools, skills, or infrastructure; and the Verifier runs checks that gate whether the change is committed to the next cycle.
+\PromptBlock{Analyst}{
+\textbf{Input:} recent trajectories, revealed feedback, branch statistics, and the persistent evolution workspace. \textbf{Instruction:} identify recurring failure patterns, separate transferable fixes from branch-specific fixes, and write a task board with priorities and targets. Audit stale or over-specialized artifacts before proposing new changes.
+}
 
-\subsection{Human-Steering Trigger Prompts}
+\PromptBlock{Researcher}{
+\textbf{Input:} an analyst-assigned failure pattern or benchmark bottleneck. \textbf{Instruction:} search for candidate tools, APIs, data sources, or implementation strategies; test whether each candidate works under the benchmark constraints; and record concise findings that the builder can directly use.
+}
 
-The human-steering prompts are used only when the evolver lacks information that cannot be inferred from $\Hist$, such as blocked credentials or source-specific access paths. The prompt requests the minimum external input needed to continue evolution and records the supplied steering in the task board or research log.
+\PromptBlock{Builder}{
+\textbf{Input:} the task board, verified research records, current solver workspace, and architecture notes. \textbf{Instruction:} implement only the changes supported by verified research, update prompts, tools, memory, or infrastructure as needed, and preserve existing working code unless a targeted replacement is justified.
+}
+
+\PromptBlock{Verifier}{
+\textbf{Input:} the builder's changes, target failure pattern, and benchmark constraints. \textbf{Instruction:} run focused tests before the changes go live, check that the implementation respects temporal filtering and sandbox rules, and return a pass/fail verdict with the concrete failure reason when retry is needed.
+}
+

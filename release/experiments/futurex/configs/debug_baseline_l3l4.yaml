@@ -1,0 +1,23 @@
+# Debug D1: L3+L4 baseline — strict search, no evolution
+batch_size: 140
+max_cycles: 0
+holdout_ratio: 0.0
+
+evolve_prompts: false
+evolve_skills: false
+evolve_memory: false
+evolve_tools: false
+
+evolver_model: <evolver-model-id>
+evolver_max_tokens: 128000
+
+egl_threshold: 0.05
+egl_window: 3
+
+evo_trigger_threshold: -1
+
+model_name: <solver-model-id>
+sort_by_timestamp: true
+builtin_search: strict
+
+futurex_difficulty: [3, 4]

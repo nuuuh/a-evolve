@@ -1,0 +1,27 @@
+# CTF-Dojo — GEPA-lite baseline (reflective prompt evolution, prompts-only).
+batch_size: 5
+max_cycles: 0
+holdout_ratio: 0.0
+
+evolve_prompts: true
+evolve_skills: false
+evolve_memory: false
+evolve_tools: false
+
+# Solver backbone: Sonnet 4.6 (same as all other RQ1 baselines).
+model_name: <solver-model-id>
+
+evolver_model: <evolver-model-id>
+evolver_max_tokens: 128000
+
+solve_workers: 8
+
+egl_threshold: 0.05
+egl_window: 3
+
+sandbox_network: host
+evolver_sandbox_network: none
+
+orchestrator: gepa_lite
+gepa_lite:
+  recent_reflections: 3
