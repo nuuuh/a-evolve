@@ -1,4 +1,4 @@
-\begin{thebibliography}{25}
+\begin{thebibliography}{27}
 \providecommand{\natexlab}[1]{#1}
 
 \bibitem[{Agrawal et~al.(2025)Agrawal, Tan, Soylu, Ziems, Khare, Opsahl-Ong,
@@ -35,6 +35,12 @@ Pietro Buzzega, Matteo Boschini, Angelo Porrello, Davide Abati, and Simone
   baseline.
 \newblock In \emph{Advances in Neural Information Processing Systems
   (NeurIPS)}, volume~33, pages 15920--15930.
+
+\bibitem[{{ByteDance}(2025)}]{deerflow2025}
+{ByteDance}. 2025.
+\newblock Deerflow: A skill-based agent framework with dynamic skill loading.
+\newblock \url{https://github.com/bytedance/deer-flow}.
+\newblock Open-source repository.
 
 \bibitem[{Cheng et~al.(2026)Cheng, Liu, and Long}]{cheng2026polybench}
 Pu~Cheng, Juncheng Liu, and Yunshen Long. 2026.
@@ -138,6 +144,13 @@ Dequan Wang, Evan Shelhamer, Shaoteng Liu, Bruno Olshausen, and Trevor Darrell.
 \newblock Tent: Fully test-time adaptation by entropy minimization.
 \newblock In \emph{International Conference on Learning Representations
   (ICLR)}.
+
+\bibitem[{Wang et~al.(2023)Wang, Xie, Jiang, Mandlekar, Xiao, Zhu, Fan, and
+  Anandkumar}]{wang2023voyager}
+Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu,
+  Linxi Fan, and Anima Anandkumar. 2023.
+\newblock Voyager: An open-ended embodied agent with large language models.
+\newblock \emph{arXiv preprint arXiv:2305.16291}.
 
 \bibitem[{Wang et~al.(2022{\natexlab{a}})Wang, Zhang, Ebrahimi, Sun, Zhang,
   Lee, Ren, Su, Perot, Dy, and Pfister}]{wang2022dualprompt}

@@ -1,0 +1,16 @@
+\begin{table}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{6pt}
+\caption{Seed harness shipped to the evolver before any cycle runs. \emph{Skills} counts top-level skill directories; \emph{Memory} counts JSONL entries; \emph{Infra} indicates whether the seed includes an infrastructure directory.}
+\label{tab:seed_inventory}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lrrrrl@{}}
+\toprule
+Benchmark & Prompt LOC & Skills & Tools & Memory & Infra \\
+\midrule
+PolyBench & 27 & 0 & 0 & 0 & no \\
+CTF-Dojo & 24 & 0 & 0 & 0 & no \\
+FutureX & 114 & 0 & 0 & 0 & yes \\
+\bottomrule
+\end{tabular}}
+\end{table}

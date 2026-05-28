@@ -40,10 +40,10 @@ logger = logging.getLogger(__name__)
 
 # Registry of built-in benchmark names -> classes
 _BENCHMARK_REGISTRY: dict[str, str] = {
-    "swe-verified": "agent_evolve.benchmarks.swe_verified.SweVerifiedBenchmark",
-    "hle": "agent_evolve.benchmarks.hle.HleBenchmark",
-    "terminal2": "agent_evolve.benchmarks.terminal2.Terminal2Benchmark",
-    "terminal-bench": "agent_evolve.benchmarks.terminal2.Terminal2Benchmark",
+    "polybench": "agent_evolve.benchmarks.polybench.polybench.PolyBenchBenchmark",
+    "ctf-dojo": "agent_evolve.benchmarks.ctf_dojo.CtfDojoBenchmark",
+    "ctf_dojo": "agent_evolve.benchmarks.ctf_dojo.CtfDojoBenchmark",
+    "futurex": "agent_evolve.benchmarks.futurex.futurex.FutureXBenchmark",
     "skill-bench": "agent_evolve.benchmarks.skill_bench.SkillBenchBenchmark",
     "arc-agi-3": "agent_evolve.benchmarks.arc_agi3.ArcAgi3Benchmark",
     "arc-agi3": "agent_evolve.benchmarks.arc_agi3.ArcAgi3Benchmark",

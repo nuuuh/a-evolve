@@ -1,0 +1,25 @@
+\begin{table}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{Numeric companion to Figure~\ref{fig:rq3_stats}. Replay-based Oracle/Adapt/Naive/Worst comparison on the RQ4 subsets (\S\ref{sec:navloss}). \emph{Oracle} is the best venue per task; \emph{Adapt} is the LLM router's choice; \emph{Naive} is the fixed \texttt{main} venue (no branching); \emph{Worst} is the worst venue per task. CTF-Dojo and FutureX use Pass@1 (\%); PolyBench uses CWR (\%). Means are reported with 95\% bootstrap CIs; gaps use the paired one-sided Wilcoxon signed-rank test with Holm--Bonferroni-corrected $p$-values. The \emph{Oracle$-$Naive} gap is the empirical adaptation loss $L_\mathrm{adapt}$.}
+\label{tab:routing_stats}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lccc@{}}
+\toprule
+ & CTF-Dojo & PolyBench & FutureX \\
+ & (Pass\%) & (CWR\%) & (Pass\%) \\
+\midrule
+N tasks & 40 & 80 & 58 \\
+\midrule
+Oracle & 55.0\,[40.0, 70.0] & $+$12.0\,[$+$2.1, $+$21.2] & 46.6\,[32.8, 60.3] \\
+Adapt  & 35.0\,[20.0, 50.0] & $+$5.9\,[$-$6.6, $+$17.4]  & 34.5\,[22.4, 46.6] \\
+Naive  & 17.5\,[7.5, 30.0]  & $+$3.2\,[$-$7.5, $+$13.0]  & 39.7\,[27.6, 51.7] \\
+Worst  & 7.5\,[0.0, 17.5]   & $-$10.6\,[$-$25.9, $+$4.0] & 22.4\,[12.1, 32.8] \\
+\midrule
+$L_\mathrm{adapt}$ (Oracle$-$Naive) & $+$37.5$^{\ast\ast\ast}$ & $+$8.8$^{\ast\ast\ast}$ & $+$6.9 \\
+Adapt$-$Naive & $+$17.5 & $+$2.7 & $-$5.2 \\
+\bottomrule
+\end{tabular}}
+\\[0.4em]
+{\scriptsize Significance on $L_\mathrm{adapt}$ (Holm--Bonferroni-adjusted): $^{\ast\ast\ast}$ $p_\mathrm{adj}{<}0.001$. CTF-Dojo $p_\mathrm{adj}{=}4.8{\times}10^{-4}$; PolyBench $p_\mathrm{adj}{=}1.8{\times}10^{-5}$; FutureX $p_\mathrm{adj}{=}0.11$ (n.s.).}
+\end{table}

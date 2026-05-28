@@ -1,0 +1,21 @@
+\begin{table}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{3pt}
+\caption{Per-category Pass@1 (\%) on CTF-Dojo. Categories are parsed from the \texttt{detail} field; \emph{binary/pwn} merges the conventionally-equivalent CTF tags. Bold marks the best system per row.}
+\label{tab:per_domain_ctf}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+Category & N & Sonnet & A-Evolve & Meta-H. & Multi & Adapt. & Full \\
+\midrule
+crypto & 74 & 52.7 & 66.1 & 56.2 & 67.6 & 55.6 & \textbf{72.1} \\
+binary/pwn & 41 & 4.9 & 11.5 & 2.5 & 7.0 & 4.8 & \textbf{14.8} \\
+web & 11 & 45.5 & 41.7 & 41.7 & 33.3 & 50.0 & \textbf{72.7} \\
+reverse & 65 & 49.2 & 62.7 & 48.7 & 59.7 & 57.0 & \textbf{66.2} \\
+forensics & 12 & 58.3 & 61.5 & 64.3 & 64.3 & \textbf{71.4} & 58.3 \\
+misc & 58 & 20.7 & 23.5 & 29.5 & 34.1 & \textbf{40.5} & 25.6 \\
+\midrule
+Overall & 261 & 37.2 & 45.2 & 41.0 & 47.9 & 46.0 & \textbf{50.2} \\
+\bottomrule
+\end{tabular}}
+\end{table}

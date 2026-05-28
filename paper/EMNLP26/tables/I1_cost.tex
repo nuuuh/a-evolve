@@ -1,0 +1,32 @@
+\begin{table}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{Solver token cost and wall-clock per system. Tokens are summed from per-task \texttt{input\_tokens} / \texttt{output\_tokens} in \texttt{results.jsonl}. Wall-clock sums per-task \texttt{elapsed} seconds and excludes orchestration overhead. Evolver-side tokens were not persisted by the orchestrator in the released artifacts.}
+\label{tab:cost}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}llrrrr@{}}
+\toprule
+System & Bench & In~(M~tok) & Out~(M~tok) & Hours & Tasks/h \\
+\midrule
+Sonnet (no-evo) & PolyBench & 35.3 & 5.0 & 25.6 & 198.3 \\
+ & CTF-Dojo & 138.4 & 2.1 & 22.4 & 11.7 \\
+ & FutureX & 55.5 & 0.7 & 34.2 & 14.7 \\
+\midrule
+A-Evolve & PolyBench & 365.4 & 4.2 & 23.9 & 212.3 \\
+ & CTF-Dojo & 111.3 & 1.7 & 11.4 & 23.0 \\
+ & FutureX & 268.8 & 1.2 & 13.8 & 36.5 \\
+\midrule
+Meta-Harness & PolyBench & 245.0 & 9.6 & 49.7 & 102.1 \\
+ & CTF-Dojo & 142.7 & 2.2 & 20.0 & 13.0 \\
+ & FutureX & 39.1 & 0.5 & 7.9 & 63.8 \\
+\midrule
+Multi-agent & PolyBench & 264.2 & 14.5 & 78.0 & 65.1 \\
+ & CTF-Dojo & 180.2 & 2.5 & 21.2 & 12.3 \\
+ & FutureX & 130.7 & 1.0 & 12.1 & 41.7 \\
+\midrule
+Full System & PolyBench & 233.2 & 12.2 & 59.5 & 85.2 \\
+ & CTF-Dojo & 169.0 & 2.4 & 21.1 & 12.4 \\
+ & FutureX & 25.6 & 0.5 & 6.6 & 75.7 \\
+\bottomrule
+\end{tabular}}
+\end{table}

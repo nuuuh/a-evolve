@@ -5,7 +5,7 @@
 % non-anonymous preprint with page numbers.
 
 
-\usepackage[review]{acl}
+\usepackage[final]{acl}
 
 % Standard package includes
 \usepackage{times}
@@ -54,6 +54,103 @@
 \usepackage{makecell}
 \usepackage{paralist}
 \usepackage{placeins}
+\usepackage{listings}
+\lstdefinestyle{prompt}{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=flexible,
+  showstringspaces=false,
+  keepspaces=true,
+  upquote=true,
+  frame=single,
+  framerule=0.4pt,
+  framesep=4pt,
+  xleftmargin=4pt,
+  xrightmargin=4pt,
+  literate=%
+    {→}{{$\rightarrow$}}{1}%
+    {—}{{---}}{1}%
+    {…}{{\ldots}}{1}%
+    {≥}{{$\geq$}}{1},
+}
+
+% Pretty boxed prompts for the appendix.
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable,listings}
+\newtcblisting{promptlisting}[1][]{%
+  enhanced, breakable,
+  colback=gray!6,
+  colframe=black!60,
+  boxrule=0.5pt,
+  arc=2.5mm,
+  left=3mm, right=3mm, top=2mm, bottom=2mm,
+  title=#1,
+  fonttitle=\bfseries\sffamily\small,
+  coltitle=white,
+  colbacktitle=black!70,
+  attach boxed title to top left={xshift=4mm,yshift=-2.5mm},
+  boxed title style={
+    colback=black!70, colframe=black!70,
+    boxrule=0pt, arc=1.5mm,
+    left=4pt, right=4pt, top=1pt, bottom=1pt,
+  },
+  before skip=10pt, after skip=8pt,
+  listing only,
+  listing options={
+    style=prompt,
+    frame=none,
+    backgroundcolor=,
+    framesep=0pt,
+    xleftmargin=0pt,
+    xrightmargin=0pt,
+  },
+}
+
+\usepackage{multicol}
+
+% Compact 2-column listing style for the long Analyst prompt: rendered in
+% two columns inside a wrapper box so the whole prompt fits a single page.
+\lstdefinestyle{promptcompact}{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=flexible,
+  showstringspaces=false,
+  keepspaces=true,
+  upquote=true,
+  frame=none,
+  framesep=0pt,
+  xleftmargin=0pt,
+  xrightmargin=0pt,
+  aboveskip=1pt,
+  belowskip=1pt,
+  literate=%
+    {→}{{$\rightarrow$}}{1}%
+    {—}{{---}}{1}%
+    {…}{{\ldots}}{1}%
+    {≥}{{$\geq$}}{1},
+}
+
+\newtcolorbox{promptboxcompact}[1][]{%
+  enhanced,
+  colback=gray!6,
+  colframe=black!60,
+  boxrule=0.5pt,
+  arc=2.5mm,
+  left=3mm, right=3mm, top=2mm, bottom=2mm,
+  title=#1,
+  fonttitle=\bfseries\sffamily\small,
+  coltitle=white,
+  colbacktitle=black!70,
+  attach boxed title to top left={xshift=4mm,yshift=-2.5mm},
+  boxed title style={
+    colback=black!70, colframe=black!70,
+    boxrule=0pt, arc=1.5mm,
+    left=4pt, right=4pt, top=1pt, bottom=1pt,
+  },
+  before skip=8pt, after skip=6pt,
+}
 
 % Proposition environments for the theoretical framework.
 \theoremstyle{plain}
@@ -74,7 +171,7 @@
 \newcommand{\minhua}[1]{\textcolor{purple}{\#Minhua:~#1\#}}
 \newcommand{\zhan}[1]{\textcolor{teal}{\#Zhan:~#1\#}}
 \newcommand{\bing}[1]{{\color{olive}\bf [Bing: #1]}}
-
+\newcommand{\yisi}[1]{{\color{blue} [Yisi: #1]}}
 
 % \title{Adaptive Auto-Harness: Self-Improvement for Long-Running Agentic Systems}
 
@@ -85,12 +182,11 @@
 \title{Adaptive Auto-Harness: Sustained Self-Improvement for Agentic System Deployment on Open-Ended Task Streams}
 
 
-\author{
-Zewen Liu$^{1}$, Juntong Ni$^{1}$, Xianfeng Tang$^{2}$,
-Max S.Y. Lau$^{1}$, Qi He$^{3}$,  Wenpeng Yin$^{4}$, Wei Jin$^{1}$,
-\\
-$^{1}$Emory University, $^{2}$Amazon \\
-\texttt{\{zewen.liu, wei.jin\}@emory.edu}
+\author{Zewen Liu$^{1}$, Zhan Shi$^{2}$, Yisi Sang$^{2}$, Bing He$^{2}$, Minhua Lin$^{3}$, Tianxin Wei$^{4}$\\
+\textbf{Dakuo Wang}$^{5}$, \textbf{Benoit Dumoulin}$^{2}$, \textbf{Wei Jin}$^{1}$, \textbf{Hanqing Lu}$^{2}$\\
+$^{1}$Emory University $^{2}$Amazon $^{3}$The Pennsylvania State University $^{4}$UIUC $^{5}$Northeastern University \\
+\texttt{\{zewen.liu,wei.jin\}@emory.edu}; \texttt{mfl5681@psu.edu}; \texttt{twei10@illinois.edu};\\
+\texttt{\{shizhans,yisisang,binghee,dumoulib,luhanqin\}@amazon.com}; \texttt{d.wang@northeastern.edu}\\
 }
 
 \begin{document}
@@ -106,7 +202,7 @@ Auto-harness systems such as A-Evolve, GEPA, and Meta-Harness improve LLM agents
 \input{sections/experiment}
 \input{sections/conclusions}
 \input{sections/limitations}
-\input{sections/ethical_considerations}
+\input{sections/Ethical_consideration}
 \input{sections/ai_usage}
 
 \bibliography{references}

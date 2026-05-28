@@ -1,26 +1,28 @@
 % !TEX root = ../main.tex
 
+\clearpage
 \section{Benchmark and Evaluation Details}
 \label{app:benchmarks}
 
-Across all three benchmarks, tasks are evaluated in chronological order. The solver receives task $x_i$ with only the information available before its release time, while the evolver receives outcome labels only after the corresponding resolution time. The table generator loads the first record for each \texttt{instance\_id}, so retries or duplicate logs do not change the reported metrics. The three datasets are finite evaluated prefixes of unbounded task streams and jointly cover the three deployment challenges in \S\ref{sec:intro}: stream continuation (D1), within-stream heterogeneity (D2), and temporal shift (D3).
+Across all three benchmarks, tasks are evaluated in chronological order. The solver receives task $x_i$ with only the information available before its release time, while the evolver receives outcome labels only after the corresponding resolution time. Our analysis pipeline loads the first record for each \texttt{instance\_id}, so retries or duplicate logs do not change the reported metrics. The three benchmarks together exercise the three open-ended-stream deployment dimensions identified in \S\ref{sec:intro}.
 
 \subsection{PolyBench}
 
 \noindent\textbf{Source and composition.}
-PolyBench is a Polymarket-derived prediction-market stream with 5{,}075 binary-outcome tasks from Feb 6--22, 2026. The stream spans politics, sports, finance, crypto, and entertainment markets, and each task is resolved against the official market outcome.
+PolyBench is a Polymarket-derived prediction-market stream with 5{,}075 tasks from Feb 6--22, 2026. The stream spans politics, sports, finance, crypto, and entertainment markets, and each task is resolved against the official market outcome.
 
 \noindent\textbf{Temporal ordering.}
-For each market, we store the task release timestamp and the outcome resolution timestamp. Retrieval evidence is filtered by release time during solving. Resolved labels are hidden from evolution until the corresponding market has resolved.
+For each market, we store the task release timestamp and the outcome resolution timestamp. Resolved labels are hidden from evolution until the corresponding market has resolved.
 
 \noindent\textbf{Metrics.}
-Let $\mathcal{T}$ be the set of executed trades, excluding gated tasks, empty decisions, and \textsc{Skip} decisions. Let $s_i$ indicate whether trade $i$ is correct, $b_i$ be its confidence-weighted investment, and $g_i$ be its realized profit. The metrics reported for PolyBench are:
+Let $N$ be the total number of markets in the stream and let $\mathcal{T}$ be the set of executed trades, excluding gated tasks, empty decisions, and \textsc{Skip} decisions. Let $s_i\in\{0,1\}$ indicate whether trade $i$ is correct, $b_i$ be its confidence-weighted investment, and $g_i$ be its realized profit. The metrics reported for PolyBench are:
 \begin{align*}
-\mathrm{Acc} &= 100 \cdot \tfrac{1}{N}\textstyle\sum_{i\in\mathcal{T}} s_i \\
-\mathrm{CWR} &= 100 \cdot \tfrac{\sum_{i\in\mathcal{T}} g_i}{\sum_{i\in\mathcal{T}} b_i} \\
-\mathrm{Return} &= \tfrac{|\mathcal{T}|}{N}\cdot\mathrm{CWR}.
+\mathrm{Coverage} &= \tfrac{|\mathcal{T}|}{N}, \\
+\mathrm{Acc}      &= 100 \cdot \tfrac{1}{N}\textstyle\sum_{i\in\mathcal{T}} s_i, \\
+\mathrm{CWR}      &= 100 \cdot \tfrac{\sum_{i\in\mathcal{T}} g_i}{\sum_{i\in\mathcal{T}} b_i}, \\
+\mathrm{Return}   &= \mathrm{Coverage} \cdot \mathrm{CWR}.
 \end{align*}
-Accuracy therefore rewards both broad coverage and correct decisions, while Return scales the portfolio profit-to-investment ratio by the fraction of tasks actually traded.
+Accuracy therefore rewards both broad coverage and correct decisions. Return is a portfolio-style profitability metric: CWR captures the dollar-weighted profit per unit invested over the markets the agent actually traded, and the Coverage scaling discounts a high CWR earned on only a thin slice of the stream. We report Return alongside Accuracy because Accuracy treats every trade equally and is blind to stake sizing, whereas under confidence-weighted investments a confident wrong trade can offset several confident correct ones; Return therefore reflects realized P\&L rather than mere directional correctness.
 
 \subsection{CTF-Dojo}
 
@@ -51,7 +53,22 @@ We report Pass@1 under the official FutureX criterion. Slice-level human-steerin
 All main runs use provider-hosted LLM APIs with native tool calling and the same chronological task order used by the benchmarks. Reported numbers are generated from the corresponding \texttt{results.jsonl} files. Closed provider-hosted models do not expose parameter counts; we therefore report the evaluated task counts and evolution cycles rather than GPU-hours. The full-system runs contain 5{,}075/261/503 solve trajectories and 51/14/26 evolution cycles for PolyBench/CTF-Dojo/FutureX, respectively.
 
 \noindent\textbf{Compute and resources.}
-All model inference is performed through provider-hosted APIs; the primary Adaptive Auto-Harness runs use Claude Sonnet for solving and Claude Opus for evolution, with other provider-hosted models used only for the corresponding baseline rows. We do not train or fine-tune model weights, and no local GPU compute is used for model optimization. Local compute is used for orchestration, result aggregation, figure generation, and Docker-based benchmark execution, including the per-task CTF-Dojo and FutureX sandboxes. Because the evaluated closed models do not disclose parameter counts, task counts and evolution cycles are the main compute descriptors.
+All model inference is performed through provider-hosted APIs; the primary Adaptive Auto-Harness runs use Claude Sonnet 4.6 for solving and Claude Opus 4.6 for evolution, with other provider-hosted models used only for the corresponding baseline rows. We do not train or fine-tune model weights, and no local GPU compute is used for model optimization. Local compute is used for orchestration, result aggregation, figure generation, and Docker-based benchmark execution, including the per-task CTF-Dojo and FutureX sandboxes. Because the evaluated closed models do not disclose parameter counts, task counts and evolution cycles are the main compute descriptors.
+
+\noindent\textbf{Hyperparameters.}
+Table~\ref{tab:hyperparams} lists the per-benchmark hyperparameters used by all main runs. Because temperature is zero throughout, the reported metrics are point estimates rather than averages over re-samples.
+
+\input{acl_agentic_navigation/sections/tables/B1_hyperparameters.tex}
+
+\noindent\textbf{Seed harness.}
+Table~\ref{tab:seed_inventory} reports what the evolver inherits before any cycle runs. The seed prompt is intentionally compact: PolyBench and CTF-Dojo seed prompts are 27 and 24 lines respectively, FutureX is longer because it documents the temporal-retrieval contract. All three benchmarks start with zero seed skills, tools, and memory entries, so any harness component beyond the seed prompt and the FutureX infrastructure scaffold is constructed by the evolver itself; this isolates the gains reported in the main results from prior hand-engineering of the seed.
+
+\input{acl_agentic_navigation/sections/tables/B2_seed_inventory.tex}
+
+\noindent\textbf{Token cost and wall-clock.}
+Table~\ref{tab:cost} summarises per-system token usage and wall-clock for the five most relevant systems. Solver tokens are summed from the per-task fields in \texttt{results.jsonl}; evolver-side tokens are omitted because the orchestrator did not persist them in the released artifacts. Wall-clock is the sum of per-task \texttt{elapsed} seconds and excludes orchestration overhead.
+
+\input{acl_agentic_navigation/sections/tables/I1_cost.tex}
 
 
 \noindent\textbf{Temporal reveal.}
@@ -61,10 +78,10 @@ Each task stores a release timestamp and, when available, a resolution timestamp
 The evolver workspace persists a task board, research logs, verifier notes, tests, and architecture notes across cycles. These artifacts are separate from the solver workspace: the evolver may update harness files during evolution, while the solve-time router only inspects branch metadata and selects a branch for the incoming task.
 
 \noindent\textbf{Branch replay protocol.}
-For routing analysis, every branch in the evolved harness tree is replayed on the same task set before constructing oracle and worst controls. Oracle and worst are therefore post-hoc diagnostic bounds; the deployed router only sees task context and branch metadata, not labels or branch outcomes.
+For the routing analysis in Appendix~\ref{app:branch_perf}, every branch in the evolved harness tree is replayed on a curated task subset to construct the Oracle and Worst controls. Oracle and Worst are post-hoc diagnostic bounds; the deployed router sees only task context and branch metadata, not labels or branch outcomes.
 
 \noindent\textbf{Human-steering records.}
-Human-steering events are author-provided system interventions rather than recruited human-subject annotations. Each event is logged with the triggering phase, requested external signal, and workspace location where the response is recorded. This makes steering auditable and keeps human input as source or access guidance rather than answer labels.
+Human-steering events are author-provided system interventions rather than recruited human-subject annotations. Each event is logged with the triggering phase, requested external signal, and workspace location where the response is recorded; Table~\ref{tab:hitl_log} reproduces the full event log. This makes steering auditable and keeps human input as source or access guidance rather than answer labels.
 
 \section{Benchmark Non-Stationarity Diagnostics}
 \label{app:nonstationarity}
@@ -80,26 +97,45 @@ CTF-Dojo exposes a different form of non-stationarity: the stream expands into c
 \noindent\textbf{FutureX.}
 FutureX shifts along source, language, and difficulty dimensions (Figure~\ref{fig:app_nonstationarity_futurex}). Batch-level baseline accuracy ranges from 20\% to 80\%, showing that chronological batches differ substantially in solvability. Later batches contain more Chinese-titled questions and more questions tied to platforms that are difficult to search directly, while the share of harder Level 3--4 questions increases sharply in the same region. Chinese-language answer requirements also appear mainly in later batches. These changes explain why FutureX stresses both construction and adaptation: the harness must acquire better source-finding and temporal retrieval behavior, while solve-time routing must select branches suited to the task's language, source, and difficulty profile.
 
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/figure_c2_final.pdf}
+\caption{\textbf{Evolver capability on CTF-Dojo.} Pass rate improves with stronger evolver models; higher budget helps Haiku and Sonnet but gives little additional gain once Opus already reaches high performance.}
+\label{fig:app_c2_evolver_budget}
+\end{figure}
+
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/figure_c3_polybench_dilution.pdf}
+\caption{\textbf{PolyBench workspace dilution.} A PolyBench-evolved workspace reaches the highest CWR, while combining all evolved workspaces sharply reduces CWR, supporting the need for specialized harness branches rather than a single dense harness.}
+\label{fig:app_polybench_dilution}
+\end{figure}
+
+
+
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.9\linewidth]{acl_agentic_navigation/figures/fig1_strategy_drift.pdf}
+\includegraphics[width=0.9\linewidth]{figures/fig1_strategy_drift.pdf}
 \caption{\textbf{PolyBench non-stationarity.} Market difficulty and tradability shift over time: later markets are less often decisive or liquid and more often near-even.}
 \label{fig:app_nonstationarity_polybench}
 \end{figure*}
 
 \begin{figure*}[htb]
 \centering
-\includegraphics[width=0.8\linewidth]{acl_agentic_navigation/figures/shift_crypto.pdf}
+\includegraphics[width=0.8\linewidth]{figures/shift_crypto.pdf}
 \caption{\textbf{CTF-Dojo non-stationarity.} The chronological stream keeps introducing new competitions and increases cross-competition variability, so early challenge experience is not uniformly transferable.}
 \label{fig:app_nonstationarity_ctf_dojo}
 \end{figure*}
 
 \begin{figure*}[htb]
 \centering
-\includegraphics[width=0.8\linewidth]{acl_agentic_navigation/figures/property_shift.pdf}
+\includegraphics[width=0.8\linewidth]{figures/property_shift.pdf}
 \caption{\textbf{FutureX non-stationarity.} Language, source accessibility, difficulty, and answer format shift across batches, creating solve-time harness mismatch when one static harness is reused for all tasks.}
 \label{fig:app_nonstationarity_futurex}
 \end{figure*}
+
 
 
 
@@ -111,62 +147,317 @@ We include two supplemental diagnostics that clarify where the main gains come f
 \noindent\textbf{Evolver capability and construction budget.}
 Figure~\ref{fig:app_c2_evolver_budget} varies the evolver model and construction budget on CTF-Dojo. Stronger evolvers achieve higher pass rates, while additional budget mainly helps weaker evolvers and saturates for the strongest model.
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{figures/figure_c2_final.pdf}
-\caption{\textbf{Evolver capability on CTF-Dojo.} Pass rate improves with stronger evolver models; higher budget helps Haiku and Sonnet but gives little additional gain once Opus already reaches high performance.}
-\label{fig:app_c2_evolver_budget}
-\end{figure}
+
 
 \noindent\textbf{Cross-domain workspace dilution.}
 Figure~\ref{fig:app_polybench_dilution} compares PolyBench CWR when using workspaces evolved on different domains. The PolyBench-specific workspace performs best, while the all-evolved workspace loses 57 points of CWR, showing that mixing heterogeneous experience can dilute domain-relevant harness structure.
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{figures/figure_c3_polybench_dilution.pdf}
-\caption{\textbf{PolyBench workspace dilution.} A PolyBench-evolved workspace reaches the highest CWR, while combining all evolved workspaces sharply reduces CWR, supporting the need for specialized harness branches rather than a single dense harness.}
-\label{fig:app_polybench_dilution}
-\end{figure}
 
-\FloatBarrier
+\section{Per-Domain and Per-Category Breakdowns}
+\label{app:per_domain}
+
+\noindent\textbf{CTF-Dojo.}
+Table~\ref{tab:per_domain_ctf} reports Pass@1 by category. The Full System gains the most on \emph{web} ($+27$ over Sonnet) and \emph{crypto} ($+19$); \emph{binary/pwn} remains the hardest category at $14.8\%$ even after evolution and routing, consistent with the sandbox payload-handling bottleneck identified in \S\ref{sec:barriers}.
+
+\input{acl_agentic_navigation/sections/tables/F1_per_domain_ctf.tex}
+
+\noindent\textbf{FutureX.}
+Table~\ref{tab:per_domain_futurex} reports Pass@1 by language and inferred domain. English-language slices benefit most from evolution; the small \emph{zh-finance} slice illustrates the source-discovery bottleneck where neither evolution nor routing alone can recover when the platform is behind a search wall. Domains are inferred by keyword match on the question text, since FutureX results do not store the official domain tags; the \textit{other} bucket therefore aggregates unmatched questions.
+
+\input{acl_agentic_navigation/sections/tables/F2_per_domain_futurex.tex}
+
+\noindent\textbf{PolyBench.}
+Table~\ref{tab:per_domain_polybench} reports Accuracy/Return per inferred category. Sports dominates the portfolio ratio because liquid sports markets carry most of the dollar-weighted profit; politics carries near-zero return despite high accuracy. Categories are inferred by keyword match on the trajectory prompt's Event description.
+
+\input{acl_agentic_navigation/sections/tables/F3_per_domain_polybench.tex}
+
+\section{Multi-Agent Evolution Dynamics}
+\label{app:evolution_dynamics}
+
+Table~\ref{tab:evolution_dynamics} reports the full-stream system contrast (No-evo $\to$ Single-agent $\to$ Multi-agent) plus the timing of the multi-agent run, complementing rather than reproducing Figure~\ref{fig:rq2_stats}. The figure runs the four-phase evolver against \emph{No-memory} and \emph{No-feedback} ablations on a curated subset of samples; the table here instead reports the headline metric of each system on the full benchmark, matching the Multi-agent column of Table~\ref{tab:rq1_main}. The unique signal added is timing: the \emph{Peak} column gives the cycle index at which the multi-agent run's cumulative mean was highest, and a peak well before the final cycle is consistent with the overfitting trend in Figure~\ref{fig:c1}. On PolyBench the multi-agent peak occurs at cycle 22 of 51 and on FutureX at cycle 10 of 26, while CTF-Dojo continues to accumulate utility across all 14 cycles.
+
+\input{acl_agentic_navigation/sections/tables/G1_evolution_dynamics.tex}
+
+\section{Routing Behaviour and Branch Performance}
+\label{app:branch_perf}
+
+This appendix expands the routing analysis behind Figure~\ref{fig:rq3_stats}. We use two related but distinct subsets per benchmark: (i)~the \emph{nav-run subset} (CTF-Dojo: 60 tasks, PolyBench: 100, FutureX: 80) on which the LLM router was deployed live and we observe its branch assignments; and (ii)~the \emph{replay subset} (CTF-Dojo: 40, PolyBench: 80, FutureX: 58), a subset of the same tasks for which every branch has been replayed end-to-end so each task carries a complete cross-venue score vector. The replay subset is necessarily smaller because some early-cycle branches did not exist for batch~1 tasks. Four per-task series are derived from the replay subset: \emph{Oracle} = best venue, \emph{Adapt} = the LLM router's actual choice on the nav run, \emph{Naive} = the fixed \texttt{main} venue (no branching), and \emph{Worst} = worst venue.
+
+\noindent\textbf{Where the router sends each task.}
+Table~\ref{tab:branch_perf} reports the per-branch routing volume and pass rate over the nav-run subset. The router prompt (Appendix~\ref{app:prompt-router}) does allow a \texttt{main} fallback when no branch matches strongly, but on these subsets the router always identifies a regime-specific branch and never invokes that fallback. Branches with low realised pass rates (e.g.\ \texttt{branch/pwn} on CTF-Dojo, \texttt{branch/lvl3} on FutureX) are not failing branches per se --- the router sends genuinely hard tasks to them, and the corresponding tasks have low Oracle pass rates on the replay subset as well (Table~\ref{tab:routing_stats}).
+
+\input{acl_agentic_navigation/sections/tables/H1_branch_perf.tex}
+
+\noindent\textbf{How much routing recovers of the adaptation gap.}
+Table~\ref{tab:routing_stats} gives the headline Oracle/Adapt/Naive/Worst comparison on the replay subset, with 95\% bootstrap CIs and Holm--Bonferroni-corrected paired Wilcoxon \emph{p}-values. The Oracle$-$Naive gap, our empirical estimate of the adaptation loss $L_\mathrm{adapt}$, is large and significant on CTF-Dojo ($+37.5$\,pp, $p_\mathrm{adj}\!=\!4.8\times10^{-4}$) and PolyBench ($+8.8$\,pp CWR, $p_\mathrm{adj}\!=\!1.8\times10^{-5}$); on FutureX the gap is smaller and not significant after correction, consistent with the \S\ref{sec:barriers} finding that source acquisition rather than branch choice is the binding capability there. \emph{Adapt} closes a substantial fraction of the gap on CTF-Dojo and PolyBench but trails Naive slightly on FutureX, again reflecting the source-acquisition bottleneck.
+
+\input{acl_agentic_navigation/sections/tables/H2_routing_stats.tex}
+
+\noindent\textbf{Per-batch view.}
+Table~\ref{tab:routing_per_batch} reports the same series broken out by batch on the replay subset (only batches with full cross-branch replays are shown, so e.g.\ CTF-Dojo includes batches 2 and 3 only). CTF-Dojo's branch tree improves between these two batches (Oracle $45\!\to\!65$\%) as new specialisations come online; PolyBench shows a quiet batch~4 followed by a sports-led recovery in batch~5; FutureX's batch~3 has the widest Oracle$-$Adapt headroom, where the router's level-based branches were less reliable than \texttt{main} on the same tasks.
+
+\input{acl_agentic_navigation/sections/tables/H3_routing_per_batch.tex}
+
+\section{Human-in-the-Loop Event Log}
+\label{app:hitl_log}
+
+Table~\ref{tab:hitl_log} reports the full HITL event log from the FutureX RQ5 run (\S\ref{sec:hitl}). The run uses the curated 5-batch FutureX stream (Design~C: 100 tasks, 5\,$\times$\,20) with two engineered regime shifts, a Sonnet 4.6 solver, an Opus 4.6 evolver, and \texttt{hitl\_enabled=true}. The Analyst and Builder decide when to invoke each hook; the human responds via Telegram from a pre-authored cheat-sheet. Two P2 (research-phase) events fire at cycle 1 to bootstrap the search pipeline, and one substantive P3 (task-board) event fires at cycle 3 to steer the evolver toward Western and Chinese specialty endpoints. The remaining P3 prompts (cycles 1, 2, 4, and 5) return \texttt{skip}, matching the cheat-sheet protocol that the human only intervenes when the cheat-sheet has a relevant entry. The slice-level lift on each regime ($0$, $+5$, $+20$, $+15$, $0$ on regimes 1–5) is reported in Figure~\ref{fig:rq4_hitl_passrate}.
+
+\input{acl_agentic_navigation/sections/tables/J1_hitl_log.tex}
+
+\section{Run-Detail Analysis}
+\label{app:run_details}
+
+Table~\ref{tab:run_turns_time} reports per-task turn counts and elapsed seconds, complementing the aggregate cost summary in Table~\ref{tab:cost}. Both distributions are right-skewed on CTF-Dojo and FutureX, where a small number of long-running tasks pull the mean above the median; we therefore report both. CTF-Dojo's solver budget is consistently saturated --- Sonnet's mean of 89.4 turns reflects a large mass of tasks that loop until the cap, whereas the evolved variants typically reach a flag (or give up) earlier. PolyBench is dominated by direct decisions: most tasks submit immediately (turn count 1) because the prompt already contains the market context the solver needs.
+
+\input{acl_agentic_navigation/sections/tables/R1_run_turns_time.tex}
+
 \clearpage
 \onecolumn
-\section{Simplified Prompt Interfaces}
+\section{System Prompts}
 \label{app:prompts}
 
-\newcommand{\PromptBlock}[2]{%
-  \par\smallskip
-  \begingroup
-  \setlength{\fboxsep}{6pt}%
-  \setlength{\fboxrule}{0.4pt}%
-  \noindent\fcolorbox{black!35}{black!3}{%
-    \begin{minipage}{0.94\linewidth}
-    {\large\textbf{#1}}\par\vspace{0.25em}
-    {\normalsize #2}
-    \end{minipage}}%
-  \par\smallskip
-  \endgroup
-}
+We reproduce the verbatim system prompts used by Adaptive Auto-Harness, exactly as the agents receive them. Curly-brace placeholders such as \texttt{\{benchmark\_context\}}, \texttt{\{regime\}}, \texttt{\{workspace\_extras\}}, and \texttt{\{categories\}} are substituted by the framework at runtime per benchmark or per regime; we leave them in place so the templating is visible.
 
-The full prompts contain benchmark-specific paths and implementation details. We report simplified versions here to show the role structure and information flow used by Adaptive Auto-Harness.
+\label{app:prompt-router}
+\begin{promptlisting}[Solve-time router]
+You are a fast task router. For each task you must pick exactly one branch
+from the list provided.
 
-\PromptBlock{Solve-time router}{
-\textbf{Input:} the incoming task and branch summaries. \textbf{Instruction:} read each branch's intended scope, match the task to positive and negative routing signals, and select exactly one harness branch. Use the main branch when multiple branches match weakly or no branch has clear evidence. Return a branch name, confidence, and short reason.
-}
+Decision procedure:
+1. Read each branch's README, focusing on its "When to route here" section.
+2. Match the task description against each branch's positive signals
+   (categories, keywords, metadata) and negative signals (NOT applicable).
+3. If exactly one specialized branch matches strongly → route there with
+   high confidence (>= 0.7).
+4. If multiple branches partially match or none match clearly → route to
+   "main" with confidence reflecting your uncertainty.
+5. Branches without a clear "When to route here" section should be treated
+   as low-confidence candidates — prefer main unless the regime is obvious.
 
-\PromptBlock{Analyst}{
-\textbf{Input:} recent trajectories, revealed feedback, branch statistics, and the persistent evolution workspace. \textbf{Instruction:} identify recurring failure patterns, separate transferable fixes from branch-specific fixes, and write a task board with priorities and targets. Audit stale or over-specialized artifacts before proposing new changes.
-}
+Output JSON only:
+{"branch": "main", "confidence": 0.8, "reason": "brief reason"}
+\end{promptlisting}
 
-\PromptBlock{Researcher}{
-\textbf{Input:} an analyst-assigned failure pattern or benchmark bottleneck. \textbf{Instruction:} search for candidate tools, APIs, data sources, or implementation strategies; test whether each candidate works under the benchmark constraints; and record concise findings that the builder can directly use.
-}
+\label{app:prompt-researcher}
+\begin{promptlisting}[Researcher]
+You are a research agent — PHASE 2 of 4 in the evolution cycle.
 
-\PromptBlock{Builder}{
-\textbf{Input:} the task board, verified research records, current solver workspace, and architecture notes. \textbf{Instruction:} implement only the changes supported by verified research, update prompts, tools, memory, or infrastructure as needed, and preserve existing working code unless a targeted replacement is justified.
-}
+PHASE SEQUENCE:
+  1. ANALYZE  → analyst identified gaps, wrote task_board.md
+  2. RESEARCH (you) → discover solutions for your assigned regime
+  3. BUILD    → builder reads YOUR research to write code
+  4. VERIFY   → verifier tests what the builder created
 
-\PromptBlock{Verifier}{
-\textbf{Input:} the builder's changes, target failure pattern, and benchmark constraints. \textbf{Instruction:} run focused tests before the changes go live, check that the implementation respects temporal filtering and sandbox rules, and return a pass/fail verdict with the concrete failure reason when retry is needed.
-}
+UPSTREAM: The analyst assigned you regime "{regime}" because tasks
+are failing in that area.
+
+DOWNSTREAM: The builder will read your research records to decide
+what code to write. For each approach you test, document:
+- How to implement it (endpoint, arguments, response format)
+- What it covers and what it doesn't
+- Whether it works reliably (tested with real calls)
+
+RESEARCH APPROACH:
+1. Read /solver_workspace/ to see what's already implemented
+2. Read /evolver_workspace/research_log.jsonl to avoid retesting
+3. Search the web for solutions, libraries, APIs, reference code
+4. Test NEW approaches that complement what already exists
+
+You can utilize Full network access if that's available.
+
+Write findings to /evolver_workspace/tests/research_{regime}.jsonl.
+
+WORKSPACE LAYOUT:
+  /solver_workspace/    — solver workspace (read current code)
+  /evolver_workspace/   — evolution state
+    research_log.jsonl  — existing records (read to avoid retesting)
+    tests/              — write findings HERE
+  /trajectories/        — READ-ONLY solver conversations per task
+
+BASH OUTPUT IS CAPPED AT 100 KB PER CALL (first 50 KB + last 50 KB,
+middle elided). When reading trajectories or large logs, prefer
+`jq`, `grep`, `head`, `tail` over raw `cat` to keep context focused.
+
+{benchmark_context}
+\end{promptlisting}
+
+\label{app:prompt-builder}
+\begin{promptlisting}[Builder]
+You are a builder — PHASE 3 of 4 in the evolution cycle.
+
+PHASE SEQUENCE:
+  1. ANALYZE  → analyst identified failure patterns in task_board.md
+  2. RESEARCH → agents discovered solutions in research_log.jsonl
+  3. BUILD (you) → implement solutions from verified research
+  4. VERIFY   → verifier tests YOUR code
+
+UPSTREAM: Read research_log.jsonl for verified approaches (works=true).
+The task_board tells you which capabilities matter most.
+The architecture.md shows what's already built.
+
+DOWNSTREAM: The verifier will test your code. If verification fails,
+you get the report and can retry (max 3 attempts).
+
+WORKSPACE LAYOUT:
+  /solver_workspace/          — the solver's workspace
+    prompts/system.md         — solver prompt (update if needed)
+    tools/                    — evolved tool scripts
+    infra/                    — evolved infrastructure (if applicable)
+{workspace_extras}  /evolver_workspace/
+    task_board.md             — failure regimes from analyst
+    research_log.jsonl        — verified approaches from research
+    architecture.md           — UPDATE with what you built
+  /trajectories/              — READ-ONLY solver conversations
+
+Read existing code first. Extend, don't rewrite.
+Do NOT run git — the framework handles commits.
+
+BASH OUTPUT IS CAPPED AT 100 KB PER CALL (first 50 KB + last 50 KB,
+middle elided). When scanning large files, prefer `jq`, `grep`,
+`head`, `tail` over raw `cat`.
+
+{benchmark_context}
+\end{promptlisting}
+
+\label{app:prompt-verifier}
+\begin{promptlisting}[Verifier]
+You are a verification agent — PHASE 4 of 4 in the evolution cycle.
+
+PHASE SEQUENCE:
+  1. ANALYZE  → analyst identified failure patterns
+  2. RESEARCH → agents discovered solutions
+  3. BUILD    → builder wrote code implementing those solutions
+  4. VERIFY (you) → test the builder's code before it goes live
+
+UPSTREAM: The builder just wrote/modified code in /solver_workspace/.
+Your job is to verify it works before the next batch.
+
+DOWNSTREAM: If PASS, the code goes live. If FAIL, the builder gets
+your report and retries. Be specific about what failed.
+
+WORKSPACE LAYOUT:
+  /solver_workspace/    — solver workspace (test code here)
+  /evolver_workspace/   — evolution state
+    task_board.md       — context for test cases
+    tests/              — write your test scripts HERE
+  /trajectories/        — READ-ONLY solver conversations
+
+Output: VERDICT: PASS or FAIL, then list each test with its result.
+
+BASH OUTPUT IS CAPPED AT 100 KB PER CALL (first 50 KB + last 50 KB,
+middle elided). Prefer `jq`, `grep`, `head`, `tail` over raw `cat`
+when inspecting large files.
+
+{benchmark_context}
+\end{promptlisting}
+
+\label{app:prompt-analyst}
+\begin{promptlisting}[Analyst]
+You are a failure analyst — PHASE 1 of 4 in the evolution cycle.
+
+PHASE SEQUENCE:
+  1. ANALYZE (you) → write task_board.md with failure patterns + priorities + TARGET
+  2. RESEARCH      → agents investigate top-K gaps from YOUR task board
+  3. BUILD         → builder implements solutions PER TARGET (main first, then branches)
+  4. VERIFY        → verifier tests what the builder created per target
+
+Your task board DIRECTLY drives what gets researched and built next.
+Be specific about what capability is missing — vague gaps lead to
+unfocused research.
+
+This system uses NAVIGATION: git branches isolate solver strategies.
+Each task is routed to the best branch before solving. Your job includes
+deciding WHERE each fix should land.
+
+CRITICAL: TRANSFERABILITY ANALYSIS (do this BEFORE writing the task board)
+
+Naive evolution accumulates "shortcut artifacts" — skills, tools, prompt rules,
+or memory entries that helped one batch but break later tasks with different
+distribution. Examples seen in past runs:
+  - A "stop searching at 6 queries" rule helped batch 7 (sports) at 95% but
+    crashed batches 14-20 (Chinese music) to 15% because those tasks needed
+    longer searches.
+  - A `bls_forgery.md` skill with 40s overhead and hard-coded BLS curve
+    parameters helped 1 BLS task but slowed all other crypto tasks.
+  - 22 hard-coded "wrong flag" entries in system.md memorized past failures
+    without abstracting the underlying lesson, bloating the prompt.
+
+Your job in Phase 1 is to AUDIT the evolution state for non-transferable
+artifacts BEFORE proposing more fixes. Use bash to:
+
+  1. Compare per-CATEGORY pass rates ACROSS cycles (read multiple
+     trajectories/batch_NNNN/index.txt files). If category X had 80% in
+     early batches and 30% in recent batches — that's degradation.
+  2. List recent additions to skills/, tools/, prompts/system.md, memory/
+     and ask: which CATEGORIES does each artifact help vs. hurt?
+     - Look for hard-coded task IDs, year-specific logic, single-domain rules
+     - Look for prompt rules added recently that contradict older rules
+  3. Check the strategy_tree.md routing stats: if a branch is dragging
+     overall performance down (worse than main on its routed tasks),
+     mark it for retirement.
+
+For each non-transferable artifact found, add a "## Toxic Artifacts" section
+to the task board listing:
+  - artifact_name: helps {categories} but hurts {categories} → ACTION:
+    move-to-branch/<name>, deprecate, or rewrite-as-general
+
+BRANCHING DECISION (TARGET per regime):
+- TARGET: main — the fix is domain-generalizable AND verified to NOT degrade
+  any previously-passing category
+- TARGET: branch/<name> — the fix is regime-specific OR has been observed to
+  help one category while hurting another (isolate it from main)
+- TARGET: branch/<existing-name> — an existing branch already handles this regime
+- Do NOT create new branches for < 2 tasks or single-cycle observations
+- Prefer branch isolation when in doubt: keeping main clean is more important
+  than maximizing main's per-batch peak
+
+WORKSPACE LAYOUT:
+  /solver_workspace/          — the solver's workspace (may be on any branch)
+  /evolver_workspace/         — shared evolution state
+    task_board.md             — YOUR OUTPUT
+    research_log.jsonl        — what's been researched so far
+    architecture.md           — what's been built so far
+    strategy_tree.md          — current branch descriptions + routing stats
+    evolution/observations/   — batch results (revealed feedback only)
+  /trajectories/              — READ-ONLY per-task solver conversations
+
+USE BASH to deeply analyze:
+- /trajectories/batch_NNNN/index.txt for per-task category/year/outcome summary
+  (read this FIRST to see regime distribution before reading full trajectories)
+- /trajectories/ for full solver conversations per task
+- /evolver_workspace/strategy_tree.md for branch performance
+- /evolver_workspace/evolution/observations/ for batch results
+- /solver_workspace/ to see current evolved code
+
+BASH OUTPUT IS CAPPED AT 100 KB PER CALL (first 50 KB + last 50 KB,
+middle elided). Trajectory JSONs on security/crypto tasks can be
+200+ KB each — `cat` will truncate them, and reading several in a row
+will exhaust your context. PREFER:
+  - `jq '.steps[].tool_use // .steps[].output' traj.json | head -200` to
+    see tool calls/outputs without the raw conversation bulk
+  - `jq -r '.steps[-5:]' traj.json` to inspect only the final few steps
+  - `grep -n ERROR|FAIL|flag traj.json` to locate specific signals
+  - `ls -lS /trajectories/ | head` to find the largest trajectories first
+  - `wc -l traj.json` before `cat` to check size
+Reserve raw `cat` for files under ~50 KB.
+
+NAVIGATION CONTEXT (provided in the user prompt):
+- Strategy tree: existing branches and their per-task routing performance
+- Routing summary: which tasks went to which branch this batch, and passed/failed
+
+PRIVACY: feedback_archive.jsonl is masked. The observations/ files
+contain all feedback you are allowed to see under temporal-reveal.
+
+OUTPUT FORMAT: task board in the exact markdown format with TARGET annotations:
+```
+## Failure Patterns (Cycle N)
+- regime_name: N tasks ... PRIORITY: HIGH → TARGET: main
+- other_regime: M tasks ... PRIORITY: MEDIUM → TARGET: branch/regime-name
+```
+
+No conversational text in the final output.
+
+{benchmark_context}
+\end{promptlisting}
 

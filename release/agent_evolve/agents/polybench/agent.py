@@ -27,14 +27,15 @@ class PolyBenchAgent(BaseAgent):
     def __init__(
         self,
         workspace_dir: str | Path,
-        model_id: str = "<solver-model-id>",
-        region: str = "us-west-2",
+        model_id: str | None = None,
+        region: str | None = None,
         max_tokens: int = 16384,
         skip_layers: frozenset[str] = frozenset(),
     ):
+        import os as _os
         super().__init__(workspace_dir, skip_layers=skip_layers)
-        self.model_id = model_id
-        self.region = region
+        self.model_id = model_id or _os.environ.get("SOLVER_MODEL", "<solver-model-id>")
+        self.region = region or _os.environ.get("AWS_REGION", "us-west-2")
         self.max_tokens = max_tokens
 
     def _build_system_prompt(self) -> str:

@@ -1,0 +1,21 @@
+\begin{table*}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{Per-category PolyBench metrics. Categories are inferred by keyword match on the trajectory prompt's Event description; \textit{other} catches unmatched markets. Each cell reports \textbf{Accuracy~(\%) / Return~(\%)}. Bold marks the best system per row on Accuracy.}
+\label{tab:per_domain_polybench}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lrcccccc@{}}
+\toprule
+Domain & N & Sonnet & A-Evolve & Meta-Harness & Multi-agent & Adaptive & Full System \\
+\midrule
+politics & 372 & 18.3/$-$5 & 11.3/$+$1 & 71.8/$-$2 & \textbf{87.9}/$-$3 & 87.6/$-$2 & 87.1/$-$4 \\
+sports & 1{,}120 & 23.8/$+$3 & 16.4/$+$8 & 55.8/$+$594 & 81.7/$+$659 & 80.0/$+$642 & \textbf{84.6}/$+$596 \\
+finance & 240 & 19.6/$+$2 & 18.3/$+$8 & 64.6/$+$7 & \textbf{81.7}/$+$10 & 77.1/$+$8 & 80.4/$+$9 \\
+crypto & 447 & 20.4/$-$3 & 17.7/$+$3 & 66.9/$+$2 & 89.3/$+$4 & 88.4/$+$4 & \textbf{90.8}/$+$5 \\
+entertainment & 218 & 22.0/$-$2 & 12.8/$+$1 & 64.7/$+$95 & \textbf{89.4}/$+$105 & 87.6/$+$101 & 89.0/$+$83 \\
+other & 2{,}678 & 22.6/$+$3 & 20.7/$+$9 & 40.8/$+$356 & 75.4/$+$394 & 72.3/$+$409 & \textbf{76.2}/$+$374 \\
+\midrule
+Overall & 5{,}075 & 22.2/$+$2 & 18.4/$+$7 & 50.8/$+$320 & 79.8/$+$351 & 77.4/$+$352 & \textbf{80.9}/$+$330 \\
+\bottomrule
+\end{tabular}}
+\end{table*}

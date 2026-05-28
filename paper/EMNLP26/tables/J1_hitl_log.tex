@@ -1,0 +1,20 @@
+\begin{table*}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{Complete human-in-the-loop event log from the FutureX RQ5 run (Design~C, 5 batches $\times$ 20 tasks). \emph{P2 (cred.)} is the research-phase credential hook; \emph{P3 (board)} is the task-board steering hook. Two P2 events fire at cycle~1 to bootstrap the search pipeline; one substantive P3 event fires at cycle~3 to direct the evolver toward Western and Chinese specialty endpoints. The remaining P3 prompts return \texttt{skip}, matching the cheat-sheet protocol. API tokens supplied via Telegram are redacted.}
+\label{tab:hitl_log}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}rllp{0.22\textwidth}p{0.34\textwidth}@{}}
+\toprule
+Cycle & Hook & Key & Trigger context & Human response \\
+\midrule
+1 & P2 (cred.) & \texttt{EXA\_API\_KEY} & Phase-2 research needs Exa search API. & \texttt{[REDACTED]} (key supplied) \\
+1 & P2 (cred.) & \texttt{SERPER\_API\_KEY} & Phase-2 research needs Serper Google API. & \texttt{[REDACTED]} (key supplied) \\
+1 & P3 (board) & cycle1 & 7 tasks fail: solver has no web search tool. & skip \\
+2 & P3 (board) & cycle2 & 9 tasks fail: search-pipeline entry never invokes search functions. & skip \\
+3 & P3 (board) & cycle3 & deterministic fallback used; structured-data API gap. & ``Specialty data tasks need direct endpoint integrations beyond generic web search. Build skills/tools for Western (US equities OHLC, Box Office Mojo, $\ldots$) and Chinese (Eastmoney secid, Maoyan film board, KolRank, $\ldots$) endpoints.'' \\
+4 & P3 (board) & cycle4 & 17 tasks fail: deterministic fallback used. & skip \\
+5 & P3 (board) & cycle5 & 20 tasks fail: Chinese niche-ranking API absent. & skip \\
+\bottomrule
+\end{tabular}
+\end{table*}

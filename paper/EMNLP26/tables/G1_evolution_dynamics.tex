@@ -1,0 +1,16 @@
+\begin{table}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{5pt}
+\caption{Full-stream system contrast complementing the subset-based ablation in Figure~\ref{fig:rq2_stats}. \emph{No-evo} is the no-evolution Sonnet baseline; \emph{Single} is A-Evolve (single-agent evolver); \emph{Multi} is the four-phase multi-agent evolver. The \emph{Peak} column reports the cycle index at which the multi-agent run's cumulative mean was highest, and \emph{Cycles} is the total number of evolution cycles run; together these expose timing information that the figure does not show. The headline cells reproduce the Multi-agent column of Table~\ref{tab:rq1_main}: PolyBench uses Accuracy (\%), CTF-Dojo and FutureX use Pass@1 (\%).}
+\label{tab:evolution_dynamics}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+Benchmark & Metric & No-evo & Single & Multi & Peak & Cycles \\
+\midrule
+PolyBench & Acc & 22.2 & 18.4 & \textbf{79.8} & 22 & 51 \\
+CTF-Dojo & Pass@1 & 37.2 & 45.2 & \textbf{47.9} & 1 & 14 \\
+FutureX & Pass@1 & 31.0 & 47.5 & \textbf{49.5} & 10 & 26 \\
+\bottomrule
+\end{tabular}}
+\end{table}

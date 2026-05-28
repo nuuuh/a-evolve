@@ -1,0 +1,27 @@
+\begin{table}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{Per-batch breakdown of the Oracle/Adapt/Naive/Worst means on the RQ4 routing subsets. CTF-Dojo and FutureX use Pass@1 (\%); PolyBench uses CWR (\%). Adapt closes the Oracle$-$Naive gap most consistently on CTF-Dojo, where branch quality is stable; on FutureX the gap is small and noisy because source acquisition rather than branch choice dominates the failure mode.}
+\label{tab:routing_per_batch}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+Benchmark & Batch & N & Oracle & Adapt & Naive & Worst \\
+\midrule
+\multirow{2}{*}{CTF-Dojo (Pass\%)}
+ & 2 & 20 & 45.0 & 30.0 & 15.0 & 10.0 \\
+ & 3 & 20 & 65.0 & 40.0 & 20.0 & 5.0 \\
+\midrule
+\multirow{4}{*}{PolyBench (CWR\%)}
+ & 2 & 20 & $+$16.7 & $+$11.6 & $+$7.8 & $-$100.0 \\
+ & 3 & 20 & $+$13.0 & $+$7.8 & $+$1.9 & $-$8.9 \\
+ & 4 & 20 & $+$1.1 & $+$1.1 & $+$1.4 & $-$5.1 \\
+ & 5 & 20 & $+$14.7 & $+$5.2 & $+$0.5 & $-$4.7 \\
+\midrule
+\multirow{3}{*}{FutureX (Pass\%)}
+ & 2 & 20 & 45.0 & 40.0 & 45.0 & 40.0 \\
+ & 3 & 19 & 57.9 & 26.3 & 52.6 & 21.1 \\
+ & 4 & 19 & 36.8 & 36.8 & 21.1 & 5.3 \\
+\bottomrule
+\end{tabular}}
+\end{table}

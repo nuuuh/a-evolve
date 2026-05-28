@@ -1,0 +1,40 @@
+\begin{table}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{Adaptive Auto-Harness hyperparameters across the three benchmarks. \emph{EGL} is the Expected-Gain-from-Learning trigger that gates whether a cycle runs. All runs use $T=0$ for both solver and evolver to attribute gains to the algorithm rather than sampling noise.}
+\label{tab:hyperparams}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Hyperparameter & PolyBench & CTF-Dojo & FutureX \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Models}} \\
+Solver & Sonnet 4.6 & Sonnet 4.6 & Sonnet 4.6 \\
+Evolver & Opus 4.6 & Opus 4.6 & Opus 4.6 \\
+Router & Sonnet 4.6 & Sonnet 4.6 & Sonnet 4.6 \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Sampling \& budget}} \\
+Solver temperature & 0.0 & 0.0 & 0.0 \\
+Evolver temperature & 0.0 & 0.0 & 0.0 \\
+Solver max turns & 80 & 80 & 80 \\
+Evolver max tokens & 128k & 128k & 128k \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Stream \& schedule}} \\
+Total tasks & 5{,}075 & 261 & 503 \\
+Batch size & 100 & 20 & 20 \\
+Evolution cycles & 51 & 14 & 26 \\
+EGL threshold & 0.05 & 0.05 & 0.05 \\
+EGL window & 3 & 3 & 3 \\
+Solve workers & 24 & 8 & --- \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Multi-agent \& routing}} \\
+Research parallel agents & 3 & 3 & 3 \\
+Build/verify retries & 3 & 3 & 3 \\
+Routing confidence threshold & 0.7 & 0.7 & 0.7 \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Sandbox}} \\
+Solver sandbox network & none & none & bridge \\
+Evolver sandbox network & none & none & bridge \\
+\bottomrule
+\end{tabular}}
+\end{table}

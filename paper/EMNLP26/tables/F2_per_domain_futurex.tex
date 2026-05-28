@@ -1,0 +1,26 @@
+\begin{table}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{3pt}
+\caption{Per-slice Pass@1 (\%) on FutureX. Language is detected from Chinese characters in the question; domain is inferred by keyword match (\textit{other} catches unmatched questions). N is from the Sonnet baseline run. The \texttt{zh, geopolitics} row contains a single task and is reported for completeness only. Bold marks the best system per row.}
+\label{tab:per_domain_futurex}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}llrrrrrrr@{}}
+\toprule
+Lang & Domain & N & Sonnet & A-Evolve & Meta-H. & Multi & Adapt. & Full \\
+\midrule
+en & finance & 76 & 21.1 & 53.9 & 21.1 & 52.6 & 43.4 & \textbf{56.6} \\
+en & tech & 8 & 25.0 & \textbf{50.0} & 37.5 & \textbf{50.0} & 37.5 & \textbf{50.0} \\
+en & geopolitics & 43 & 41.9 & 62.8 & 37.2 & 62.8 & 60.5 & \textbf{65.1} \\
+en & sports & 62 & 38.7 & 58.1 & 37.1 & \textbf{59.7} & 56.5 & 54.8 \\
+en & entertainment & 37 & 27.0 & 43.2 & 21.6 & 40.5 & \textbf{48.6} & 37.8 \\
+en & other & 219 & 38.8 & 52.1 & 37.4 & \textbf{55.7} & 48.9 & 51.1 \\
+\midrule
+zh & finance & 10 & 0.0 & 0.0 & 0.0 & \textbf{30.0} & 0.0 & 20.0 \\
+zh & geopolitics & 1 & 100 & 100 & 0 & 0 & 0 & 0 \\
+zh & entertainment & 25 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 \\
+zh & other & 22 & 0.0 & 0.0 & 0.0 & \textbf{4.5} & 0.0 & \textbf{4.5} \\
+\midrule
+& Overall & 503 & 31.0 & 47.5 & 29.4 & \textbf{49.5} & 44.1 & 47.3 \\
+\bottomrule
+\end{tabular}}
+\end{table}

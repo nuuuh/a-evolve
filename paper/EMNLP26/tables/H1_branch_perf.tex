@@ -1,0 +1,32 @@
+\begin{table}[t]
+\centering\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{Per-branch routing volume on the RQ4 navigation analysis subsets (\S\ref{sec:navloss}). Each row reports tasks the LLM router actually sent to that branch under the \emph{Adapt} condition, alongside the resulting Pass@1 (CTF-Dojo, FutureX) or HitRate among traded markets (PolyBench). On these subsets the router never invoked the \texttt{main} fallback that its prompt allows (Appendix~\ref{app:prompt-router}).}
+\label{tab:branch_perf}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}llrr@{}}
+\toprule
+Bench & Branch & N routed & Pass / HitRate (\%) \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{CTF-Dojo (60 tasks across 3 batches; per-task best-of-7 venues)}} \\
+& \texttt{branch/crypto} & 20 & 50.0 \\
+& \texttt{branch/rev} & 20 & 30.0 \\
+& \texttt{branch/pwn} & 12 & 0.0 \\
+& \texttt{branch/misc} & 4 & 75.0 \\
+& \texttt{branch/web} & 2 & 0.0 \\
+& \texttt{branch/forensics} & 2 & 50.0 \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{PolyBench (100 tasks across 4 batches; per-task best-of-5 venues)}} \\
+& \texttt{branch/sports} & 71 & 67.6 \\
+& \texttt{branch/finance} & 14 & 21.4 \\
+& \texttt{branch/culture} & 12 & 33.3 \\
+& \texttt{branch/politics-world} & 3 & 66.7 \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{FutureX (80 tasks across 3 batches; per-task best-of-5 venues)}} \\
+& \texttt{branch/lvl1} & 28 & 53.6 \\
+& \texttt{branch/lvl2} & 30 & 30.0 \\
+& \texttt{branch/lvl3} & 8 & 0.0 \\
+& \texttt{branch/lvl4} & 14 & 14.3 \\
+\bottomrule
+\end{tabular}}
+\end{table}

@@ -6,7 +6,7 @@
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.95\textwidth]{figures/framework.pdf}
-\caption{Overview of the Adaptive Auto-Harness system. \textbf{Bottom:} the multi-agent evolver constructs and refines a harness tree across cycles via four phases (Analyze $\to$ Research $\to$ Build $\to$ Verify) with a persistent cross-cycle workspace and temporal-reveal feedback. \textbf{Top:} at solve time, a router agent reads each branch's workspace via \texttt{git show} and routes the incoming task $x_t$ to the most suitable branch. Two human-in-the-loop hooks (task-board steering and research-phase assistance) trigger only when the evolver's history lacks relevant signal.}
+\caption{Overview of the Adaptive Auto-Harness system. \textbf{Top:} the multi-agent evolver constructs and refines a harness tree across cycles via four phases (Analyze $\to$ Research $\to$ Build $\to$ Verify) with a persistent cross-cycle workspace and temporal-reveal feedback. \textbf{Bottom:} at solve time, a router agent reads each branch's workspace via \texttt{git show} and routes the incoming task $x_t$ to the most suitable branch. Two human-in-the-loop hooks (task-board steering and research-phase assistance) trigger only when the evolver's history lacks relevant signal.}
 \label{fig:unified_pipeline}
 \end{figure*}
 
@@ -19,13 +19,13 @@ We consider tasks arriving in an open-ended stream $x_1, x_2, \ldots, x_T$ with 
 \subsection{Analytical Framework}
 \label{sec:framework}
 
-The three deployment dimensions of \S\ref{sec:intro} surface concrete failures, but they do not by themselves identify what an evolver should fix. To pinpoint the root causes, we frame the problem analytically: we cast harness construction as a regret-minimization problem against an oracle reference, and decompose the regret into two complementary loss terms that map directly to actionable design axes.
+The three deployment dimensions of section \S\ref{sec:intro} surface concrete failures, but they do not by themselves identify what an evolver should fix. To pinpoint the root causes, we frame the problem analytically: we cast harness construction as a regret-minimization problem against an oracle reference, and decompose the regret into two complementary loss terms that map directly to actionable design axes.
 
 \noindent\textbf{Utility and regret.}
 We define the utility of a harness $C$ on a task $x_t$ as
 \begin{equation}
 \label{eq:utility}
-V(C, x_t) = \mathbb{E}_{a \sim \pi(\cdot \mid x_t, C)}[r(a, y(x_t))],
+V(C, x_t) = \mathbb{E}_{a_t \sim \pi(\cdot \mid x_t, C)}[r(a_t, y(x_t))],
 \end{equation}
 which is the expected reward of the harness-conditioned solver. The full-history utility is the corresponding ceiling under the capacity budget,
 $V(\Hist, x_t) \,:=\, \sup_{\substack{C \,:\, |C| \leq K}} V(C, x_t)$,
@@ -80,13 +80,13 @@ The decomposition assumes $\Hist$ contains relevant signal for $x_t$. When it do
 The analytical decomposition identifies $\Levo$ as the loss from harness capabilities that the evolver class cannot construct from history. We reduce this loss by expanding $\Phi$ with a stateful four-phase multi-agent evolver, temporal-reveal feedback, and cross-cycle memory (Figure~\ref{fig:unified_pipeline}). This design targets the unbounded-stream failure where a single-agent evolver must absorb growing trajectories, delayed labels, and prior research within one context window. Concretely, we address three structural limitations:
 
 \noindent\textbf{(1) Multi-agent with distinct roles and objectives.}
-Because unbounded streams (D1) keep expanding the trajectory history an evolver must interpret, existing single-agent evolvers must fit analysis, research, implementation, and verification into one context window. We decompose evolution into four phases (Analyze $\to$ Research $\to$ Build $\to$ Verify), each with a dedicated objective and full context budget. This eliminates the single-window bottleneck and lets parallel Researchers explore disjoint hypotheses without premature convergence.
+Because unbounded streams keep expanding the trajectory history an evolver must interpret, existing single-agent evolvers must fit analysis, research, implementation, and verification into one context window. We decompose evolution into four phases (Analyze $\to$ Research $\to$ Build $\to$ Verify), each with a dedicated objective and full context budget. This eliminates the single-window bottleneck and lets parallel Researchers explore disjoint hypotheses without premature convergence.
 
 \noindent\textbf{(2) Temporal-reveal feedback.}
-Under unbounded streams (D1), labels arrive asynchronously (e.g., a prediction market resolves days after the trade). We implement a \emph{temporal-reveal gate} that surfaces each task's ground-truth label to the evolver only after its resolution date, providing a proper streaming feedback signal without leaking future information.
+Under unbounded streams, labels arrive asynchronously (e.g., a prediction market resolves days after the trade). We implement a \emph{temporal-reveal gate} that surfaces each task's evaluation signal to the evolver only after its resolution date, providing a proper streaming feedback signal without leaking future information.
 
 \noindent\textbf{(3) Persistent cross-cycle state.}
-We provide the evolver with a dedicated workspace that persists across cycles, containing a task board (prioritised failure analysis), research logs (tested hypotheses with pass/fail verdicts), architecture documentation, and verification tests. This cross-cycle memory enables the evolver to refine its construction ability over time and build upon prior evolution experience rather than restarting from scratch.
+We provide the evolver with a dedicated workspace that persists across cycles, containing a task board (prioritised failure analysis), research logs (tested hypotheses with pass/fail verdicts), architecture documentation (README), and verification tests. This cross-cycle memory enables the evolver to refine its construction ability over time and build upon prior evolution experience rather than restarting from scratch.
 
 
 
@@ -94,9 +94,9 @@ We provide the evolver with a dedicated workspace that persists across cycles, c
 \subsection{Solve-Time Adaptation via Harness-Tree Routing}
 \label{sec:method-nav}
 
-The analytical decomposition identifies $\Ladapt$ as the loss from committing to one dense harness before observing the incoming task's context. We reduce this loss by shifting heavy adaptation into evolution time: the evolver constructs a \emph{harness tree} of specialized harnesses, and solve time only requires a lightweight routing decision (Figure~\ref{fig:unified_pipeline}, top panel). This design targets task heterogeneity and non-stationarity, where a single dense harness can underfit specialized task contexts even when the evolver is capable.
+The analytical decomposition identifies $\Ladapt$ as the loss from committing to one dense harness before observing the incoming task's context. We reduce this loss by shifting heavy adaptation into evolution time: the evolver constructs a structured harness store, and solve time only requires a lightweight adaptation operator. The reduction is general: it factors into (i) how the evolver organizes the harness space and (ii) how the solver selects from that space per task. The harness space can be organized in many forms, including a linear chain that always uses the most recently evolved workspace, a tree of regime-specific branches, or a graph of skills with dependency edges. The adaptation operator can likewise take many forms, ranging from skill-level retrieval over a flat catalog~\cite{deerflow2025} to branch-level routing over a structured space. Different combinations trade off construction cost, operator latency, and the granularity at which adaptation occurs; how to construct the space is the job of evolution and is outside the scope of this section.
 
-We instantiate this with two designs (Figure~\ref{fig:unified_pipeline}, top panel). \textbf{(1) Branching harness tree (built at evolution time).} The solver's workspace is a git repository. The evolver constructs regime-specific branches (e.g., \texttt{branch/crypto-classical}, \texttt{branch/binary-reversing}) during evolution, each carrying its own prompt, skills, and tool registry; git provides versioning, isolation, and lineage tracking across branches. \textbf{(2) Agentic routing (executed at solve time).} A router agent reads each branch's workspace via \texttt{git show} and selects the branch given $x_t$'s context; the solver then checks out that branch and executes.
+We adopt a \emph{harness tree} as the storage form and \emph{agentic routing} as the adaptation operator. The tree is the natural fit for our setting because heterogeneous task streams cluster into a small number of recurring regimes (e.g., binary exploitation versus cryptography in CTF-Dojo, sports versus politics in PolyBench), branches isolate regime-specific prompts/skills/tools without cross-contaminating the others, and the branching gate gives the evolver an explicit lever to commit specialization only when warranted by failure evidence. We instantiate this with two designs (Figure~\ref{fig:unified_pipeline}). \textbf{(1) Branching harness tree (built at evolution time).} The solver's workspace is a git repository. The evolver constructs regime-specific branches (e.g., \texttt{branch/crypto-classical}, \texttt{branch/binary-reversing}) during evolution, each carrying its own prompt, skills, and tool registry; git provides versioning, isolation, and lineage tracking across branches. \textbf{(2) Agentic routing (executed at solve time).} A router agent reads each branch's workspace via \texttt{git show} and selects the branch given $x_t$'s context; the solver then checks out that branch and executes.
 
 \subsection{Human-in-the-Loop Channel}
 \label{sec:method-hitl}
@@ -105,4 +105,4 @@ A third failure lies outside $\Levo + \Ladapt$: some tasks require harness absen
 \noindent\textbf{(1) Task-board steering.}
 After the Analyst updates the task board, a human may review it to add entries, adjust priorities, or supply domain guidance and source access. This proactively steers the subsequent research cycle with direction the evolver cannot derive from trajectories alone.
 \noindent\textbf{(2) Interactive assistance during research.}
-When a Researcher hits a barrier mid-execution that requires human intervention (e.g., an authentication wall), the hook prompts the human in real time. This reactively unblocks the research agent at the point of failure.
+When a Researcher agent hits a barrier mid-execution that requires human intervention (e.g., an authentication wall), the hook prompts the human in real time. This reactively unblocks the research agent at the point of failure.
