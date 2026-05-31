@@ -11,7 +11,7 @@ Usage::
     results = evolver.run(cycles=10)
 
     # Custom engine:
-    from agent_evolve.algorithms.skillforge import AEvolveEngine
+    from agent_evolve.algorithms.aevolve import AEvolveEngine
 
     evolver = ae.Evolver(
         agent="swe",
@@ -103,7 +103,7 @@ class Evolver:
         self._loop = EvolutionLoop(self.agent, self.benchmark, resolved_engine, self.config)
 
     def _default_engine(self) -> EvolutionEngine:
-        from .algorithms.skillforge import AEvolveEngine
+        from .algorithms.aevolve import AEvolveEngine
 
         return AEvolveEngine(self.config)
 

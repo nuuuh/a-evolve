@@ -50,6 +50,11 @@ class PolyBenchBenchmark(BenchmarkAdapter):
         self.holdout_ratio = holdout_ratio
         self._cache: dict[str, list[dict]] = {}
         self._split_done = False
+        # Ground truth kept OUT of Task.metadata so it never reaches the
+        # solver, the observation JSONL, or the evolver. evaluate() reads
+        # the answer from here, re-deriving by task_id from the DB when the
+        # adapter is reconstructed in a solver worker process.
+        self._ground_truth: dict[str, dict[str, str]] = {}
 
     def get_tasks(self, split: str = "test", limit: int = 0) -> list[Task]:
         rows = self._load_split(split)
@@ -59,6 +64,23 @@ class PolyBenchBenchmark(BenchmarkAdapter):
         for row in rows:
             task_id = f"{row['event_id']}_{row['market_id']}_{row['snapshot_id']}"
             task_input = self._format_input(row)
+            # Source-provided event taxonomy (Polymarket tags) is the
+            # regime signal the navigation engine stratifies on. An event
+            # carries an ordered tag list (e.g. ["Politics","Elections"]);
+            # the first tag is the primary regime, the full set the domain.
+            tag_list = _safe_json(row.get("event_tags", "[]"))
+            if not isinstance(tag_list, list):
+                tag_list = []
+            category = tag_list[0] if tag_list else "unknown"
+            domain = ",".join(str(t) for t in tag_list) if tag_list else "unknown"
+            resolved = row.get("resolved_at") or ""
+            year = str(resolved)[:4] if resolved else ""
+            # Stash ground truth (answer key + resolution time) keyed by
+            # task_id — deliberately NOT placed in Task.metadata.
+            self._ground_truth[task_id] = {
+                "winning_outcome": row["winning_outcome"],
+                "resolved_at": row["resolved_at"],
+            }
             tasks.append(Task(
                 id=task_id,
                 input=task_input,
@@ -66,15 +88,49 @@ class PolyBenchBenchmark(BenchmarkAdapter):
                     "market_id": row["market_id"],
                     "event_id": row["event_id"],
                     "snapshot_id": row["snapshot_id"],
-                    "winning_outcome": row["winning_outcome"],
+                    # Market state at snapshot time — legitimately visible to
+                    # the solver (it must price/trade from these). NOT the
+                    # answer: winning_outcome and raw resolved_at are withheld.
                     "outcomes": row["outcomes"],
                     "outcome_prices": row["outcome_prices"],
                     "order_book_snapshot": row["order_book_snapshot"],
                     "timestamp": row["timestamp"],
-                    "resolved_at": row["resolved_at"],
+                    # Regime signal for navigation/branching:
+                    "category": category,
+                    "domain": domain,
+                    "tags": tag_list,
+                    "year": year,
                 },
             ))
         return tasks
+
+    def _resolve_ground_truth(self, task_id: str) -> dict[str, str]:
+        """Return {winning_outcome, resolved_at} for a task.
+
+        Uses the in-memory map populated by get_tasks; falls back to a
+        direct DB lookup by (event_id, market_id, snapshot_id) so a freshly
+        reconstructed adapter in a solver worker can still evaluate.
+        """
+        gt = self._ground_truth.get(task_id)
+        if gt is not None:
+            return gt
+        # task_id == f"{event_id}_{market_id}_{snapshot_id}"; the winning
+        # outcome is per-market in the resolutions table.
+        parts = task_id.rsplit("_", 2)
+        market_id = parts[1] if len(parts) == 3 else task_id
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cur = conn.cursor()
+            row = cur.execute(
+                "SELECT winning_outcome, resolved_at FROM resolutions "
+                "WHERE market_id = ?", (market_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        gt = {"winning_outcome": row[0], "resolved_at": row[1]} if row else \
+             {"winning_outcome": "", "resolved_at": ""}
+        self._ground_truth[task_id] = gt
+        return gt
 
     def evaluate(self, task: Task, trajectory: Trajectory) -> Feedback:
         """Evaluate a prediction against the resolved outcome.
@@ -88,7 +144,10 @@ class PolyBenchBenchmark(BenchmarkAdapter):
         """
         output = trajectory.output.strip()
         metadata = task.metadata
-        winning = metadata["winning_outcome"]
+        # Ground truth is sourced benchmark-side, never from task.metadata
+        # (which is visible to the solver/evolver).
+        gt = self._resolve_ground_truth(task.id)
+        winning = gt["winning_outcome"]
 
         if not output:
             return self._skip_feedback(task.id, "empty_output")
@@ -134,7 +193,7 @@ class PolyBenchBenchmark(BenchmarkAdapter):
         # Raw return and APY (official: apy = raw_ret × 365 / days_held)
         raw_return = (unit_profit / unit_inv) if unit_inv > 0 else 0.0
         apy = _compute_apy(raw_return, metadata.get("timestamp"),
-                           metadata.get("resolved_at"))
+                           gt["resolved_at"])
 
         # Score = accuracy (1/0) for aggregation; CWR for ranking
         score = 1.0 if is_correct else 0.0
@@ -232,6 +291,7 @@ class PolyBenchBenchmark(BenchmarkAdapter):
                     e.description    AS event_description,
                     e.start_date,
                     e.end_date,
+                    e.tags           AS event_tags,
                     r.winning_outcome,
                     r.resolved_at
                 FROM market_snapshots ms
@@ -268,6 +328,7 @@ class PolyBenchBenchmark(BenchmarkAdapter):
                         e.description           AS event_description,
                         e.start_date,
                         e.end_date,
+                        e.tags                  AS event_tags,
                         r.winning_outcome,
                         r.resolved_at
                     FROM markets m
@@ -297,6 +358,7 @@ class PolyBenchBenchmark(BenchmarkAdapter):
                         e.description           AS event_description,
                         e.start_date,
                         e.end_date,
+                        e.tags                  AS event_tags,
                         r.winning_outcome,
                         r.resolved_at
                     FROM markets m

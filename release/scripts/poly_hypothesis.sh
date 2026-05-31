@@ -32,6 +32,11 @@ BRANCH_CONFIDENCE=0.7
 SUFFIX=""
 NO_INFRA_EVO=true
 MAX_TASKS=0
+# Solver/evolver models default to the SOLVER_MODEL/EVOLVER_MODEL env vars.
+# Override per-run with --model-id / --evolver-model (e.g. to run a baseline
+# under a different solver model).
+MODEL_ID="${SOLVER_MODEL:-<solver-model-id>}"
+EVOLVER_MODEL="${EVOLVER_MODEL:-<evolver-model-id>}"
 TARGETS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -42,6 +47,8 @@ while [ $# -gt 0 ]; do
     --suffix)              SUFFIX="$2"; shift 2 ;;
     --no-infra-evo)        NO_INFRA_EVO=true; shift ;;
     --limit)               MAX_TASKS="$2"; shift 2 ;;
+    --model-id)            MODEL_ID="$2"; shift 2 ;;
+    --evolver-model)       EVOLVER_MODEL="$2"; shift 2 ;;
     *)                     TARGETS+=("$1"); shift ;;
   esac
 done
@@ -71,11 +78,15 @@ COMMON="python solve_all_with_evolution.py
   --dataset $DB_PATH
   --seed-workspace experiments/polybench/seed
   --evolver-prompt experiments/polybench/evolver_prompt.md
+  --model-id $MODEL_ID
   --temporal-reveal
   --max-turns 30
   --task-timeout 300
   --workers 24
   $EXTRA_ARGS"
+if [ -n "$EVOLVER_MODEL" ]; then
+  COMMON="$COMMON --evolver-model $EVOLVER_MODEL"
+fi
 if [ "$NO_INFRA_EVO" = true ]; then
   COMMON="$COMMON --no-infra-evo"
 fi
@@ -108,15 +119,10 @@ run H0 baseline \
   --output-dir "results/polybench_baseline${SUFFIX}" \
   --config experiments/polybench/configs/baseline.yaml
 
-# H0_ds: Baseline - DeepSeek V3.2
-run H0_ds baseline_deepseek \
-  --output-dir "results/polybench_baseline_deepseek${SUFFIX}" \
-  --config experiments/polybench/configs/baseline_deepseek.yaml
-
-# H0_kimi: Baseline - Kimi K2.5
-run H0_kimi baseline_kimi \
-  --output-dir "results/polybench_baseline_kimi${SUFFIX}" \
-  --config experiments/polybench/configs/baseline_kimi.yaml
+# Cross-model baselines: run H0 under a different solver model via
+#   bash poly_hypothesis.sh --model-id <model> H0
+# (or export SOLVER_MODEL). No dedicated targets — the solver model is a
+# CLI/env choice, not a per-config setting.
 
 # H1: Full evolution - all layers (prompts + skills + memory + tools)
 run H1 full_evo \

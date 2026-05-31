@@ -46,15 +46,48 @@ to the task board listing:
   - artifact_name: helps {categories} but hurts {categories} → ACTION:
     move-to-branch/<name>, deprecate, or rewrite-as-general
 
-BRANCHING DECISION (TARGET per regime):
-- TARGET: main — the fix is domain-generalizable AND verified to NOT degrade
-  any previously-passing category
-- TARGET: branch/<name> — the fix is regime-specific OR has been observed to
-  help one category while hurting another (isolate it from main)
-- TARGET: branch/<existing-name> — an existing branch already handles this regime
-- Do NOT create new branches for < 2 tasks or single-cycle observations
-- Prefer branch isolation when in doubt: keeping main clean is more important
-  than maximizing main's per-batch peak
+BRANCHING DECISION (TARGET per regime) — branching reduces ADAPTATION
+loss by buying back CAPACITY. The shared harness `main` has a FIXED
+budget (its prompt is hard-capped and silently truncated when it
+overflows). Every regime competes for that one budget; once their
+combined strategy exceeds it, main truncates (drops capability) or
+dilutes (carries task-irrelevant rules) — so one harness can no longer be
+optimal for all regimes. Branching resolves this: extract a regime's
+strategy to `branch/<regime>` and (a) the slimmed main reclaims budget to
+deepen the remaining regimes, while (b) the branch gets the full budget
+to grow regime-specific strategy beyond what main could hold. Total
+usable capacity rises from 1×budget to (N+1)×budget. Branching is a
+performance lever, not hygiene.
+
+THE PRINCIPLE: branch regime X when extracting its strategy lets BOTH
+main and the branch hold strategy they otherwise could not — i.e. when
+CONTENTION + ROUTABILITY + VOLUME all hold.
+
+- Reach the decision via the ANALYSIS PROTOCOL (Read capacity signal →
+  Inventory extractable clusters → Decide → Guardrails).
+- TARGET: main — a genuinely general improvement that helps ALL regimes.
+- TARGET: branch/<name> — when (1) CONTENTION: main is at/near budget or
+  truncating, OR already holds a sizable self-contained cluster for the
+  regime (a dedicated skill file / several gated rules); (2) ROUTABILITY:
+  the regime is identifiable at solve time from a task property; (3)
+  VOLUME: >= ~15 routed tasks.
+- TARGET: branch/<existing-name> — an existing branch already handles this regime.
+- REBUT THE TWO COMMON NON-REASONS for skipping a branch:
+  ✗ "Regime is a large share of tasks → keep on main." BACKWARDS — high
+    volume is a reason TO branch (it satisfies VOLUME and the freed main
+    budget helps everyone else).
+  ✗ "Rules work / 0 failures → keep on main." A WORKING cluster is the
+    BEST extraction target: proven-valuable strategy relocated to reclaim
+    budget at zero risk (the verify gate confirms the branch). Branching
+    RELOCATES working strategy; it does not require failure.
+- Do NOT use low pass-rate / "looks irreducible" as the branch test
+  (confounded by composition/luck). Do NOT branch a 1-3 task curiosity or
+  a regime you cannot route.
+- Branches are pruned by the verify gate (a branch that fails to beat main
+  on its own regime is dropped), so when contention + routability + volume
+  hold, PREFER branching over letting the cluster sit in (and truncate) main.
+- Use the "## Toxic Artifacts" section to flag regime clusters in main
+  with ACTION: move-to-branch/<name>.
 
 WORKSPACE LAYOUT:
   /solver_workspace/          — the solver's workspace (may be on any branch)

@@ -11,3 +11,4 @@ data/futurex/*.json
 results/
 logs/
 .pytest_cache/
+tests/

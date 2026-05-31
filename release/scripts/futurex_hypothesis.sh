@@ -152,17 +152,10 @@ run H0c baseline_live_search \
   --output-dir results/futurex_baseline_live_search \
   --config experiments/futurex/configs/baseline_live_search.yaml
 
-# H0c_ds: Baseline - DeepSeek V3.2, strict search
-run H0c_ds baseline_deepseek \
-  --max-turns 80 \
-  --output-dir results/futurex_baseline_deepseek \
-  --config experiments/futurex/configs/baseline_deepseek.yaml
-
-# H0c_kimi: Baseline - Kimi K2.5, strict search
-run H0c_kimi baseline_kimi \
-  --max-turns 80 \
-  --output-dir results/futurex_baseline_kimi \
-  --config experiments/futurex/configs/baseline_kimi.yaml
+# Cross-model baselines: the futurex solver reads the solver model from the
+# config's ``model_name`` key (see experiments/futurex/configs/baseline_*.yaml).
+# Run H0c against such a config to evaluate a different solver model; no
+# dedicated DeepSeek/Kimi targets are hardcoded here.
 
 # H1: Full evolution, strict search (Wikipedia)
 run H1 full_evo_strict \

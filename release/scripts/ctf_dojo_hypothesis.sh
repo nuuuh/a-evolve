@@ -123,15 +123,10 @@ run H0 baseline \
   --output-dir results/ctf_dojo_baseline \
   --config experiments/ctf_dojo/configs/baseline.yaml
 
-# H0_ds: Baseline - DeepSeek V3.2
-run H0_ds baseline_deepseek \
-  --output-dir results/ctf_dojo_baseline_deepseek \
-  --config experiments/ctf_dojo/configs/baseline_deepseek.yaml
-
-# H0_kimi: Baseline - Kimi K2.5
-run H0_kimi baseline_kimi \
-  --output-dir results/ctf_dojo_baseline_kimi \
-  --config experiments/ctf_dojo/configs/baseline_kimi.yaml
+# Cross-model baselines: run H0 under a different solver model via
+#   bash ctf_dojo_hypothesis.sh --model-id <model> H0
+# (or export SOLVER_MODEL). No dedicated targets — the solver model is a
+# CLI/env choice, not a per-config setting.
 
 # H1: Full evolution - all layers (prompts + skills + memory + tools)
 run H1 full_evo \

@@ -9,7 +9,7 @@ import logging
 import shutil
 from pathlib import Path
 
-from ...algorithms.skillforge import AEvolveEngine
+from ...algorithms.aevolve import AEvolveEngine
 from ...config import EvolveConfig
 from ...engine.base import EvolutionEngine
 from ...types import EvolutionResult

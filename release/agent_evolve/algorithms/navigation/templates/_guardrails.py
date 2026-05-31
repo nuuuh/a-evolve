@@ -145,6 +145,14 @@ def cap_prompt_size(
 ) -> bool:
     """Truncate prompts/system.md if it exceeds max_chars (G5).
 
+    Truncates at a clean boundary (the last section/paragraph break before
+    the cap) rather than mid-sentence, so the cut never corrupts main into
+    a half-written rule. Logs a loud WARNING with the overflow size —
+    persistent truncation means the evolver wants more strategy than one
+    shared harness can hold, which is the signal to BRANCH (extract a
+    regime cluster to reclaim budget) rather than keep silently dropping
+    strategy. See build_capacity_signal().
+
     Returns True if truncation happened.
     """
     prompt_path = workspace_root / "prompts" / "system.md"
@@ -153,9 +161,27 @@ def cap_prompt_size(
     content = prompt_path.read_text()
     if len(content) <= max_chars:
         return False
-    prompt_path.write_text(content[:max_chars])
-    logger.info("G5: truncated prompt from %d to %d chars",
-                len(content), max_chars)
+
+    head = content[:max_chars]
+    # Prefer a section break (\n## or \n---), then a blank-line paragraph
+    # break, then a newline — searching backwards from the cap. Only accept
+    # a boundary that keeps at least half the budget (avoid over-trimming).
+    floor = max_chars // 2
+    cut = -1
+    for sep in ("\n## ", "\n---", "\n\n", "\n"):
+        idx = head.rfind(sep)
+        if idx >= floor:
+            cut = idx
+            break
+    clean = head[:cut] if cut != -1 else head
+    clean = clean.rstrip() + "\n"
+    prompt_path.write_text(clean)
+    logger.warning(
+        "G5: prompt OVER BUDGET — truncated %d→%d chars (%d dropped at a "
+        "clean boundary). Persistent overflow ⇒ shared harness is full; "
+        "consider branching a regime cluster to reclaim budget.",
+        len(content), len(clean), len(content) - len(clean),
+    )
     return True
 
 

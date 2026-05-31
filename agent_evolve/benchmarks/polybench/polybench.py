@@ -59,6 +59,17 @@ class PolyBenchBenchmark(BenchmarkAdapter):
         for row in rows:
             task_id = f"{row['event_id']}_{row['market_id']}_{row['snapshot_id']}"
             task_input = self._format_input(row)
+            # Source-provided event taxonomy (Polymarket tags) is the
+            # regime signal the navigation engine stratifies on. An event
+            # carries an ordered tag list (e.g. ["Politics","Elections"]);
+            # the first tag is the primary regime, the full set the domain.
+            tag_list = _safe_json(row.get("event_tags", "[]"))
+            if not isinstance(tag_list, list):
+                tag_list = []
+            category = tag_list[0] if tag_list else "unknown"
+            domain = ",".join(str(t) for t in tag_list) if tag_list else "unknown"
+            resolved = row.get("resolved_at") or ""
+            year = str(resolved)[:4] if resolved else ""
             tasks.append(Task(
                 id=task_id,
                 input=task_input,
@@ -72,6 +83,11 @@ class PolyBenchBenchmark(BenchmarkAdapter):
                     "order_book_snapshot": row["order_book_snapshot"],
                     "timestamp": row["timestamp"],
                     "resolved_at": row["resolved_at"],
+                    # Regime signal for navigation/branching:
+                    "category": category,
+                    "domain": domain,
+                    "tags": tag_list,
+                    "year": year,
                 },
             ))
         return tasks
@@ -232,6 +248,7 @@ class PolyBenchBenchmark(BenchmarkAdapter):
                     e.description    AS event_description,
                     e.start_date,
                     e.end_date,
+                    e.tags           AS event_tags,
                     r.winning_outcome,
                     r.resolved_at
                 FROM market_snapshots ms
@@ -268,6 +285,7 @@ class PolyBenchBenchmark(BenchmarkAdapter):
                         e.description           AS event_description,
                         e.start_date,
                         e.end_date,
+                        e.tags                  AS event_tags,
                         r.winning_outcome,
                         r.resolved_at
                     FROM markets m
@@ -297,6 +315,7 @@ class PolyBenchBenchmark(BenchmarkAdapter):
                         e.description           AS event_description,
                         e.start_date,
                         e.end_date,
+                        e.tags                  AS event_tags,
                         r.winning_outcome,
                         r.resolved_at
                     FROM markets m

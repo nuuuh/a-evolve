@@ -9,6 +9,7 @@ Promoted from ``aevolve/navigation.py`` to a peer-package so it stands
 alongside ``aevolve``, ``mas_adaptive_skill``, ``meta_harness``, ``gepa``.
 """
 
+from .adaptation import TreeRoutingAdaptation
 from .engine import NavigationEngine
 from .prompts import NAVIGATE_SYSTEM_PROMPT, build_navigate_prompt
 from .templates.base import EvolutionTemplate
@@ -25,6 +26,8 @@ from .templates.orchestrated import (
 __all__ = [
     # Engine
     "NavigationEngine",
+    # Adaptation (solve-time)
+    "TreeRoutingAdaptation",
     # Templates
     "EvolutionTemplate",
     "InlineTemplate",

@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .base import EvolutionTemplate
-from ._guardrails import strip_search_caps, cap_prompt_size, verify_pipeline
+from ._guardrails import strip_search_caps, cap_prompt_size, verify_pipeline, MAX_PROMPT_CHARS
 from ._evolution_workspace import (
     get_evolver_workspace_path,
     init_evolution_workspace,
@@ -39,6 +39,11 @@ from ._evolution_workspace import (
     load_strategy_tree,
     update_strategy_tree,
     parse_routing_stats,
+    build_stratified_outcome_table,
+    format_stratified_table,
+    scan_regime_accretion,
+    format_regime_accretion,
+    build_capacity_signal,
     extract_targets_from_task_board,
     IGNORED_GAP_LABELS,
 )
@@ -157,23 +162,15 @@ class StructuredNavigationTemplate(EvolutionTemplate):
 
         research_summary = "\n".join(json.dumps(r) for r in research_log[-20:])
 
-        # Compute per-category stats for branching signal
-        cat_stats: dict[str, dict[str, int]] = {}
-        for r in batch_results:
-            cat = r.get("category") or r.get("domain") or "unknown"
-            cat_stats.setdefault(cat, {"total": 0, "pass": 0})
-            cat_stats[cat]["total"] += 1
-            if r.get("success"):
-                cat_stats[cat]["pass"] += 1
-        category_summary = ""
-        if any(c != "unknown" for c in cat_stats):
-            lines = ["Per-category performance this batch:"]
-            for cat, s in sorted(cat_stats.items(), key=lambda x: -x[1]["total"]):
-                if cat == "unknown":
-                    continue
-                pct = f"{100*s['pass']/s['total']:.0f}%" if s["total"] > 0 else "N/A"
-                lines.append(f"  {cat}: {s['pass']}/{s['total']} ({pct})")
-            category_summary = "\n".join(lines)
+        # ── Broad branching signal: full-history outcome×property tables ──
+        # Stratify EVERY routed task across ALL cycles by each regime
+        # property (not a sample of this batch). This is what lets the
+        # analyst root-cause outcomes against data properties before
+        # deciding to branch. Tables are sorted worst-relative-to-mean
+        # first, so branch candidates surface at the top.
+        category_summary = self._build_stratified_signal(
+            batch_results, routing_log_path, solver_workspace.root,
+        )
 
         template_vars = {
             "evo_number": str(evo_number),
@@ -185,9 +182,17 @@ class StructuredNavigationTemplate(EvolutionTemplate):
             "routing_summary": routing_summary,
             "category_summary": category_summary,
         }
-        analyst_prompt = _load_prompt(
-            prompts_dir, "analyst.md", "Analyze failures.",
-        )
+        # Nav-specific analyst prompt (root-cause-first branching protocol +
+        # the {strategy_tree}/{routing_summary}/{category_summary} signal
+        # slots). Distinct from the shared ``analyst.md`` used by the
+        # non-branching structured_evolution template, which does not
+        # provide those vars. Fall back to the shared prompt only if the
+        # nav prompt is somehow absent.
+        analyst_prompt = _load_prompt(prompts_dir, "analyst_nav.md", "")
+        if not analyst_prompt:
+            analyst_prompt = _load_prompt(
+                prompts_dir, "analyst.md", "Analyze failures.",
+            )
         # Use nav-specific system prompt (with branching instructions)
         system = _load_prompt(
             prompts_dir, "analyst_nav_system.md", "",
@@ -289,6 +294,84 @@ class StructuredNavigationTemplate(EvolutionTemplate):
             except Exception as e2:
                 logger.warning("Phase 1 fallback also failed: %s", e2)
                 trajectory.append({"step": "analyze", "success": False, "error": str(e)})
+
+    # Regime properties the analyst stratifies outcomes by, in priority
+    # order. Each becomes a full-history contingency table in the prompt.
+    _STRATIFY_PROPS = ("category", "domain", "year")
+
+    def _build_stratified_signal(
+        self, batch_results: list[dict], routing_log_path: Path | None,
+        workspace_root: Path | None = None,
+    ) -> str:
+        """Build the broad branching signal handed to the analyst.
+
+        Two complementary signals:
+          1. REGIME-GATED ACCRETION in the shared harness — the PRIMARY
+             branch trigger. Each "if regime X then Y" rule already living
+             in main's prompt/skills is a non-transferable strategy riding
+             in the shared harness (L_adapt made visible); extracting it
+             into branch/<regime> is the point of branching.
+          2. Full-history outcome tables stratified by regime property —
+             SECONDARY context (confounded by composition/luck), used to
+             size regimes and spot divergence, not as the trigger itself.
+
+        Always returns a non-empty string so the instruction to look for
+        strategy divergence is never silently dropped.
+        """
+        sections: list[str] = []
+
+        # PRIMARY: harness CAPACITY pressure. main has a fixed budget; when
+        # it is full/truncating, one shared harness can no longer be optimal
+        # for all regimes — branching buys back budget. This is the active,
+        # performance-linked branch trigger.
+        sections.append("### Harness capacity (PRIMARY branch trigger)\n\n"
+                        + build_capacity_signal(workspace_root, MAX_PROMPT_CHARS))
+
+        # SUPPORTING: regime-gated rules already in the shared harness — the
+        # self-contained clusters that a branch would extract to free budget.
+        accretion = scan_regime_accretion(workspace_root)
+        sections.append("### Regime-gated rule clusters in `main`\n\n"
+                        + format_regime_accretion(accretion))
+
+        # Full-history tables from the persisted routing log.
+        any_signal = False
+        if routing_log_path and routing_log_path.exists():
+            for prop in self._STRATIFY_PROPS:
+                table = build_stratified_outcome_table(routing_log_path, prop=prop)
+                regimes = table.get("regimes", {})
+                # Skip a property that carries no real partition (only
+                # "unknown", or a single bucket).
+                real = [k for k in regimes if k != "unknown"]
+                if not real:
+                    continue
+                any_signal = True
+                sections.append(format_stratified_table(table))
+
+        # This-batch snapshot (fast-moving signal complementing history).
+        batch_lines: dict[str, dict[str, int]] = {}
+        for r in batch_results:
+            cat = r.get("category") or r.get("domain") or "unknown"
+            d = batch_lines.setdefault(cat, {"total": 0, "pass": 0, "revealed": 0})
+            d["total"] += 1
+            if "success" in r:
+                d["revealed"] += 1
+                if r.get("success"):
+                    d["pass"] += 1
+        if any(c != "unknown" for c in batch_lines):
+            lines = ["This-batch performance by category:"]
+            for cat, s in sorted(batch_lines.items(), key=lambda x: -x[1]["total"]):
+                if cat == "unknown":
+                    continue
+                pct = (f"{100*s['pass']/s['revealed']:.0f}%"
+                       if s["revealed"] else "pending")
+                lines.append(f"  {cat}: {s['pass']}/{s['revealed']} ({pct}), "
+                             f"{s['total']} routed")
+            sections.append("\n".join(lines))
+
+        if not any_signal:
+            sections.append("(full-history stratification pending — first "
+                            "cycle with revealed labels)")
+        return "## Regime Signal\n\n" + "\n\n".join(sections)
 
     def _build_routing_summary(
         self, batch_results: list[dict], routing_log_path: Path | None,

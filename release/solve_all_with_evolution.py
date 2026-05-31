@@ -134,10 +134,8 @@ def main():
         description="Solve all benchmark tasks with periodic evolution")
     p.add_argument("--benchmark", type=str, required=True,
                    help="Benchmark name (matches agent_evolve/agents/<name>/solver.py)")
-    p.add_argument("--model-id", type=str,
-                   default=os.environ.get("SOLVER_MODEL", "<solver-model-id>"))
-    p.add_argument("--region", type=str,
-                   default=os.environ.get("AWS_REGION", "us-west-2"))
+    p.add_argument("--model-id", type=str, default="us.anthropic.claude-sonnet-4-6")
+    p.add_argument("--region", type=str, default="us-west-2")
     p.add_argument("--max-tokens", type=int, default=16384)
     p.add_argument("--max-turns", type=int, default=150)
     p.add_argument("--task-timeout", type=int, default=1800)
@@ -163,9 +161,8 @@ def main():
                    help="Solver LLM temperature")
     p.add_argument("--evolver-temp", type=float, default=None,
                    help="Evolver LLM temperature (overrides config)")
-    p.add_argument("--evolver-model", type=str,
-                   default=os.environ.get("EVOLVER_MODEL"),
-                   help="Evolver Bedrock model-id (e.g. '<evolver-model-id>'); "
+    p.add_argument("--evolver-model", type=str, default=None,
+                   help="Evolver Bedrock model-id (e.g. 'global.anthropic.claude-opus-4-6-v1'); "
                         "overrides the YAML config's evolver_model.")
     p.add_argument("--verbose", action="store_true", default=False,
                    help="Print evolver conversation in real-time during evolution")
@@ -329,6 +326,16 @@ def main():
             else:
                 log.info("Multi-agent evolution (no task routing)")
 
+        # Solve-time adaptation operator. Tree routing when navigation is on
+        # and a tree exists; otherwise a whole-store no-op. Both share one
+        # code path in the batch loop below (select -> group -> materialize).
+        from agent_evolve.protocol.adaptation import WholeStoreAdaptation
+        if navigation_enabled and strategy_tree is not None:
+            from agent_evolve.algorithms.navigation import TreeRoutingAdaptation
+            adapter = TreeRoutingAdaptation(evolver, strategy_tree)
+        else:
+            adapter = WholeStoreAdaptation()
+
         # Batching
         batch_size = args.batch_size or config.batch_size
 
@@ -375,45 +382,41 @@ def main():
             log.info("=== Batch %d (%d tasks) | Evo cycle %d ===",
                      batch_num, len(batch_tasks), evo_cycle)
 
-            # ── Route tasks to branches (navigation) ──────────────
-            # task_branches maps task_id → branch name for stats tracking
+            # ── Route tasks via the adaptation operator ────────────
+            # select() is the per-task, read-only decision (no feedback);
+            # tasks sharing a key share one materialized workspace below.
+            from collections import defaultdict
+            # task_branches maps task_id → selection key for stats tracking
             task_branches: dict[str, str] = {}
-            # branch_groups maps branch name → list of tasks
-            branch_groups: dict[str, list] = {}
+            # branch_groups maps selection key → list of tasks
+            branch_groups: dict[str, list] = defaultdict(list)
 
-            if navigation_enabled and strategy_tree is not None and strategy_tree.branches:
-                from collections import defaultdict
-                branch_groups = defaultdict(list)
-
-                def _route_task(t):
-                    nav_lines = [f"Task ID: {t.id}"]
-                    for key in ("category", "event", "challenge", "year"):
-                        if key in t.metadata:
-                            nav_lines.append(f"{key}: {t.metadata[key]}")
-                    nav_lines.append(f"\n{t.input}")
-                    task_context = "\n".join(nav_lines)
-                    branch = evolver.navigate(task_context, strategy_tree, workspace_root=ws_dir)
-                    return t, branch
-
-                routing_workers = min(args.workers, 10)
-                with ThreadPoolExecutor(max_workers=routing_workers) as routing_pool:
-                    futs = {routing_pool.submit(_route_task, t): t for t in batch_tasks}
-                    for fut in as_completed(futs):
-                        t, branch = fut.result()
+            if navigation_enabled:
+                has_branches = (
+                    strategy_tree is not None and bool(strategy_tree.branches)
+                )
+                if has_branches:
+                    routing_workers = min(args.workers, 10)
+                    with ThreadPoolExecutor(max_workers=routing_workers) as routing_pool:
+                        keys = list(routing_pool.map(
+                            lambda t: adapter.select(ws_dir, t), batch_tasks))
+                    for t, branch in zip(batch_tasks, keys):
                         branch_groups[branch].append(t)
                         task_branches[t.id] = branch
                         log.info("  → %s routed to [%s]", t.id, branch)
-                # Update branch routing metadata
-                for b in strategy_tree.branches:
-                    if b.name in branch_groups:
-                        b.last_routed_cycle = evo_cycle
-            elif navigation_enabled:
-                log.info("  All %d tasks → [main] (no branches yet)", len(batch_tasks))
-                branch_groups["main"] = list(batch_tasks)
-                for t in batch_tasks:
-                    task_branches[t.id] = "main"
+                    # Update branch routing metadata
+                    for b in strategy_tree.branches:
+                        if b.name in branch_groups:
+                            b.last_routed_cycle = evo_cycle
+                else:
+                    log.info("  All %d tasks → [main] (no branches yet)",
+                             len(batch_tasks))
+                    for t in batch_tasks:
+                        branch_groups["main"].append(t)
+                        task_branches[t.id] = "main"
             else:
-                branch_groups["main"] = list(batch_tasks)
+                for t in batch_tasks:
+                    branch_groups[adapter.select(ws_dir, t)].append(t)
 
             # ── Build prompts per branch and submit to pool ───────
             batch_results = []
@@ -422,28 +425,16 @@ def main():
             pool = PoolClass(max_workers=args.workers)
             futures = {}
             for branch_name, branch_tasks in branch_groups.items():
-                # Checkout the branch workspace
-                if branch_name != "main" and navigation_enabled:
+                # Materialize this group's workspace via the adaptation
+                # operator (git checkout for tree routing; no-op for the
+                # whole-store default). The operator owns any fallback /
+                # failed_checkout bookkeeping.
+                if navigation_enabled:
                     try:
-                        versioning.checkout_branch(branch_name)
-                        agent.reload_from_fs()
-                    except Exception as e:
-                        log.warning("Branch %s checkout failed, using main: %s",
-                                    branch_name, e)
-                        if strategy_tree is not None:
-                            b = strategy_tree.get_branch(branch_name)
-                            if b is not None:
-                                b.failed_checkouts = (
-                                    getattr(b, "failed_checkouts", 0) + 1
-                                )
-                        versioning.checkout_branch("main")
-                        agent.reload_from_fs()
-                elif navigation_enabled:
-                    try:
-                        versioning.checkout_branch("main")
-                        agent.reload_from_fs()
+                        adapter.materialize(ws_dir, branch_name, agent.workspace)
                     except Exception:
                         pass
+                    agent.reload_from_fs()
 
                 # Build prompts from this branch's workspace state.
                 # Capture everything now while on the branch — the main
@@ -480,10 +471,11 @@ def main():
                 for td in task_dicts:
                     futures[pool.submit(backend.solve_one, td, args_dict)] = td["id"]
 
-            # Return to main after submitting all branch groups
+            # Return to main after submitting all branch groups, so live
+            # workspace state is back on the root harness for the next cycle.
             if navigation_enabled:
                 try:
-                    versioning.checkout_branch("main")
+                    adapter.materialize(ws_dir, "main", agent.workspace)
                     agent.reload_from_fs()
                 except Exception:
                     pass
@@ -604,6 +596,21 @@ def main():
 
             # ── Update branch stats from solve results ────────────
             if navigation_enabled and strategy_tree is not None and task_branches:
+                # Regime properties (category/domain/year) per task — these
+                # are the stratification keys the analyst uses to decide
+                # branching. Persisting them on every routing entry lets the
+                # evolver compute a full-history outcome×property table rather
+                # than re-deriving regimes from a sample of trajectories.
+                _meta_by_id = {t.id: (t.metadata or {}) for t in batch_tasks}
+
+                def _regime_props(_iid):
+                    _m = _meta_by_id.get(_iid, {})
+                    return {
+                        k: _m[k]
+                        for k in ("category", "domain", "year")
+                        if _m.get(k) not in (None, "")
+                    }
+
                 for r in batch_results:
                     iid = r["instance_id"]
                     branch_name = task_branches.get(iid, "main")
@@ -616,7 +623,7 @@ def main():
                     from agent_evolve.types import RoutingEntry
                     strategy_tree.routing_log.append(RoutingEntry(
                         task_id=iid,
-                        properties={},
+                        properties=_regime_props(iid),
                         branch=branch_name,
                         score=r.get("score", 0.0),
                         cycle=evo_cycle,
@@ -627,7 +634,7 @@ def main():
                         iid = r["instance_id"]
                         entry = {
                             "task_id": iid,
-                            "properties": {},
+                            "properties": _regime_props(iid),
                             "branch": task_branches.get(iid, "main"),
                             "cycle": evo_cycle,
                         }

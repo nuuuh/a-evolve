@@ -33,11 +33,15 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ...aevolve.prompts import build_evolution_prompt
 from ....types import BranchInfo
-from ..activity.registry import default_registry
-from ..activity.runtime import ActivityRuntime, RunContext
-from ..activity.specs.plan_driven import _build_branch_cycle_activity
 from .base import EvolutionTemplate
+from ._evolution_ops import (
+    detect_mutations,
+    disabled_layers,
+    prepend_plan_context,
+    snapshot_workspace,
+)
 
 if TYPE_CHECKING:
     from ....contract.workspace import AgentWorkspace
@@ -385,8 +389,6 @@ class OrchestratedTemplate(EvolutionTemplate):
 
     def __init__(self, engine: NavigationEngine):
         self.engine = engine
-        self._branch_activity = _build_branch_cycle_activity()
-        self._registry = default_registry()
 
     @property
     def name(self) -> str:
@@ -631,32 +633,37 @@ class OrchestratedTemplate(EvolutionTemplate):
 
         vc = VersionControl(workspace.root)
 
-        # Repackage the assignment as a "plan" for the branch_cycle
-        # activity's PrependPlanContext action.  We use the assignment's
-        # own vocabulary (focus + workload) — the plan-context prompt
-        # adapts to both the old and new shapes.
+        # Repackage the assignment as a "plan" for prepend_plan_context.
+        # We use the assignment's own vocabulary (focus + workload) — the
+        # plan-context prompt adapts to both the old and new shapes.
         plan_for_ctx = {
             "summary": assignment.get("focus", ""),
             "assignment": assignment,
         }
 
-        runtime = ActivityRuntime(self._registry)
-        ctx = RunContext(registry=self._registry, runtime=runtime)
-        ctx.extra["engine"] = self.engine
+        cfg = self.engine.config
+        ws = workspace
 
-        bindings = {
-            "workspace": workspace,
-            "batch": observation_logs,
-            "cfg": self.engine.config,
-            "evo_number": evo_number,
-            "plan": plan_for_ctx,
-            "target": target,
-        }
+        # Per-branch evolver cycle: snapshot → prompt → plan-context →
+        # call_llm → diff (before clear) → clear_drafts.
+        snapshot, drafts = snapshot_workspace(ws)
+        prompt = build_evolution_prompt(
+            ws, observation_logs, drafts, evo_number,
+            evolve_prompts=cfg.evolve_prompts,
+            evolve_skills=cfg.evolve_skills,
+            evolve_memory=cfg.evolve_memory,
+            evolve_tools=cfg.evolve_tools,
+            evolve_infra=cfg.evolve_infra,
+            include_patches=cfg.evolver_include_patches,
+            trajectory_only=cfg.trajectory_only,
+        )
+        prompt = prepend_plan_context(prompt, plan_for_ctx, target)
 
-        outputs = runtime.run(self._branch_activity, bindings, ctx=ctx)
+        with ws.protect(disabled_layers(cfg)):
+            response = self.engine._run_llm(prompt, ws.root) or {}
 
-        report = outputs.get("report") or outputs.get("diff.report") or {}
-        response = outputs.get("response") or outputs.get("call.response") or {}
+        report = detect_mutations(ws, snapshot)
+        ws.clear_drafts()
 
         mutated = bool(report.get("mutated", False))
         summary = report.get("summary", "no mutation")
